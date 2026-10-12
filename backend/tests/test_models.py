@@ -1,15 +1,12 @@
 import uuid
-from pathlib import Path
 
 import pytest
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
-from alembic import command
 from app.db import Base
 from app.models import (
     AdminUser,
@@ -23,32 +20,12 @@ from app.models import (
     Study,
     StudyMode,
 )
+from tests.dbutil import downgrade, upgrade
 
-BACKEND = Path(__file__).resolve().parent.parent
 EXPECTED_TABLES = {
     "studies", "videos", "stations", "sessions", "chunks", "jobs", "admin_users",
     "worker_heartbeats",
 }  # fmt: skip
-
-
-def alembic_config(engine: Engine) -> Config:
-    cfg = Config(str(BACKEND / "alembic.ini"))
-    cfg.set_main_option("script_location", str(BACKEND / "alembic"))
-    return cfg
-
-
-def upgrade(engine: Engine, revision: str = "head") -> None:
-    cfg = alembic_config(engine)
-    with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        command.upgrade(cfg, revision)
-
-
-def downgrade(engine: Engine, revision: str = "base") -> None:
-    cfg = alembic_config(engine)
-    with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        command.downgrade(cfg, revision)
 
 
 def tables(engine: Engine) -> set[str]:

@@ -64,3 +64,12 @@ def engine(postgres_url: str) -> Generator[Engine]:
         conn.execute(text("CREATE SCHEMA public"))
     yield eng
     eng.dispose()
+
+
+@pytest.fixture
+def migrated_engine(engine: Engine) -> Engine:
+    """Engine on a schema upgraded to the latest migration."""
+    from tests.dbutil import upgrade
+
+    upgrade(engine)
+    return engine

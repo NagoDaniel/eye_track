@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     max_upload_chunk_mb: int = 10
     log_level: str = "INFO"
 
+    # Worker timing (PLAN §11.1: heartbeat every 30 s).
+    worker_heartbeat_interval_s: float = 30.0
+    worker_heartbeat_max_age_s: float = 90.0
+    worker_poll_interval_s: float = 2.0
+
     @field_validator("secret_key", "postgres_password")
     @classmethod
     def reject_placeholder(cls, value: str) -> str:
