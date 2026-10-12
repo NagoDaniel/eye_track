@@ -87,7 +87,13 @@ put DOMAIN localhost
 put TLS_MODE bogus
 expect_fail "TLS_MODE must be one of" setup --non-interactive --no-admin --dry-run
 put TLS_MODE acme
-expect_fail "needs your own ACME_EMAIL" setup --non-interactive --no-admin --dry-run
+out=$(setup --non-interactive --no-admin --dry-run 2>&1) || fail "acme without an e-mail must be accepted: $out"
+echo "$out" | grep -q "without a contact address" || fail "no note about the missing e-mail: $out"
+put ACME_EMAIL "not an email"
+expect_fail "not a valid e-mail address" setup --non-interactive --no-admin --dry-run
+put ACME_EMAIL ops@example.org
+setup --non-interactive --no-admin --dry-run >/dev/null 2>&1 || fail "a valid e-mail was rejected"
+put ACME_EMAIL you@example.org
 put TLS_MODE files
 expect_fail "needs TLS_CERT_FILE" setup --non-interactive --no-admin --dry-run
 : > "$work/empty.pem"

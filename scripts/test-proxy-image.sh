@@ -26,6 +26,9 @@ validate() { docker run --rm "$@" "$IMAGE" validate >/dev/null 2>&1; }
 validate -e DOMAIN=example.org -e TLS_MODE=acme -e ACME_EMAIL=ops@example.org \
   || fail "acme config invalid"
 validate -e DOMAIN=lab.internal -e TLS_MODE=internal || fail "internal config invalid"
+validate -e DOMAIN=example.org -e TLS_MODE=acme || fail "acme without an e-mail must be valid"
+validate -e DOMAIN=example.org -e TLS_MODE=acme -e ACME_EMAIL=you@example.org \
+  || fail "acme with the example e-mail must be treated as unset"
 mkdir -p "$work/certs"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=files.example.org" \
   -keyout "$work/certs/key.pem" -out "$work/certs/cert.pem" >/dev/null 2>&1
@@ -40,7 +43,8 @@ expect_error() {
 }
 expect_error "TLS_MODE must be one of" -e DOMAIN=x.org -e TLS_MODE=bogus
 expect_error "TLS_MODE must be one of" -e DOMAIN=x.org
-expect_error "requires ACME_EMAIL" -e DOMAIN=x.org -e TLS_MODE=acme
+expect_error "not a valid e-mail" -e DOMAIN=x.org -e TLS_MODE=acme -e "ACME_EMAIL=a b@x.org"
+expect_error "not a valid e-mail" -e DOMAIN=x.org -e TLS_MODE=acme -e "ACME_EMAIL=x{y}@x.org"
 expect_error "requires TLS_CERT_FILE" -e DOMAIN=x.org -e TLS_MODE=files
 expect_error "not readable or empty" -e DOMAIN=x.org -e TLS_MODE=files -e TLS_CERT_FILE=/nope.pem \
   -e TLS_KEY_FILE=/nope.key

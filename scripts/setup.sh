@@ -146,7 +146,7 @@ if [ "$ENV_ONLY" = 0 ]; then
   ask DOMAIN "Domain participants will use"
   ask TLS_MODE "TLS mode (acme = public domain, files = own certificate, internal = lab network)"
   case "$(get_env TLS_MODE)" in
-    acme) ask ACME_EMAIL "Contact e-mail for Let's Encrypt" ;;
+    acme) ask ACME_EMAIL "Contact e-mail for certificate expiry notices (optional)" ;;
     files)
       ask TLS_CERT_FILE "Path of the certificate file on this server"
       ask TLS_KEY_FILE "Path of the private key file on this server"
@@ -185,9 +185,14 @@ printf '%s' "$domain" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$' \
   || die "DOMAIN '$domain' is not a valid host name"
 case "$tls_mode" in
   acme)
+    # The contact e-mail is optional (expiry reminders only); the example value counts as unset.
     email="$(get_env ACME_EMAIL)"
-    [ -n "$email" ] && [ "$email" != "$EXAMPLE_EMAIL" ] \
-      || die "TLS_MODE=acme needs your own ACME_EMAIL in $ENV_FILE (not '$EXAMPLE_EMAIL')"
+    if [ -z "$email" ] || [ "$email" = "$EXAMPLE_EMAIL" ]; then
+      echo "    ACME_EMAIL not set: the certificate is requested without a contact address" >&2
+    else
+      printf '%s' "$email" | grep -Eq '^[^[:space:]@{}"]+@[^[:space:]@{}"]+$' \
+        || die "ACME_EMAIL '$email' is not a valid e-mail address"
+    fi
     ;;
   files)
     for key in TLS_CERT_FILE TLS_KEY_FILE; do

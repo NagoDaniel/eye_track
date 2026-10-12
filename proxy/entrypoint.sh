@@ -11,8 +11,16 @@ export MAX_UPLOAD_CHUNK_MB MAX_VIDEO_UPLOAD_MB
 
 case "${TLS_MODE:-}" in
   acme)
-    [ -n "${ACME_EMAIL:-}" ] || fail "TLS_MODE=acme requires ACME_EMAIL"
-    echo "tls ${ACME_EMAIL}" > /etc/caddy/tls.caddy
+    # The contact e-mail is optional: Caddy's automatic HTTPS works without it, it only adds
+    # expiry reminders. The example value from .env.example counts as "not set".
+    if [ -n "${ACME_EMAIL:-}" ] && [ "${ACME_EMAIL}" != "you@example.org" ]; then
+      printf '%s' "${ACME_EMAIL}" | grep -Eq '^[^[:space:]@{}"]+@[^[:space:]@{}"]+$' \
+        || fail "ACME_EMAIL is not a valid e-mail address: ${ACME_EMAIL}"
+      echo "tls ${ACME_EMAIL}" > /etc/caddy/tls.caddy
+    else
+      echo "note: ACME_EMAIL is not set; certificates are requested without a contact address" >&2
+      echo "# TLS_MODE=acme without a contact e-mail: Caddy's automatic HTTPS" > /etc/caddy/tls.caddy
+    fi
     ;;
   internal)
     echo "tls internal" > /etc/caddy/tls.caddy
