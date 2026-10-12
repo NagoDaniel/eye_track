@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-12 — HTTP/3 disabled; acceptance platform (T13)
+- Plan section: §11.1, §11.4, §11.6
+- Decision: the proxy serves HTTP/1.1 and HTTP/2 only (`servers { protocols h1 h2 }`), because the plan publishes only 80 and 443/tcp and Caddy would otherwise advertise HTTP/3 (`alt-svc`) on UDP 443 that is not reachable. The acceptance run (§11.6) used a Hetzner Cloud VPS: Ubuntu 26.04.1 LTS, aarch64, 2 vCPU, 3.7 GB RAM, Docker 29.9.0, Compose 5.6.0; this is outside the plan's named Ubuntu 22.04/24.04 and below its sizing advice (4+ cores, 16 GB), which the README states.
+- Reason: avoid advertising an unreachable protocol; record what the acceptance test actually ran on.
+- Approved by: plan leaves open
+
 ## 2026-10-12 — ACME_EMAIL is optional (corrects T8/T11)
 - Plan section: §11.2
 - Decision: with `TLS_MODE=acme` the contact e-mail is optional. Empty, or the example value `you@example.org`, means "request the certificate without a contact address" (Caddy's automatic HTTPS needs none; the address only receives expiry reminders). A given address must look like an e-mail (no whitespace, braces or quotes, since it is written into the Caddy config). `proxy/entrypoint.sh` and `scripts/setup.sh` implement this and tests cover empty, example, valid and invalid values.
