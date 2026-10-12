@@ -121,7 +121,7 @@ compose() {
 
 if [ "$ENV_ONLY" = 0 ]; then
   info "Checking Docker and Docker Compose"
-  command -v docker >/dev/null 2>&1 || die "docker is not installed (need Docker Engine $MIN_DOCKER or newer)"
+  command -v docker >/dev/null 2>&1 || die "docker is not installed (need Docker Engine $MIN_DOCKER or newer). On Ubuntu or Debian run: sudo ./scripts/install-docker.sh"
   docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null)" \
     || die "cannot reach the Docker daemon (is it running, and are you in the 'docker' group?)"
   version_ge "$docker_version" "$MIN_DOCKER" \

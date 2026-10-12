@@ -1,4 +1,4 @@
-.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup lint e2e
+.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint e2e
 
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
@@ -30,6 +30,9 @@ test-fetch-models:
 
 test-backup:
 	./scripts/test-backup-restore.sh
+
+test-install-docker:
+	./scripts/test-install-docker.sh
 
 test-stack:
 	./scripts/test-compose-stack.sh

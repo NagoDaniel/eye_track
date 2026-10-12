@@ -18,7 +18,7 @@ Webcam eye tracking for educational video studies. Students watch videos in the 
 | | |
 |---|---|
 | Server | Linux with a public IP. Ubuntu 22.04 / 24.04 per the plan; the acceptance run used **Ubuntu 26.04 on ARM64** (Hetzner). |
-| Software | **Docker Engine 24+** and the **Compose plugin 2.24+**. Nothing else is installed on the host. |
+| Software | **Docker Engine 24+** and the **Compose plugin 2.24+**. Nothing else is installed on the host. On Ubuntu or Debian, `sudo ./scripts/install-docker.sh` installs both from Docker's official repository. |
 | Size | For a real study: 4+ CPU cores, 16 GB RAM. Disk is about 150 MB per 10-minute session for raw plus derived data (50 students × 10 sessions ≈ 75 GB), plus room for analysis videos. A 2 vCPU / 4 GB machine is enough to try the system out. |
 | Domain | A DNS name pointing at the server (for `TLS_MODE=acme`). |
 | Firewall | Open **80 and 443 (TCP)** to the internet, plus SSH for you. Nothing else: the database and the API are never published. |
@@ -27,6 +27,7 @@ Webcam eye tracking for educational video studies. Students watch videos in the 
 
 ```bash
 git clone <repo-url> eyetrack && cd eyetrack
+sudo ./scripts/install-docker.sh        # only if Docker is not installed yet (Ubuntu/Debian)
 ./scripts/setup.sh
 ```
 
@@ -160,6 +161,7 @@ Slower suites that build and start real containers (they use temporary directori
 | `make test-setup` | `scripts/setup.sh`: prompts, secrets, DNS check, idempotent re-run |
 | `make test-backup` | backup, destroy everything, restore, compare every row and file |
 | `make test-fetch-models` | verified model download |
+| `make test-install-docker` | `scripts/install-docker.sh` in fresh Ubuntu and Debian containers |
 | `make e2e` | Playwright end-to-end test (arrives in Milestone 2) |
 
 CI (`.github/workflows/ci.yml`) runs the same targets.

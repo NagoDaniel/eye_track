@@ -58,6 +58,14 @@ jobs:
       # backup, destroy everything, restore, compare every row and file
       - run: make test-backup
 
+  install-docker:
+    name: Docker install script
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-install-docker
+
   dev-stack:
     name: development stack and model download
     runs-on: ubuntu-24.04
