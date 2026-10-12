@@ -14,6 +14,29 @@ Format:
 
 ---
 
+## 2026-10-12 — Milestone 1b scope and open choices
+- Plan section: §4, §4.1, §5.2, §5.4, §5.8, §5.9, §6, §7, §8.1, §10, §11.5, §11.6, §12.1, §14
+- Decision:
+  1. **Stations (deviation from §14, §5.2):** no station CRUD and no station picker in 1b; the project has one station. The `stations` table and `sessions.station_id` stay unused.
+  2. **No job on `/complete` until M3 (deviation from §6):** `/complete` sets `uploaded` but does not enqueue `process_session`, because the worker has no handler yet.
+  3. **`events.jsonl` assembled at `/complete` (ahead of §8.1):** the API gunzips and concatenates the events chunks into `raw/events.jsonl` with one pure function that the M3 ingest stage reuses.
+  4. **Status `recording`:** set when the first chunk of a session is accepted (the plan names the status but no trigger).
+  5. **Events chunks:** gzip per chunk like `features`, flushed every `recording.chunk_ms`; an empty interval produces no chunk; sha256 is over the compressed bytes.
+  6. **Consent text:** plain-text files `backend/app/consent/<consent_version>.txt` in the backend image; a study config naming a version without a file is rejected.
+  7. **`meta.json`:** written at session creation with the config snapshot, rewritten atomically at `/complete` with the final session row and `client_info`; the config part never changes afterwards.
+  8. **Videos:** non-H.264 or variable frame rate gives a warning only; a video referenced by a study playlist or a session snapshot cannot be deleted; no replace. Playlist entries are video ids as strings.
+  9. **Limits:** per-session total is a global setting `MAX_SESSION_TOTAL_MB` (default 2048). Session creation and client-error reports are limited to 300 per IP per hour (named setting, in-memory per API process), high enough to stop only bots; a class behind one address must not be blocked.
+  10. **`POST /api/client-errors`:** no authentication, optional `session_id`, body `{message, stack, url, t}`, 16 KiB cap, structured log only (no table).
+  11. **Participant code format:** two ASCII letters + birth month + birth day, `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$` (first two letters of the name; input upper-cased). The agent pointed out that this is derived from personal data and can collide; kept by the human for now ("we'll see later").
+  12. **Sessions in admin:** list and detail only; no create, edit or delete (withdrawal is M6).
+  13. **Shared definitions:** stream names and event types live in one JSON file under `shared/`, read by Python and TypeScript, with a test that both agree (plan: defined in `eventLog.ts`, mirrored in `schemas.py`).
+  14. **Playwright E2E in 1b (replaces "E2E added in M2"):** a camera-less end-to-end test runs in 1b; the fake-camera version follows in M2.
+  15. **1b boundary:** playback events and the content rectangle are in 1b; the `stimulus_frames` stream, all camera work, the calibration gate and debug mode are M2. The device-check screen is a placeholder.
+  16. **§11.6 fresh-VM re-run for 1b:** postponed by the human.
+  17. **Carried 1a review items (R5):** recorded as accepted deviations without code change: `WORKER_CONCURRENCY` supports only 1 (§11.1); `create-admin` requires `--username` (§11.3); `make test` and `make lint` run on the host through uv and npm, not through compose (§11.5); log lines omit `session_id`/`job_id`/`stage` when they are not bound (§12.3); `setup.sh` does not offer `fetch_models.sh` (§11.3, revisit in M5). Fixed in 1b: `/admin` without a trailing slash, `SECRET_KEY` minimum length 32.
+- Reason: answers to the numbered questions of `/milestone-start 1b`; the plan is silent or contradictory on these points.
+- Approved by: Nágó Dániel (items 5, 6, 7, 9 values, 10 were proposed by the agent and accepted)
+
 ## 2026-10-12 — Milestone 1a accepted; stale `running` jobs deferred to Milestone 3
 - Plan section: §4, §11.4, §14
 - Decision: Milestone 1a is accepted. A job whose worker is killed mid-flight (for example by `docker compose up -d --build`) stays in status `running` and is never picked up again; this is not handled in 1a or 1b, because no job handlers exist before Milestone 3. Milestone 3 must decide the semantics (requeue on worker start, or mark `failed` with a clear log line), implement it with a test on real Postgres, and test `worker.run.main()` (SIGTERM, concurrency guard). Review tasks R5 (minor unrecorded deviations) and R6 (test and CI gaps) move into the Milestone 1b task list.
