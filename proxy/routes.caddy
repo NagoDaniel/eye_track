@@ -1,0 +1,31 @@
+# Routes shared by the production Caddyfile and Caddyfile.dev (single definition, PLAN §1).
+# Imported inside a site block. The caller adds the final catch-all `handle` for the frontend.
+
+# Participant API: chunk size limit. (Admin uploads are limited separately, below.)
+handle /api/* {
+	request_body {
+		max_size {$MAX_UPLOAD_CHUNK_MB:10}MiB
+	}
+	reverse_proxy api:8000
+}
+
+# Stimulus video upload (1b: POST /admin/api/videos): larger cap than a chunk. The app checks too.
+@video_upload path /admin/api/videos /admin/api/videos/*
+handle /admin/* {
+	request_body @video_upload {
+		max_size {$MAX_VIDEO_UPLOAD_MB:2048}MiB
+	}
+	reverse_proxy api:8000
+}
+
+# /media/videos/{id}.mp4 -> /data/videos/{id}/video.mp4 (range requests handled by file_server)
+@video path_regexp video ^/media/videos/([0-9]+)\.mp4$
+handle @video {
+	rewrite * /{re.video.1}/video.mp4
+	root * /data/videos
+	file_server
+}
+
+handle /media/* {
+	respond "Not found" 404
+}

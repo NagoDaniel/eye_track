@@ -1,8 +1,14 @@
-.PHONY: dev test test-images test-stack lint e2e
+.PHONY: dev test test-images test-stack test-dev lint e2e
 
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
+# Development stack on http://localhost:8080 (PLAN §11.5). Needs a `.env` with real secrets.
 dev:
+	@test -f .env || { \
+	  echo "make dev: no .env found." >&2; \
+	  echo "  cp .env.example .env, then replace both 'change-me' values (POSTGRES_PASSWORD, SECRET_KEY)" >&2; \
+	  echo "  with random strings, e.g. openssl rand -base64 24. DOMAIN and TLS_MODE are not used in dev." >&2; \
+	  exit 1; }
 	$(COMPOSE_DEV) up --build
 
 test:
@@ -12,6 +18,9 @@ test:
 test-images:
 	./scripts/test-backend-image.sh
 	./scripts/test-proxy-image.sh
+
+test-dev:
+	./scripts/test-dev-stack.sh
 
 test-stack:
 	./scripts/test-compose-stack.sh

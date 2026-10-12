@@ -1,0 +1,15 @@
+# Development proxy (PLAN §11.5): plain HTTP on one port, no TLS (localhost counts as a secure
+# context for the camera). Same routes as production; the frontend comes from the Vite dev server.
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	import /etc/caddy/routes.caddy
+
+	# Vite dev server, including its HMR websocket.
+	handle {
+		reverse_proxy web:5173
+	}
+}

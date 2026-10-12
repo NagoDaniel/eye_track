@@ -4,6 +4,7 @@
 !shared/models.json
 !Caddyfile
 !proxy/entrypoint.sh
+!proxy/routes.caddy
 frontend/node_modules
 frontend/dist
 frontend/public/mediapipe

@@ -11,5 +11,6 @@ RUN npm run build
 FROM caddy:2
 COPY --from=frontend /app/frontend/dist /srv/www
 COPY Caddyfile /etc/caddy/Caddyfile
+COPY proxy/routes.caddy /etc/caddy/routes.caddy
 COPY proxy/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
