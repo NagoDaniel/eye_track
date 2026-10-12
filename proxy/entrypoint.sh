@@ -6,7 +6,8 @@ fail() { echo "error: $*" >&2; exit 1; }
 
 : "${DOMAIN:?DOMAIN must be set}"
 : "${MAX_UPLOAD_CHUNK_MB:=10}"
-export MAX_UPLOAD_CHUNK_MB
+: "${MAX_VIDEO_UPLOAD_MB:=2048}"
+export MAX_UPLOAD_CHUNK_MB MAX_VIDEO_UPLOAD_MB
 
 case "${TLS_MODE:-}" in
   acme)
@@ -19,8 +20,8 @@ case "${TLS_MODE:-}" in
   files)
     [ -n "${TLS_CERT_FILE:-}" ] && [ -n "${TLS_KEY_FILE:-}" ] \
       || fail "TLS_MODE=files requires TLS_CERT_FILE and TLS_KEY_FILE"
-    [ -r "${TLS_CERT_FILE}" ] || fail "TLS_CERT_FILE not readable: ${TLS_CERT_FILE}"
-    [ -r "${TLS_KEY_FILE}" ] || fail "TLS_KEY_FILE not readable: ${TLS_KEY_FILE}"
+    [ -s "${TLS_CERT_FILE}" ] || fail "TLS_CERT_FILE not readable or empty: ${TLS_CERT_FILE}"
+    [ -s "${TLS_KEY_FILE}" ] || fail "TLS_KEY_FILE not readable or empty: ${TLS_KEY_FILE}"
     echo "tls ${TLS_CERT_FILE} ${TLS_KEY_FILE}" > /etc/caddy/tls.caddy
     ;;
   *)

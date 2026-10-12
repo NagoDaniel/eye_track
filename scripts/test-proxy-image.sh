@@ -42,7 +42,7 @@ expect_error "TLS_MODE must be one of" -e DOMAIN=x.org -e TLS_MODE=bogus
 expect_error "TLS_MODE must be one of" -e DOMAIN=x.org
 expect_error "requires ACME_EMAIL" -e DOMAIN=x.org -e TLS_MODE=acme
 expect_error "requires TLS_CERT_FILE" -e DOMAIN=x.org -e TLS_MODE=files
-expect_error "not readable" -e DOMAIN=x.org -e TLS_MODE=files -e TLS_CERT_FILE=/nope.pem \
+expect_error "not readable or empty" -e DOMAIN=x.org -e TLS_MODE=files -e TLS_CERT_FILE=/nope.pem \
   -e TLS_KEY_FILE=/nope.key
 expect_error "DOMAIN must be set" -e TLS_MODE=internal
 
@@ -127,6 +127,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
+        self.drain()
+
+    def do_POST(self):
+        self.drain()
+
+    def drain(self):
         remaining = int(self.headers["Content-Length"])
         got = 0
         while remaining > 0:
@@ -152,7 +158,8 @@ docker network create "$net2" >/dev/null
 docker run -d --name "${net}-stub" --network "$net2" --network-alias api \
   -v "$work/stub.py:/stub.py:ro" --entrypoint python "$API_IMAGE" /stub.py >/dev/null
 docker run -d --name "${net}-proxy2" --network "$net2" -p 127.0.0.1::443 \
-  -e DOMAIN=localhost -e TLS_MODE=internal -e MAX_UPLOAD_CHUNK_MB=10 "$IMAGE" >/dev/null
+  -e DOMAIN=localhost -e TLS_MODE=internal -e MAX_UPLOAD_CHUNK_MB=10 -e MAX_VIDEO_UPLOAD_MB=2 \
+  "$IMAGE" >/dev/null
 base2="https://localhost:$(docker port "${net}-proxy2" 443/tcp | head -1 | awk -F: '{print $NF}')"
 for _ in $(seq 1 60); do
   [ "$(code "$base2/")" = "200" ] && break
@@ -168,6 +175,19 @@ done
 r=$(code -X PUT --data-binary @"$work/over.bin" "$base2/api/sessions/x/chunks/webcam/0")
 [ "$r" = "413" ] || fail "10 MiB + 1 byte: expected 413, got $r"
 echo "ok  1 KiB and exactly 10 MiB accepted, 10 MiB + 1 byte rejected with 413"
+
+echo "== admin video upload cap (MAX_VIDEO_UPLOAD_MB=2 in this test) only on /admin/api/videos"
+head -c 2097152 /dev/zero > "$work/v2.bin"
+head -c 2097153 /dev/zero > "$work/v2over.bin"
+r=$(code -X POST --data-binary @"$work/v2.bin" "$base2/admin/api/videos")
+[ "$r" = "200" ] || fail "video upload of exactly 2 MiB: expected 200, got $r"
+r=$(code -X POST --data-binary @"$work/v2over.bin" "$base2/admin/api/videos")
+[ "$r" = "413" ] || fail "video upload of 2 MiB + 1: expected 413, got $r"
+r=$(code -X POST --data-binary @"$work/v2over.bin" "$base2/admin/api/videos/7")
+[ "$r" = "413" ] || fail "video sub-path upload over cap: expected 413, got $r"
+r=$(code -X POST --data-binary @"$work/over.bin" "$base2/admin/api/other")
+[ "$r" = "200" ] || fail "other admin routes must not be capped here: got $r"
+echo "ok  videos capped at 2 MiB, other admin routes unlimited at the proxy"
 
 echo "== bundled MediaPipe files are self-hosted and intact"
 expect "wasm runtime" 200 "$base/mediapipe/wasm/vision_wasm_internal.wasm"

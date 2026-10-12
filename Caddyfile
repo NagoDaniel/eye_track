@@ -28,7 +28,12 @@
 		reverse_proxy api:8000
 	}
 
+	# Stimulus video upload (1b: POST /admin/api/videos): larger cap than a chunk. The app checks too.
+	@video_upload path /admin/api/videos /admin/api/videos/*
 	handle /admin/* {
+		request_body @video_upload {
+			max_size {$MAX_VIDEO_UPLOAD_MB}MiB
+		}
 		reverse_proxy api:8000
 	}
 
