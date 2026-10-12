@@ -31,6 +31,8 @@ def now() -> datetime:
 
 
 def str_enum(cls: type[enum.Enum], name: str) -> Enum:
+    # NOTE: alembic autogenerate duplicates the CHECK as explicit CheckConstraint lines;
+    # delete them from generated migrations (see docs/PROGRESS.md, open problems).
     return Enum(
         cls,
         name=name,
