@@ -46,8 +46,8 @@ def bind_context(**fields: str) -> Generator[None]:
 
 
 def configure_logging(level: str) -> None:
-    numeric = logging.getLevelName(level.upper())
-    if not isinstance(numeric, int):
+    numeric = logging.getLevelNamesMapping().get(level.upper())
+    if numeric is None:
         raise ValueError(f"invalid LOG_LEVEL: {level!r}")
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JsonFormatter())
