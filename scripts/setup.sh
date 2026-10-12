@@ -227,10 +227,11 @@ local_ipv4() {
 
 if [ "$tls_mode" = acme ] && [ "$SKIP_DNS" = 0 ]; then
   info "Checking that $domain points at this server"
-  resolved="$(resolve_ipv4 "$domain")"
+  # `|| true`: getent/grep exit non-zero for an unknown name, which must reach the message below
+  resolved="$(resolve_ipv4 "$domain" || true)"
   [ -n "$resolved" ] || die "$domain does not resolve. Create the DNS A record first, or use --skip-dns-check.
        Let's Encrypt cannot issue a certificate until it resolves to this server."
-  here="$(local_ipv4)"
+  here="$(local_ipv4 || true)"
   match=0
   for ip in $resolved; do
     printf '%s\n' "$here" | grep -qxF "$ip" && match=1
