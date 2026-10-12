@@ -5,13 +5,16 @@ description = "Webcam eye-tracking backend: API and processing worker"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "alembic>=1.20.0",
+    "fastapi>=0.143.0",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "sqlalchemy>=2.1.4",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13.1",
     "mypy>=1.10",
     "pytest>=8.0",
     "ruff>=0.5",
