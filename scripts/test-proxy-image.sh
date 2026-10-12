@@ -115,6 +115,7 @@ for h in "strict-transport-security: max-age=" "permissions-policy: camera=(self
   echo "$headers" | grep -qi "$h" || fail "missing header: $h"
 done
 echo "$headers" | grep -qi '^server:' && fail "Server header not removed"
+echo "$headers" | grep -qi '^alt-svc:' && fail "HTTP/3 is advertised but UDP 443 is not published"
 echo "ok  headers"
 
 echo "== HTTP redirects to HTTPS"

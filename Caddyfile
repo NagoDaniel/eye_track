@@ -3,6 +3,10 @@
 {
 	# Plain HTTP on :80 is redirected to HTTPS by Caddy's automatic redirect.
 	admin off
+	# HTTP/3 needs UDP 443, which is not published (PLAN §11.4: only 80 and 443/tcp).
+	servers {
+		protocols h1 h2
+	}
 }
 
 {$DOMAIN} {
