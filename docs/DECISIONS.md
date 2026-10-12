@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-12 — Backend image: MediaPipe model pin and extra system libraries (T7)
+- Plan section: §11.1
+- Decision: `face_landmarker.task` pinned to https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task, 3,758,596 bytes, sha256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` (downloaded 2026-10-12). Verified at build with `ADD --checksum`; stored at `/opt/mediapipe/face_landmarker.task` (not under `/models`, which is a bind mount). Extra apt packages beyond the plan's `libgl1`/`libglib2.0-0`: `libegl1` and `libgles2`, because mediapipe 1.1.0's `libmediapipe.so` fails to load without `libEGL.so.1` / `libGLESv2.so.2` (found by loading the real FaceLandmarker in the image). Python deps added now: `mediapipe` 1.1.0, `opencv-python-headless`, `av`; the rest of §3's list is added when first used. Container user has a real home dir (matplotlib/fontconfig caches). uvicorn runs with `uvicorn_logging.json` (JSON lines, own access log disabled in favour of the app's).
+- Reason: plan leaves the model URL/hash open; the extra libraries are needed for MediaPipe to work.
+- Approved by: plan leaves open (library additions are additive; flag if you object)
+
 ## 2026-10-12 — Admin session and password details (T6)
 - Plan section: §6, §10
 - Decision: admin session is a stateless signed cookie (itsdangerous, `SECRET_KEY`, 12 h `ADMIN_SESSION_MAX_AGE_S`), HttpOnly, SameSite=Strict, Secure unless `ADMIN_COOKIE_SECURE=false` (plain-http local dev only). It holds the admin id and a CSRF token; logout clears the cookie but cannot revoke a copied one before it expires. CSRF: hidden `csrf_token` in forms (incl. login, via an anonymous session), `X-CSRF-Token` header on JSON routes (`csrf_protected` dependency); token rotates on login. Minimum password length 12 (`ADMIN_MIN_PASSWORD_LENGTH`). `create-admin` reads the password via hidden prompt or `--password-stdin` (for `setup.sh`). Unknown usernames are hashed against a dummy to avoid a timing side channel. No lockout or rate limit in 1a.
