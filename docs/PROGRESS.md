@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**1a — Infrastructure** (PLAN §14), branch `m1a-infrastructure`. Next: T5.
+**1a — Infrastructure** (PLAN §14), branch `m1a-infrastructure`. Next: T6.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -23,7 +23,7 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 - [x] **T2. Settings + structured JSON logging** (§12.3). `settings.py` (all `.env.example` keys, fail loudly on missing), JSON logger with `session_id`/`job_id`/`stage`, `LOG_LEVEL`. Tests: log line is valid JSON with context fields; settings reject missing vars.
 - [x] **T3. DB models + Alembic migration** (§4, §6). All §4 entities + `AdminUser` + worker heartbeat table. Tests on real Postgres 16: upgrade head / downgrade base, Chunk PK, status enums.
 - [x] **T4. Job queue core** (§4 Job, §11.1). `jobs.py` enqueue/claim (`SKIP LOCKED`), `worker/run.py` loop + 30 s heartbeat. Tests: concurrent claimers never share a job (real Postgres); heartbeat updates.
-- [ ] **T5. FastAPI app + `/api/health`** (§11.1). DB-checking health (503 when DB down), request logging. Tests: 200 / 503.
+- [x] **T5. FastAPI app + `/api/health`** (§11.1). DB-checking health (503 when DB down), request logging. Tests: 200 / 503.
 - [ ] **T6. Admin auth + `create-admin` CLI** (§6, §10). argon2, cookie login/logout (12 h, HttpOnly/Secure/SameSite), CSRF, Jinja login + landing page, admin JSON under `/admin/api/*`, Typer `cli.py create-admin`. Tests: bad/good password, protected route, CSRF 403, CLI creates argon2 hash, duplicate fails.
 - [ ] **T7. Backend Dockerfile** (§11.1). Multi-stage, python:3.11-slim + ffmpeg + libgl1/libglib2.0-0, uv from lock, non-root, `face_landmarker.task` downloaded at build + sha256-verified. Tests: image builds; `import mediapipe, cv2, av` and `ffmpeg -version` in image; wrong sha256 fails build.
 - [ ] **T8. Proxy image + Caddyfile** (§11.1, §11.2, §10). Node 20 builds placeholder Vite page **with MediaPipe WASM + `face_landmarker.task` bundled into `dist/`** (see DECISIONS); caddy:2; `/api` `/admin` proxied, `/media/videos` range support, other paths → static SPA fallback, TLS modes acme/internal/files, HSTS, `Permissions-Policy`, CSP allowing WASM, body limit. Tests: `caddy validate` all 3 modes; curl checks headers, 206 on fixture MP4, oversized body rejected, bundled WASM/model served.
@@ -42,6 +42,7 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 - T2 settings + JSON logging. 13 new pytest tests pass (`make lint`, `make test` green). `Settings` rejects missing/`change-me` `SECRET_KEY` and `POSTGRES_PASSWORD` always, so dev needs a real `.env` too (T10). Backend settings read `DATA_ROOT`/`MODELS_ROOT` (container paths `/data`, `/models`); host-side `DATA_DIR`/`MODELS_DIR`, TLS and DOMAIN keys are compose/Caddy only.
 - T3 DB models + migration `0001`. 10 new tests on real Postgres 16 (upgrade/downgrade, models match migration via `compare_metadata`, Chunk PK, CHECK, FK, unique). 23 pytest total, `make lint`/`make test` green. DB tests start a throwaway `postgres:16` container via `docker` (or use `TEST_DATABASE_URL`); Docker Desktop must be running. Schema choices in DECISIONS. Autogenerate quirk (see Open problems): remove generated `sa.CheckConstraint` lines from future migrations by hand.
 - T4 job queue + worker. `app/jobs.py` (enqueue, claim with `SKIP LOCKED`, done/failed), `worker/run.py` (`process_one`, heartbeat thread every 30 s, SIGTERM-aware loop), `worker/healthcheck.py` (exit 0 if latest heartbeat <= 90 s old; wire into compose in T9 as `python -m worker.healthcheck`). 15 new tests on real Postgres, incl. 6 threads claiming 40 jobs with no duplicates; 38 pytest total, lint/test green. Failed jobs stay failed (no retry policy in plan; re-run = new job). Timings are settings (`WORKER_HEARTBEAT_INTERVAL_S`, `_MAX_AGE_S`, `WORKER_POLL_INTERVAL_S`). `WORKER_CONCURRENCY` > 1 exits with an error for now (not implemented; do it in M3 with real jobs).
+- T5 FastAPI app (`app/main.py`, `create_app(settings, engine)` + module-level `app` for `uvicorn app.main:app`; settings/engine created at startup). `GET /api/health` runs `SELECT 1`: 200 `{"status":"ok"}` or 503 `{"status":"unavailable","error":"database"}`. JSON access log per request (health at DEBUG only). 5 new tests; 43 pytest total, lint/test green. Manual smoke with real uvicorn: 200, then 503 after stopping Postgres. Dev dep `httpx2` (Starlette TestClient asked for it; `httpx` removed). OpenAPI/docs endpoints disabled. Known gap: uvicorn's own startup/error lines are still plain text; fix with a uvicorn log config in T7/T9 so every container log line is JSON.
 
 ## Open problems / questions for the human
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
@@ -50,4 +51,4 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 - T13: start Hetzner VPS, point a DNS A record (e.g. `eyetrack.nagodaniel.com`) at it, run README steps + `scripts/setup.sh`. Exact checklist to be written at T13.
 
 ## Next step
-T5: FastAPI app + `/api/health`.
+T6: admin auth + `create-admin` CLI.
