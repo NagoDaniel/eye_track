@@ -66,7 +66,7 @@ with make_engine(Settings().database_url).connect() as conn:
             print(table, json.dumps([str(v) for v in row]))
 PY
 }
-mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }  # GNU first: on Linux `stat -f` succeeds with other output
 latest_backup() { find "$work/backups" -maxdepth 1 -name 'eyetrack-backup-*' ! -name '*.partial' | LC_ALL=C sort | tail -1; }
 
 echo "== shellcheck"

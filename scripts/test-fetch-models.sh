@@ -5,6 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
+sha256() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }  # GNU first, macOS fallback
 work=$(mktemp -d /tmp/eyetrack-test.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not
 trap 'rm -rf "$work"' EXIT
 envf="$work/env"
@@ -19,8 +20,8 @@ docker run --rm -v "$PWD:/mnt" koalaman/shellcheck:stable scripts/fetch_models.s
 
 echo "== real download from GitHub is verified"
 fetch l2cs_mobileone_s0 >/dev/null 2>"$work/err1" || { cat "$work/err1" >&2; fail "download failed"; }
-[ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$want" ] || fail "downloaded file has the wrong sha256"
-[ "$(stat -f %u "$file" 2>/dev/null || stat -c %u "$file")" = "$(id -u)" ] || fail "file not owned by the calling user"
+[ "$(sha256 "$file" | cut -d' ' -f1)" = "$want" ] || fail "downloaded file has the wrong sha256"
+[ "$(stat -c %u "$file" 2>/dev/null || stat -f %u "$file")" = "$(id -u)" ] || fail "file not owned by the calling user"
 [ -z "$(find "$work/models" -name '*.tmp')" ] || fail "temporary file left behind"
 
 echo "== second run keeps the file; a corrupted file is replaced"
@@ -29,7 +30,7 @@ echo "$out" | grep -q "already present" || fail "did not report the file as pres
 head -c 1000 "$file" > "$work/trunc" && cp "$work/trunc" "$file"
 out=$(fetch l2cs_mobileone_s0 2>&1) || fail "repair run failed"
 echo "$out" | grep -q "downloaded" || fail "corrupted file was not replaced: $out"
-[ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$want" ] || fail "repaired file has the wrong sha256"
+[ "$(sha256 "$file" | cut -d' ' -f1)" = "$want" ] || fail "repaired file has the wrong sha256"
 
 echo "== unknown names and unknown options fail loudly"
 out=$(fetch nope 2>&1) && fail "unknown model accepted"

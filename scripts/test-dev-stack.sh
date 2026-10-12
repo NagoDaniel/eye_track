@@ -16,6 +16,8 @@ base="http://localhost:$port"
 rand() { python3 -c "import secrets; print(secrets.token_urlsafe(24))"; }
 
 mkdir -p "$work/models"
+node -e 'process.exit(typeof WebSocket === "function" ? 0 : 1)' \
+  || fail "the HMR check needs Node 22 or newer on the host (global WebSocket); found $(node --version 2>&1)"
 cat > "$envf" <<ENV
 DOMAIN=localhost
 TLS_MODE=internal

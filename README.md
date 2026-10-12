@@ -156,7 +156,7 @@ Slower suites that build and start real containers (they use temporary directori
 |---|---|
 | `make test-images` | backend and proxy images: non-root, real MediaPipe loads the pinned model, proxy routes, headers, limits |
 | `make test-stack` | the production stack with `TLS_MODE=internal`: healthchecks, ports, admin login over HTTPS |
-| `make test-dev` | the development stack: hot reload for api and frontend |
+| `make test-dev` | the development stack: hot reload for api and frontend (needs Node 22+ on the host for the HMR websocket check) |
 | `make test-setup` | `scripts/setup.sh`: prompts, secrets, DNS check, idempotent re-run |
 | `make test-backup` | backup, destroy everything, restore, compare every row and file |
 | `make test-fetch-models` | verified model download |

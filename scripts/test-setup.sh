@@ -63,7 +63,7 @@ for key in POSTGRES_PASSWORD SECRET_KEY; do
   [ "$v" != "change-me" ] && [ "${#v}" -ge 32 ] || fail "$key not generated: '$v'"
 done
 [ "$(get POSTGRES_PASSWORD)" != "$(get SECRET_KEY)" ] || fail "secrets are identical"
-mode=$(stat -f '%Lp' "$envf" 2>/dev/null || stat -c '%a' "$envf")
+mode=$(stat -c '%a' "$envf" 2>/dev/null || stat -f '%Lp' "$envf")  # GNU first: on Linux `stat -f` succeeds with other output
 [ "$mode" = "600" ] || fail ".env permissions are $mode, expected 600"
 echo "ok"
 

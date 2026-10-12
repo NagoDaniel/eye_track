@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 IMAGE="eyetrack-proxy:test"
 API_IMAGE="eyetrack-backend:test"
 fail() { echo "FAIL: $*" >&2; exit 1; }
+sha256() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }  # GNU first, macOS fallback
 
 work=$(mktemp -d /tmp/eyetrack-test.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not
 net="eyetrack-proxytest-$$"
@@ -101,7 +102,7 @@ curl -skI -r 0-99 "$base/media/videos/1.mp4" | grep -qi '^content-range: bytes 0
 
 echo "== video is a real MP4 and /data/videos is read-only"
 curl -sk "$base/media/videos/1.mp4" -o "$work/dl.mp4"
-docker run --rm -v "$work:/w:ro" --entrypoint ffprobe "$API_IMAGE" -v error \
+docker run --rm -u "$(id -u):$(id -g)" -v "$work:/w:ro" --entrypoint ffprobe "$API_IMAGE" -v error \
   -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 /w/dl.mp4 \
   | grep -q "h264,320,240" || fail "served file is not the expected MP4"
 if docker exec "${net}-proxy" sh -c 'touch /data/videos/x' 2>/dev/null; then
@@ -200,7 +201,7 @@ expect "wasm no-simd runtime" 200 "$base/mediapipe/wasm/vision_wasm_nosimd_inter
 curl -skI "$base/mediapipe/wasm/vision_wasm_internal.wasm" | grep -qi '^content-type: application/wasm' \
   || fail "wasm content-type is not application/wasm"
 want=$(python3 -c "import json; print(json.load(open('shared/models.json'))['face_landmarker']['sha256'])")
-got=$(curl -sk "$base/mediapipe/face_landmarker.task" | shasum -a 256 | cut -d' ' -f1)
+got=$(curl -sk "$base/mediapipe/face_landmarker.task" | sha256 - | cut -d' ' -f1)
 [ "$want" = "$got" ] || fail "served face_landmarker.task hash $got != $want"
 echo "ok  face_landmarker.task sha256 matches shared/models.json"
 
