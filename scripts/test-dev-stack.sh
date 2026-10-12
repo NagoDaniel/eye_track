@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-work=$(mktemp -d)
+work=$(mktemp -d /tmp/eyetrack-test.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not
 project="eyetrack-dev-test-$$"
 envf="$work/env"
 port=18081

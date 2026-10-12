@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-work=$(mktemp -d)
+work=$(mktemp -d /tmp/eyetrack-test.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not
 project="eyetrack-test-$$"
 envf="$work/env"
 https_port=18443
@@ -85,6 +85,7 @@ done
 echo "ok"
 
 echo "== data directories are writable by the app user; models dir is empty and mounted read-only"
+# shellcheck disable=SC2016  # $d must expand inside the container, not here
 compose exec -T api sh -c 'for d in videos studies analysis; do touch /data/$d/.w && rm /data/$d/.w || exit 1; done' \
   || fail "app user cannot write to /data"
 [ -z "$(ls -A "$work/models")" ] || fail "models dir not empty"

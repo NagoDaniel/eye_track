@@ -8,7 +8,7 @@ IMAGE="eyetrack-proxy:test"
 API_IMAGE="eyetrack-backend:test"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-work=$(mktemp -d)
+work=$(mktemp -d /tmp/eyetrack-test.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not
 net="eyetrack-proxytest-$$"
 cleanup() {
   docker rm -f "${net}-api" "${net}-proxy" "${net}-stub" "${net}-proxy2" >/dev/null 2>&1 || true

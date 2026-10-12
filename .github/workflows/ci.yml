@@ -1,0 +1,69 @@
+
+# CI (PLAN §11.5). Every job runs the same `make` targets a developer runs locally.
+# The Playwright end-to-end test joins the `stack` job in Milestone 2 (needs the fake-camera fixtures).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: lint, type check, unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd backend && uv sync --frozen
+      - run: cd frontend && npm ci
+      # ruff, mypy --strict, eslint, tsc --strict
+      - run: make lint
+      # pytest (database tests start a real postgres:16 container) and vitest
+      - run: make test
+
+  images:
+    name: build and check the backend and proxy images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-images
+
+  stack:
+    name: production stack, setup script, backup and restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # compose stack with TLS_MODE=internal: healthchecks, ports, admin login over HTTPS
+      - run: make test-stack
+      # scripts/setup.sh: prompts, secrets, DNS check, full run, idempotent re-run
+      - run: make test-setup
+      # backup, destroy everything, restore, compare every row and file
+      - run: make test-backup
+
+  dev-stack:
+    name: development stack and model download
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: make test-dev
+      - run: make test-fetch-models
