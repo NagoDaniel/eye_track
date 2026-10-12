@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**1a — Infrastructure** (PLAN §14), branch `m1a-infrastructure`. Next: T2.
+**1a — Infrastructure** (PLAN §14), branch `m1a-infrastructure`. Next: T3.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -20,7 +20,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 Approved 2026-10-12. Each task ends with tests passing + output shown, then a commit `M1a: <what> (PLAN §x.y)`.
 
 - [x] **T1. Repo skeleton + tooling** (§3, §11.5, §13). Backend `pyproject.toml` (uv + lock, ruff, mypy --strict, pytest), frontend `package.json`/strict `tsconfig`/eslint/vitest, `shared/`, `.gitignore` (data/, .env, models weights), `Makefile` (`dev test lint e2e`; `e2e` fails loudly "not implemented until M2"). Test: `make lint`, `make test` green on one smoke test each side.
-- [ ] **T2. Settings + structured JSON logging** (§12.3). `settings.py` (all `.env.example` keys, fail loudly on missing), JSON logger with `session_id`/`job_id`/`stage`, `LOG_LEVEL`. Tests: log line is valid JSON with context fields; settings reject missing vars.
+- [x] **T2. Settings + structured JSON logging** (§12.3). `settings.py` (all `.env.example` keys, fail loudly on missing), JSON logger with `session_id`/`job_id`/`stage`, `LOG_LEVEL`. Tests: log line is valid JSON with context fields; settings reject missing vars.
 - [ ] **T3. DB models + Alembic migration** (§4, §6). All §4 entities + `AdminUser` + worker heartbeat table. Tests on real Postgres 16: upgrade head / downgrade base, Chunk PK, status enums.
 - [ ] **T4. Job queue core** (§4 Job, §11.1). `jobs.py` enqueue/claim (`SKIP LOCKED`), `worker/run.py` loop + 30 s heartbeat. Tests: concurrent claimers never share a job (real Postgres); heartbeat updates.
 - [ ] **T5. FastAPI app + `/api/health`** (§11.1). DB-checking health (503 when DB down), request logging. Tests: 200 / 503.
@@ -39,6 +39,8 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 ## Done (current milestone)
 - T1 repo skeleton + tooling. `make lint` and `make test` green (1 pytest, 1 vitest); `make e2e` fails loudly until M2. Note: `make test`/`lint` run on the host via uv/npm for now (PLAN §11.5 says they wrap compose); switch to compose once images exist (T7+). Python pinned 3.11 (`.python-version`; mediapipe has no 3.14 wheels).
 
+- T2 settings + JSON logging. 13 new pytest tests pass (`make lint`, `make test` green). `Settings` rejects missing/`change-me` `SECRET_KEY` and `POSTGRES_PASSWORD` always, so dev needs a real `.env` too (T10). Backend settings read `DATA_ROOT`/`MODELS_ROOT` (container paths `/data`, `/models`); host-side `DATA_DIR`/`MODELS_DIR`, TLS and DOMAIN keys are compose/Caddy only.
+
 ## Open problems / questions for the human
 _None._
 
@@ -46,4 +48,4 @@ _None._
 - T13: start Hetzner VPS, point a DNS A record (e.g. `eyetrack.nagodaniel.com`) at it, run README steps + `scripts/setup.sh`. Exact checklist to be written at T13.
 
 ## Next step
-T2: settings + structured JSON logging.
+T3: DB models + Alembic migration (needs real Postgres 16; Docker available locally).
