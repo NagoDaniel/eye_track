@@ -57,11 +57,10 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
 
 ## Needs human testing
-- Create your own admin on the VPS and log in with a browser (checks the certificate in a real browser, with a password only you know):
-  `ssh root@2.28.31.125`, then `cd /opt/eyetrack && docker compose exec api python cli.py create-admin --username <you>`, then open https://eyetrack.nagodaniel.com/admin/login and report: certificate shown as valid, login works, landing page shows your name, logout works.
+- ~~Create your own admin on the VPS and log in with a browser.~~ **Done 2026-10-12:** Nágó Dániel created an admin and confirmed the admin page works in a browser.
 - Optional: reboot the VPS (`reboot`) and confirm https://eyetrack.nagodaniel.com/api/health returns `{"status":"ok"}` again within a few minutes.
 - Decide what to do with the VPS: it is running the stack and costs money. Stop it with `cd /opt/eyetrack && docker compose down` (data kept) or delete it in the Hetzner console.
-- Push the repository to a remote (GitHub) so CI can run; then check that the four workflow jobs pass. Report any failure with the log.
+- Repository is public at https://github.com/NagoDaniel/eye_track; the draft PR `m1a-infrastructure` -> `main` runs CI. Check that the four workflow jobs pass; report any failure with the log.
 
 ## Next step
 Human checks above, then `/milestone-review 1a` (plan-reviewer), then merge `m1a-infrastructure` and start `/milestone-start 1b`.
