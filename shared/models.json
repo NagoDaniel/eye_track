@@ -2,16 +2,19 @@
   "face_landmarker": {
     "url": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
     "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
-    "bytes": 3758596
+    "bytes": 3758596,
+    "file": "face_landmarker.task"
   },
   "l2cs_resnet50": {
     "url": "https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet50_gaze.onnx",
     "sha256": "bb28d421565adc4dfb665742f8fc80bdef36dd8caa0c87e040e0937f9fdca9a6",
-    "bytes": 95425874
+    "bytes": 95425874,
+    "file": "resnet50_gaze.onnx"
   },
   "l2cs_mobileone_s0": {
     "url": "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx",
     "sha256": "8b4fdc4e3da44733c9a82e7776b411e4a39f94e8e285aee0fc85a548a55f7d9f",
-    "bytes": 4974521
+    "bytes": 4974521,
+    "file": "mobileone_s0_gaze.onnx"
   }
 }
