@@ -6,7 +6,7 @@ Never pass media or landmark arrays to a logger.
 import json
 import logging
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -36,7 +36,7 @@ class JsonFormatter(logging.Formatter):
 
 
 @contextmanager
-def bind_context(**fields: str) -> Iterator[None]:
+def bind_context(**fields: str) -> Generator[None]:
     """Add `session_id`, `job_id`, `stage`, ... to every log line inside the block."""
     token = _context.set({**(_context.get() or {}), **fields})
     try:
