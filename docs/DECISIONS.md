@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-12 — DB schema choices left open by §4
+- Plan section: §4
+- Decision: enums stored as VARCHAR(32) + named CHECK constraint (not native PG enums) so migrations stay simple. Job status values: `queued`, `running`, `done`, `failed` (plan lists none). Job gets `created_at`/`started_at`/`finished_at`. Session has no unique (study_id, participant_code): withdrawal deletes "all data for that participant code", implying several sessions per code (e.g. a redo). Session token expiry (24 h) is derived from `created_at`, no extra column. Config/aois/client_info/quality/flags are JSONB. Primary keys: ints for Study/Video/Station/Job/AdminUser, UUID for Session.
+- Reason: plan leaves these open.
+- Approved by: plan leaves open
+
 ## 2026-10-12 — Pipeline B model weights (yakhyo/gaze-estimation ONNX)
 - Plan section: §8.5, §11.2
 - Decision: use yakhyo/gaze-estimation ONNX weights (L2CS-style, Gaze360-trained), release `weights`, ONNX opset 20, exported from PyTorch 2.8.0.
