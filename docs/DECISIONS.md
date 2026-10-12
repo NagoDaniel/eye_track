@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-12 — Admin session and password details (T6)
+- Plan section: §6, §10
+- Decision: admin session is a stateless signed cookie (itsdangerous, `SECRET_KEY`, 12 h `ADMIN_SESSION_MAX_AGE_S`), HttpOnly, SameSite=Strict, Secure unless `ADMIN_COOKIE_SECURE=false` (plain-http local dev only). It holds the admin id and a CSRF token; logout clears the cookie but cannot revoke a copied one before it expires. CSRF: hidden `csrf_token` in forms (incl. login, via an anonymous session), `X-CSRF-Token` header on JSON routes (`csrf_protected` dependency); token rotates on login. Minimum password length 12 (`ADMIN_MIN_PASSWORD_LENGTH`). `create-admin` reads the password via hidden prompt or `--password-stdin` (for `setup.sh`). Unknown usernames are hashed against a dummy to avoid a timing side channel. No lockout or rate limit in 1a.
+- Reason: plan specifies cookie login, argon2 and CSRF but not lifetime, storage, length or CLI input.
+- Approved by: lifetime/lockout/role approved 2026-10-12 (Nágó Dániel); stateless cookie and min length plan leaves open
+
 ## 2026-10-12 — DB schema choices left open by §4
 - Plan section: §4
 - Decision: enums stored as VARCHAR(32) + named CHECK constraint (not native PG enums) so migrations stay simple. Job status values: `queued`, `running`, `done`, `failed` (plan lists none). Job gets `created_at`/`started_at`/`finished_at`. Session has no unique (study_id, participant_code): withdrawal deletes "all data for that participant code", implying several sessions per code (e.g. a redo). Session token expiry (24 h) is derived from `created_at`, no extra column. Config/aois/client_info/quality/flags are JSONB. Primary keys: ints for Study/Video/Station/Job/AdminUser, UUID for Session.
