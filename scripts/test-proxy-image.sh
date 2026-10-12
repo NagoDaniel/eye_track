@@ -191,9 +191,20 @@ r=$(code -X POST --data-binary @"$work/v2over.bin" "$base2/admin/api/videos")
 [ "$r" = "413" ] || fail "video upload of 2 MiB + 1: expected 413, got $r"
 r=$(code -X POST --data-binary @"$work/v2over.bin" "$base2/admin/api/videos/7")
 [ "$r" = "413" ] || fail "video sub-path upload over cap: expected 413, got $r"
-r=$(code -X POST --data-binary @"$work/over.bin" "$base2/admin/api/other")
-[ "$r" = "200" ] || fail "other admin routes must not be capped here: got $r"
-echo "ok  videos capped at 2 MiB, other admin routes unlimited at the proxy"
+echo "ok  videos capped at 2 MiB"
+
+echo "== other admin requests, including the login form, are capped (MAX_ADMIN_REQUEST_MB default 1)"
+head -c 1048576 /dev/zero > "$work/a1.bin"
+head -c 1048577 /dev/zero > "$work/a1over.bin"
+for path in /admin/login /admin/logout /admin/api/other; do
+  r=$(code -X POST --data-binary @"$work/a1.bin" "$base2$path")
+  [ "$r" = "200" ] || fail "$path with exactly 1 MiB: expected 200, got $r"
+  r=$(code -X POST --data-binary @"$work/a1over.bin" "$base2$path")
+  [ "$r" = "413" ] || fail "$path with 1 MiB + 1 byte: expected 413, got $r"
+done
+r=$(code -X POST --data-binary @"$work/a1over.bin" "$base2/admin/api/videos")
+[ "$r" = "200" ] || fail "the small admin cap must not apply to video uploads: got $r"
+echo "ok  exactly 1 MiB accepted, 1 MiB + 1 byte rejected with 413; video path keeps its own cap"
 
 echo "== bundled MediaPipe files are self-hosted and intact"
 expect "wasm runtime" 200 "$base/mediapipe/wasm/vision_wasm_internal.wasm"

@@ -116,6 +116,7 @@ services:
       TLS_KEY_FILE: /run/tls/key.pem
       MAX_UPLOAD_CHUNK_MB: ${MAX_UPLOAD_CHUNK_MB:-10}
       MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
+      MAX_ADMIN_REQUEST_MB: ${MAX_ADMIN_REQUEST_MB:-1}
       # Keep Caddy's state out of /data, where the videos are mounted.
       XDG_DATA_HOME: /caddy/data
       XDG_CONFIG_HOME: /caddy/config

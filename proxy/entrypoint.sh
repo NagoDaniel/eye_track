@@ -7,7 +7,8 @@ fail() { echo "error: $*" >&2; exit 1; }
 : "${DOMAIN:?DOMAIN must be set}"
 : "${MAX_UPLOAD_CHUNK_MB:=10}"
 : "${MAX_VIDEO_UPLOAD_MB:=2048}"
-export MAX_UPLOAD_CHUNK_MB MAX_VIDEO_UPLOAD_MB
+: "${MAX_ADMIN_REQUEST_MB:=1}"
+export MAX_UPLOAD_CHUNK_MB MAX_VIDEO_UPLOAD_MB MAX_ADMIN_REQUEST_MB
 
 case "${TLS_MODE:-}" in
   acme)
