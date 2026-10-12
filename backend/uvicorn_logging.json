@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {"json": {"()": "app.logging.JsonFormatter"}},
+  "handlers": {
+    "stderr": {"class": "logging.StreamHandler", "formatter": "json", "stream": "ext://sys.stderr"}
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["stderr"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"level": "INFO"},
+    "uvicorn.access": {"handlers": [], "level": "WARNING", "propagate": false}
+  },
+  "root": {"handlers": ["stderr"], "level": "INFO"}
+}

@@ -1,4 +1,4 @@
-.PHONY: dev test lint e2e
+.PHONY: dev test test-images lint e2e
 
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
@@ -8,6 +8,9 @@ dev:
 test:
 	cd backend && uv run pytest
 	cd frontend && npm test
+
+test-images:
+	./scripts/test-backend-image.sh
 
 lint:
 	cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy
