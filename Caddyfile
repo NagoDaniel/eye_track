@@ -1,0 +1,53 @@
+# Caddy configuration (PLAN §11.1, §11.2). TLS directive comes from proxy/entrypoint.sh,
+# which writes /etc/caddy/tls.caddy for TLS_MODE=acme|internal|files.
+{
+	# Plain HTTP on :80 is redirected to HTTPS by Caddy's automatic redirect.
+	admin off
+}
+
+{$DOMAIN} {
+	import /etc/caddy/tls.caddy
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(self)"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		# 'wasm-unsafe-eval' lets MediaPipe compile WASM; inline styles are used by admin pages.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# Participant API: chunk size limit. (Admin uploads are limited by the app, not here.)
+	handle /api/* {
+		request_body {
+			max_size {$MAX_UPLOAD_CHUNK_MB}MiB
+		}
+		reverse_proxy api:8000
+	}
+
+	handle /admin/* {
+		reverse_proxy api:8000
+	}
+
+	# /media/videos/{id}.mp4 -> /data/videos/{id}/video.mp4 (range requests handled by file_server)
+	@video path_regexp video ^/media/videos/([0-9]+)\.mp4$
+	handle @video {
+		rewrite * /{re.video.1}/video.mp4
+		root * /data/videos
+		file_server
+	}
+
+	handle /media/* {
+		respond "Not found" 404
+	}
+
+	# Built frontend, with SPA fallback.
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}

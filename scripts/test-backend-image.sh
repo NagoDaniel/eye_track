@@ -8,7 +8,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 run() { docker run --rm --entrypoint "" "$IMAGE" "$@"; }
 
 echo "== build"
-docker build -t "$IMAGE" backend >/dev/null
+docker build -f backend/Dockerfile -t "$IMAGE" . >/dev/null
 
 echo "== runs as non-root"
 uid=$(run id -u)
@@ -21,7 +21,7 @@ echo "== python deps import (real mediapipe, opencv, av)"
 run python -c "import mediapipe, cv2, av; print('mediapipe', mediapipe.__version__, 'cv2', cv2.__version__, 'av', av.__version__)"
 
 echo "== face_landmarker.task present, hash matches, and loads in real MediaPipe"
-expected=$(grep -oE 'FACE_LANDMARKER_SHA256=[0-9a-f]{64}' backend/Dockerfile | cut -d= -f2)
+expected=$(python3 -c "import json; print(json.load(open('shared/models.json'))['face_landmarker']['sha256'])")
 actual=$(run sha256sum /opt/mediapipe/face_landmarker.task | cut -d' ' -f1)
 [ "$expected" = "$actual" ] || fail "model hash mismatch: $actual"
 run python -c "
@@ -36,19 +36,29 @@ echo "== CLI and alembic available"
 run python cli.py --help >/dev/null
 run alembic --help >/dev/null
 
-echo "== wrong sha256 fails the build"
-bad_hash=$(printf '0%.0s' {1..64})
-if out=$(docker build --progress=plain --build-arg FACE_LANDMARKER_SHA256="$bad_hash" \
-  -t eyetrack-backend:badhash backend 2>&1); then
+echo "== wrong sha256 in the manifest fails the build"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/shared"
+cp -R backend "$tmp/backend"
+cp shared/download_model.py "$tmp/shared/"
+python3 -c "
+import json
+m = json.load(open('shared/models.json'))
+m['face_landmarker']['sha256'] = '0' * 64
+json.dump(m, open('$tmp/shared/models.json', 'w'))
+"
+cp backend/Dockerfile.dockerignore "$tmp/backend/Dockerfile.dockerignore"
+if out=$(docker build --progress=plain -f "$tmp/backend/Dockerfile" -t eyetrack-backend:badhash "$tmp" 2>&1); then
   fail "build succeeded with a wrong model sha256"
 fi
-echo "$out" | grep -qi "checksum" || fail "build failed, but not because of the checksum"
+echo "$out" | grep -q "sha256 mismatch" || fail "build failed, but not because of the sha256 check"
 echo "build rejected a wrong hash (expected)"
 
 echo "== api boots and logs JSON (no database: health must be 503)"
 cid=$(docker run -d --rm -e SECRET_KEY=image-test-secret -e POSTGRES_PASSWORD=x \
   -e POSTGRES_HOST=127.0.0.1 -e API_WORKERS=1 "$IMAGE")
-trap 'docker stop "$cid" >/dev/null 2>&1 || true' EXIT
+trap 'docker stop "$cid" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
 for _ in $(seq 1 30); do
   docker logs "$cid" 2>&1 | grep -q "Application startup complete" && break
   sleep 1

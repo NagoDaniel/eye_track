@@ -43,8 +43,8 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Form"]
 
 [tool.mypy]
 strict = true
-files = ["app", "worker", "tests", "alembic", "cli.py"]
+files = ["app", "worker", "tests", "alembic", "cli.py", "../shared"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "../shared/tests"]
 pythonpath = ["."]

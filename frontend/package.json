@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/fetch-mediapipe.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/fetch-mediapipe.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
@@ -17,5 +19,8 @@
     "typescript-eslint": "^8.0.0",
     "vite": "^6.0.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.1.0"
   }
 }

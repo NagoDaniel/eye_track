@@ -11,9 +11,10 @@ test:
 
 test-images:
 	./scripts/test-backend-image.sh
+	./scripts/test-proxy-image.sh
 
 lint:
-	cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy
+	cd backend && uv run ruff check . ../shared && uv run ruff format --check . ../shared && uv run mypy
 	cd frontend && npm run lint && npm run typecheck
 
 e2e:

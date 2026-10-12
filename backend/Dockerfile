@@ -1,24 +1,21 @@
 # syntax=docker/dockerfile:1.7
 # One image for `migrate`, `api` and `worker` (PLAN §11.1).
 
+# Build context is the repository root: `docker build -f backend/Dockerfile .`
 ARG PYTHON_IMAGE=python:3.11-slim
-# Pinned face_landmarker.task (source and hash recorded in docs/DECISIONS.md).
-ARG FACE_LANDMARKER_URL=https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
-ARG FACE_LANDMARKER_SHA256=64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff
 
 # --- dependencies: installed from the lock file only ------------------------
 FROM ${PYTHON_IMAGE} AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# --- model: build fails if the sha256 does not match ------------------------
+# --- model: URL and sha256 come from shared/models.json; build fails on a mismatch ----
 FROM ${PYTHON_IMAGE} AS model
-ARG FACE_LANDMARKER_URL
-ARG FACE_LANDMARKER_SHA256
-ADD --checksum=sha256:${FACE_LANDMARKER_SHA256} ${FACE_LANDMARKER_URL} /face_landmarker.task
+COPY shared/models.json shared/download_model.py /shared/
+RUN python /shared/download_model.py face_landmarker /face_landmarker.task
 
 # --- runtime -----------------------------------------------------------------
 FROM ${PYTHON_IMAGE} AS runtime
@@ -31,10 +28,10 @@ RUN useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin eyetrac
 WORKDIR /app
 COPY --from=deps /app/.venv /app/.venv
 COPY --from=model --chmod=0444 /face_landmarker.task /opt/mediapipe/face_landmarker.task
-COPY alembic.ini cli.py uvicorn_logging.json ./
-COPY alembic ./alembic
-COPY app ./app
-COPY worker ./worker
+COPY backend/alembic.ini backend/cli.py backend/uvicorn_logging.json ./
+COPY backend/alembic ./alembic
+COPY backend/app ./app
+COPY backend/worker ./worker
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

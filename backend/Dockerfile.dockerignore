@@ -1,0 +1,14 @@
+# Build context is the repository root (so `shared/` is reachable).
+**
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/alembic.ini
+!backend/cli.py
+!backend/uvicorn_logging.json
+!backend/alembic/**
+!backend/app/**
+!backend/worker/**
+!shared/models.json
+!shared/download_model.py
+**/__pycache__
+**/*.pyc
