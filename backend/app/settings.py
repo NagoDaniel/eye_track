@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     max_upload_chunk_mb: int = 10
     log_level: str = "INFO"
 
+    # Admin login (PLAN §6, §10). Cookie is HTTPS-only unless disabled for plain-http local dev.
+    admin_cookie_secure: bool = True
+    admin_session_max_age_s: int = 12 * 3600
+    admin_min_password_length: int = 12
+
     # Worker timing (PLAN §11.1: heartbeat every 30 s).
     worker_heartbeat_interval_s: float = 30.0
     worker_heartbeat_max_age_s: float = 90.0

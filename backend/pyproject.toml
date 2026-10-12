@@ -5,10 +5,15 @@ description = "Webcam eye-tracking backend: API and processing worker"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "alembic>=1.20.0",
+    "argon2-cffi>=25.1.0",
     "fastapi>=0.143.0",
+    "itsdangerous>=2.2.0",
+    "jinja2>=3.1.6",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",
     "sqlalchemy>=2.1.4",
+    "typer>=0.27.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -30,9 +35,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Form"]
+
 [tool.mypy]
 strict = true
-files = ["app", "worker", "tests", "alembic"]
+files = ["app", "worker", "tests", "alembic", "cli.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,6 +4,7 @@ from alembic.config import Config
 from sqlalchemy import Engine
 
 from alembic import command
+from app.settings import Settings
 
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -26,3 +27,13 @@ def downgrade(engine: Engine, revision: str = "base") -> None:
     with engine.begin() as conn:
         cfg.attributes["connection"] = conn
         command.downgrade(cfg, revision)
+
+
+def make_settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "secret_key": "s" * 32,
+        "postgres_password": "pw",
+        "admin_cookie_secure": False,
+    }
+    base.update(overrides)
+    return Settings(_env_file=None, **base)  # type: ignore[call-arg, arg-type]

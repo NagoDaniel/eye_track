@@ -7,7 +7,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 
-from app.db import make_engine
+from app.api.admin import router as admin_router
+from app.db import make_engine, make_session_factory
 from app.logging import configure_logging
 from app.settings import Settings
 
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
             configure_logging(cfg.log_level)
         app.state.settings = cfg
         app.state.engine = engine or make_engine(cfg.database_url)
+        app.state.session_factory = make_session_factory(app.state.engine)
         try:
             yield
         finally:
@@ -63,6 +65,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
             return JSONResponse({"status": "unavailable", "error": "database"}, status_code=503)
         return JSONResponse({"status": "ok"})
 
+    app.include_router(admin_router)
     return app
 
 
