@@ -3,20 +3,20 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**1a — Infrastructure** (PLAN §14), branch `m1a-infrastructure`. All 13 tasks done; waiting for the human checks below and `/milestone-review 1a`.
+**1b — Skeleton app** (PLAN §14), not started: no branch, no approved task list yet. Milestone 1a (Infrastructure) was reviewed and **accepted by Nágó Dániel on 2026-10-12**; its branch `m1a-infrastructure` (PR #1) still has to be merged into `main` by the human. The task list and "Done" section below are the 1a record and are replaced when `/milestone-start 1b` is approved.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
 |---|---|---|---|
-| 1a Infrastructure | implemented, awaiting review | m1a-infrastructure | acceptance run passed on Hetzner (see Done) |
-| 1b Skeleton app | not started | | |
+| 1a Infrastructure | done (accepted 2026-10-12) | m1a-infrastructure | acceptance run passed on Hetzner; reviewed, CI green on `09b5a5b`; merge pending |
+| 1b Skeleton app | next, not started | | carries over R5, R6 from the 1a review |
 | 2 Recording and sync data | not started | | |
-| 3 Pipeline A | not started | | |
+| 3 Pipeline A | not started | | carries over R2 (stale `running` jobs) from the 1a review |
 | 4 Analysis | not started | | |
 | 5 Pipeline B and comparison | not started | | |
 | 6 Hardening for pilot | not started | | |
 
-## Approved task list (current milestone)
+## Approved task list (milestone 1a, finished)
 Approved 2026-10-12. Each task ends with tests passing + output shown, then a commit `M1a: <what> (PLAN §x.y)`.
 
 - [x] **T1. Repo skeleton + tooling** (§3, §11.5, §13). Backend `pyproject.toml` (uv + lock, ruff, mypy --strict, pytest), frontend `package.json`/strict `tsconfig`/eslint/vitest, `shared/`, `.gitignore` (data/, .env, models weights), `Makefile` (`dev test lint e2e`; `e2e` fails loudly "not implemented until M2"). Test: `make lint`, `make test` green on one smoke test each side.
@@ -36,7 +36,7 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 ### "Done when" mapping
 `scripts/setup.sh` on fresh VM → healthy HTTPS instance, admin can log in: automated by T9 + T11 (internal TLS); real acme run on fresh Hetzner VM by T13 (human).
 
-## Done (current milestone)
+## Done (milestone 1a)
 - T1 repo skeleton + tooling. `make lint` and `make test` green (1 pytest, 1 vitest); `make e2e` fails loudly until M2. Note: `make test`/`lint` run on the host via uv/npm for now (PLAN §11.5 says they wrap compose); switch to compose once images exist (T7+). Python pinned 3.11 (`.python-version`; mediapipe has no 3.14 wheels).
 
 - T2 settings + JSON logging. 13 new pytest tests pass (`make lint`, `make test` green). `Settings` rejects missing/`change-me` `SECRET_KEY` and `POSTGRES_PASSWORD` always, so dev needs a real `.env` too (T10). Backend settings read `DATA_ROOT`/`MODELS_ROOT` (container paths `/data`, `/models`); host-side `DATA_DIR`/`MODELS_DIR`, TLS and DOMAIN keys are compose/Caddy only.
@@ -58,7 +58,7 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
 
 ## Fix tasks from `/milestone-review 1a` (2026-10-12)
-Reviewer verdict: no blockers, "ready after fixes". R1, R3, R4, R7 approved by Nágó Dániel 2026-10-12 and done; R2, R5, R6 are NOT approved yet.
+Reviewer verdict: no blockers, "ready after fixes". R1, R3, R4, R7 approved by Nágó Dániel 2026-10-12 and done. Carried over at acceptance: R2 to Milestone 3 (see DECISIONS), R5 and R6 into the Milestone 1b task list (propose them in `/milestone-start 1b`).
 
 - [x] **R1. Body cap on unauthenticated admin routes** (§10, §11.2; major). `proxy/routes.caddy` caps only `/admin/api/videos*`; `POST /admin/login` accepts unbounded bodies and each attempt costs one argon2 verification. Add a small named default cap for `/admin/*` outside the video path (new `.env` key), update `test-proxy-image.sh` (which currently asserts "unlimited"), record in DECISIONS when login throttling arrives. Needs human decision: cap value; throttling now or in M6. **Done:** new `MAX_ADMIN_REQUEST_MB` (default 1 MiB) in `proxy/routes.caddy`, entrypoint, compose, `.env.example`; `make test-images` passes (exactly 1 MiB accepted and 1 MiB + 1 byte gives 413 on `/admin/login`, `/admin/logout`, `/admin/api/other`; video path keeps its own cap); `make test-stack` passes (real login through the capped proxy). Login throttling deferred to M6 (DECISIONS).
 - [ ] **R2. Stale `running` jobs** (§4, §11.4, §1 fail loudly; major). A job interrupted by `docker compose up -d --build` stays `running` forever, nothing logged. Needs human decision on semantics (plan is silent): requeue on worker start, or mark `failed` with a clear log line. Then implement + test on real Postgres, add a test for `worker.run.main()` (SIGTERM, concurrency guard). May be deferred to M3 if recorded in DECISIONS.
@@ -74,4 +74,6 @@ Reviewer verdict: no blockers, "ready after fixes". R1, R3, R4, R7 approved by N
 - Decide what to do with the VPS: it is running the stack and costs money. Stop it with `cd /opt/eyetrack && docker compose down` (data kept) or delete it in the Hetzner console.
 
 ## Next step
-Optional human checks above (VPS reboot, VPS decision; `scripts/install-docker.sh` added so a new server is quick to set up, see DECISIONS), then decide on the open review tasks R2, R5, R6 (and "Champ" in DECISIONS), accept the milestone, merge `m1a-infrastructure` and start `/milestone-start 1b`.
+1. Human: merge `m1a-infrastructure` into `main` (PR #1 is still a draft).
+2. `/milestone-start 1b` on a new branch `m1b-skeleton-app` from `main`. Include review tasks R5 and R6 in the proposed task list.
+3. Still open for the human: who "Champ" is on the 1a/1b split entry in DECISIONS; optional VPS reboot check; the VPS still runs the pre-review build (update with `cd /opt/eyetrack && git pull && docker compose up -d --build`, or stop/delete it).

@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-12 — Milestone 1a accepted; stale `running` jobs deferred to Milestone 3
+- Plan section: §4, §11.4, §14
+- Decision: Milestone 1a is accepted. A job whose worker is killed mid-flight (for example by `docker compose up -d --build`) stays in status `running` and is never picked up again; this is not handled in 1a or 1b, because no job handlers exist before Milestone 3. Milestone 3 must decide the semantics (requeue on worker start, or mark `failed` with a clear log line), implement it with a test on real Postgres, and test `worker.run.main()` (SIGTERM, concurrency guard). Review tasks R5 (minor unrecorded deviations) and R6 (test and CI gaps) move into the Milestone 1b task list.
+- Reason: found in the 1a review (R2); no effect until real jobs run.
+- Approved by: Nágó Dániel
+
 ## 2026-10-12 — Milestone 1a review: admin body cap, and deviations re-labelled
 - Plan section: §10, §11, §11.1, §11.2, §11.6
 - Decision: (1) New setting `MAX_ADMIN_REQUEST_MB` (default 1, MiB): the proxy caps the body of every `/admin/*` request except the video upload path (`/admin/api/videos`, which keeps `MAX_VIDEO_UPLOAD_MB`). This covers the unauthenticated `POST /admin/login`. It replaces "other `/admin/*` routes have no proxy cap" in the T9 entry. Login rate limiting / lockout is still not implemented; it is planned for Milestone 6 (hardening), until then each login attempt costs one argon2 verification. (2) Three items that earlier entries marked "plan leaves open" are in fact deviations from plan text and are recorded as such: `migrate` runs as root to create and chown the data directories, then drops to uid 10001 (§11.1: backend image "runs as a non-root user"); `migrate` has `restart: "no"` and no healthcheck (§11.1: "Every service: `restart: unless-stopped`, a healthcheck"); the acceptance run used Ubuntu 26.04 ARM64 with 2 vCPU / 3.7 GB (§11 names Ubuntu 22.04/24.04; CI runs the full `setup.sh` on ubuntu-24.04 with internal TLS).
