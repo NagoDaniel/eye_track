@@ -93,7 +93,8 @@ if compose exec -T worker sh -c 'touch /models/x' 2>/dev/null; then fail "/model
 
 echo "== worker runs without model weights and its heartbeat is fresh"
 compose exec -T worker python -m worker.healthcheck || fail "worker healthcheck failed"
-compose logs worker --no-log-prefix 2>&1 | grep -q '"msg": "worker started"' || fail "worker did not log startup"
+worker_log="$(compose logs worker --no-log-prefix 2>&1)"  # captured: an early-exiting grep would break the pipe
+echo "$worker_log" | grep -q '"msg": "worker started"' || fail "worker did not log startup"
 
 echo "== api logs are JSON"
 compose logs api --no-log-prefix 2>&1 | python3 -c "

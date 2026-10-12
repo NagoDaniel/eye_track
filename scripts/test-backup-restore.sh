@@ -135,8 +135,10 @@ grep -q '^raw_video: included' "$full/MANIFEST.txt" || fail "manifest does not s
 grep -q '^sessions: 2' "$full/MANIFEST.txt" || fail "manifest session count wrong"
 grep -q '^data_files: 12' "$full/MANIFEST.txt" || fail "manifest file count wrong"
 [ -z "$(find "$work/backups" -name '*.partial')" ] || fail "partial directory left behind"
-tar -tzf "$full/data.tar.gz" | grep -q 'raw/webcam.webm' || fail "full backup lacks webcam.webm"
-tar -tzf "$full/data.tar.gz" | grep -q 'raw/chunks/webcam' || fail "full backup lacks webcam chunks"
+# Capture first: `tar | grep -q` under pipefail fails with a broken pipe once grep exits early.
+full_listing="$(tar -tzf "$full/data.tar.gz")"
+echo "$full_listing" | grep -q 'raw/webcam.webm' || fail "full backup lacks webcam.webm"
+echo "$full_listing" | grep -q 'raw/chunks/webcam' || fail "full backup lacks webcam chunks"
 
 echo "== --no-raw-video backup leaves out only the raw webcam files"
 backup --no-raw-video "$work/backups" >/dev/null 2>&1 || fail "--no-raw-video backup failed"
