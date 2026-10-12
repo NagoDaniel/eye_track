@@ -1,4 +1,4 @@
-.PHONY: dev test test-images test-stack test-dev lint e2e
+.PHONY: dev test test-images test-stack test-dev test-setup lint e2e
 
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
@@ -6,8 +6,8 @@ COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 dev:
 	@test -f .env || { \
 	  echo "make dev: no .env found." >&2; \
-	  echo "  cp .env.example .env, then replace both 'change-me' values (POSTGRES_PASSWORD, SECRET_KEY)" >&2; \
-	  echo "  with random strings, e.g. openssl rand -base64 24. DOMAIN and TLS_MODE are not used in dev." >&2; \
+	  echo "  run ./scripts/setup.sh --env-only to create it with random secrets" >&2; \
+	  echo "  (DOMAIN and TLS_MODE are not used in dev)." >&2; \
 	  exit 1; }
 	$(COMPOSE_DEV) up --build
 
@@ -21,6 +21,9 @@ test-images:
 
 test-dev:
 	./scripts/test-dev-stack.sh
+
+test-setup:
+	./scripts/test-setup.sh
 
 test-stack:
 	./scripts/test-compose-stack.sh
