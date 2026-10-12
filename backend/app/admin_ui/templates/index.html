@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block body %}
+<h1>eyetrack admin</h1>
+<p>Logged in as <strong>{{ username }}</strong>.</p>
+<form method="post" action="/admin/logout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Log out</button>
+</form>
+{% endblock %}

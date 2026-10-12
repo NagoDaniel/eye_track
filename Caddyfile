@@ -1,0 +1,35 @@
+# Caddy configuration (PLAN §11.1, §11.2). TLS directive comes from proxy/entrypoint.sh,
+# which writes /etc/caddy/tls.caddy for TLS_MODE=acme|internal|files.
+{
+	# Plain HTTP on :80 is redirected to HTTPS by Caddy's automatic redirect.
+	admin off
+	# HTTP/3 needs UDP 443, which is not published (PLAN §11.4: only 80 and 443/tcp).
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$DOMAIN} {
+	import /etc/caddy/tls.caddy
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(self)"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		# 'wasm-unsafe-eval' lets MediaPipe compile WASM; inline styles are used by admin pages.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	import /etc/caddy/routes.caddy
+
+	# Built frontend, with SPA fallback.
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}

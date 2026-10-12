@@ -1,0 +1,79 @@
+# Development override (PLAN §11.5): docker compose -f docker-compose.yml -f compose.dev.yml up
+# Use `make dev`. Open http://localhost:8080 (override with DEV_HTTP_PORT).
+# Needs a real `.env` (secrets must not be "change-me"); see `make dev` for the message.
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5432}:5432"
+
+  # Vite dev server with hot reload; the frontend source is mounted.
+  web:
+    image: node:20
+    working_dir: /app/frontend
+    # `predev` downloads/verifies the MediaPipe files; it reads ../shared/models.json.
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./shared:/app/shared:ro
+      - web_node_modules:/app/frontend/node_modules
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  api:
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+      - --reload-dir=/app/app
+      - --log-config=uvicorn_logging.json
+      - --no-access-log
+    environment:
+      # Plain-http local development: browsers do not send Secure cookies to http origins
+      # (except on localhost in some browsers), so allow the session cookie over http.
+      ADMIN_COOKIE_SECURE: "false"
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/alembic:/app/alembic:ro
+
+  migrate:
+    volumes:
+      - ./backend/alembic:/app/alembic:ro
+
+  worker:
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/worker:/app/worker:ro
+
+  # Plain Caddy with the dev Caddyfile instead of the production proxy image.
+  proxy:
+    build: !reset null
+    image: caddy:2
+    entrypoint: !reset null
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.dev", "--adapter", "caddyfile"]
+    ports: !override
+      - "127.0.0.1:${DEV_HTTP_PORT:-8080}:80"
+    volumes: !override
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile.dev:ro
+      - ./proxy/routes.caddy:/etc/caddy/routes.caddy:ro
+      - ${DATA_DIR:-./data}/videos:/data/videos:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on: !override
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+volumes:
+  web_node_modules:
