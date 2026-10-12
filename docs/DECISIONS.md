@@ -14,11 +14,23 @@ Format:
 
 ---
 
+## 2026-10-12 — Milestone 1a review: admin body cap, and deviations re-labelled
+- Plan section: §10, §11, §11.1, §11.2, §11.6
+- Decision: (1) New setting `MAX_ADMIN_REQUEST_MB` (default 1, MiB): the proxy caps the body of every `/admin/*` request except the video upload path (`/admin/api/videos`, which keeps `MAX_VIDEO_UPLOAD_MB`). This covers the unauthenticated `POST /admin/login`. It replaces "other `/admin/*` routes have no proxy cap" in the T9 entry. Login rate limiting / lockout is still not implemented; it is planned for Milestone 6 (hardening), until then each login attempt costs one argon2 verification. (2) Three items that earlier entries marked "plan leaves open" are in fact deviations from plan text and are recorded as such: `migrate` runs as root to create and chown the data directories, then drops to uid 10001 (§11.1: backend image "runs as a non-root user"); `migrate` has `restart: "no"` and no healthcheck (§11.1: "Every service: `restart: unless-stopped`, a healthcheck"); the acceptance run used Ubuntu 26.04 ARM64 with 2 vCPU / 3.7 GB (§11 names Ubuntu 22.04/24.04; CI runs the full `setup.sh` on ubuntu-24.04 with internal TLS).
+- Reason: found by the `plan-reviewer` in `/milestone-review 1a`. A one-shot service cannot be `unless-stopped`, and Docker creates bind-mount directories root-owned, so something must chown them.
+- Approved by: Nágó Dániel (2026-10-12, approved review tasks R1 and R3)
+
+## 2026-10-12 — scripts/install-docker.sh (addition after T13)
+- Plan section: §11, §11.3
+- Decision: added `scripts/install-docker.sh` for Ubuntu and Debian: installs Docker Engine, CLI, containerd, buildx and the Compose plugin from `download.docker.com` (key fetched over HTTPS, as in Docker's guide; no extra fingerprint pinning), checks that Docker publishes packages for the release codename, re-runs itself with sudo, is idempotent (does nothing when Docker and Compose are present), and offers `--add-user`. `setup.sh` points to it when Docker is missing. Tested for real in Ubuntu 24.04 and Debian 12 containers (`make test-install-docker`, also a CI job); the same steps ran on the Ubuntu 26.04 ARM acceptance server.
+- Reason: the plan treats Docker as a prerequisite, but a new server (for example after deleting a test VPS) needs it, and doing it by hand is error-prone.
+- Approved by: Nágó Dániel (requested)
+
 ## 2026-10-12 — HTTP/3 disabled; acceptance platform (T13)
 - Plan section: §11.1, §11.4, §11.6
 - Decision: the proxy serves HTTP/1.1 and HTTP/2 only (`servers { protocols h1 h2 }`), because the plan publishes only 80 and 443/tcp and Caddy would otherwise advertise HTTP/3 (`alt-svc`) on UDP 443 that is not reachable. The acceptance run (§11.6) used a Hetzner Cloud VPS: Ubuntu 26.04.1 LTS, aarch64, 2 vCPU, 3.7 GB RAM, Docker 29.9.0, Compose 5.6.0; this is outside the plan's named Ubuntu 22.04/24.04 and below its sizing advice (4+ cores, 16 GB), which the README states.
 - Reason: avoid advertising an unreachable protocol; record what the acceptance test actually ran on.
-- Approved by: plan leaves open
+- Approved by: HTTP/3 plan leaves open; acceptance platform is a deviation from §11, approved by Nágó Dániel in the 1a review (see the review entry above)
 
 ## 2026-10-12 — ACME_EMAIL is optional (corrects T8/T11)
 - Plan section: §11.2
@@ -48,7 +60,7 @@ Format:
 - Plan section: §6, §11.1, §11.2
 - Decision: (1) Admin stimulus-video uploads are capped by the proxy with the new setting `MAX_VIDEO_UPLOAD_MB` (default 2048) on `POST /admin/api/videos` and `/admin/api/videos/*`; the 1b upload endpoint must use exactly that path prefix, stream to disk, and enforce the same limit. Other `/admin/*` routes have no proxy cap. Approved by Nágó Dániel (replaces open item 4 of the T8 entry). (2) `migrate` runs as root only to create `/data/{videos,studies,analysis}` and chown them to uid 10001 (Docker creates bind mounts root-owned), then drops privileges with `setpriv` and runs `alembic upgrade head`; this keeps the plan's five services and non-root app containers. (3) `migrate` has `restart: "no"` (plan says every service `unless-stopped`; a one-shot that exits cannot). (4) Added `.env` keys `LOG_LEVEL`, `MAX_VIDEO_UPLOAD_MB`, `HTTP_PORT`, `HTTPS_PORT` (ports only for testing; production keeps 80/443). `TLS_CERT_FILE`/`TLS_KEY_FILE` are host paths, bind-mounted read-only into the proxy at `/run/tls/`; unset ones mount `/dev/null` and the proxy entrypoint rejects empty files in `files` mode. (5) Caddy state lives in volumes `caddy_data`/`caddy_config` at `/caddy/*` (Caddy's default `/data` would collide with the video mount), so certificates persist across restarts. (6) Proxy healthcheck is `nc -z 127.0.0.1 443`. (7) Postgres user and database are fixed to `eyetrack`, matching the backend defaults. (8) No `gpu` profile (deferred to M5, see earlier entry).
 - Reason: plan lists the services and `.env` keys but not these details.
-- Approved by: (1) Nágó Dániel; rest plan leaves open
+- Approved by: (1) Nágó Dániel; (2) and (3) are deviations from §11.1, approved by Nágó Dániel in the 1a review (see the review entry above); rest plan leaves open
 
 ## 2026-10-12 — Proxy design and shared model manifest (T8)
 - Plan section: §1 (single source of truth), §3, §11.1, §11.2, §10
