@@ -12,31 +12,48 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session as Db
 
 from app.auth import get_db
+from app.chunks import (
+    MIB,
+    ChunkConflict,
+    SessionTotalExceeded,
+    missing_chunks,
+    sha256_hex,
+    store_chunk,
+    write_events_file,
+)
 from app.consent import UnknownConsentVersion, consent_text
 from app.models import Session as SessionRow
 from app.models import SessionStatus, Study, Video
 from app.schemas import (
     BROWSER_REQUIREMENTS,
+    ChunkAck,
+    CompleteRequest,
+    CompleteResponse,
     ConsentRequest,
     ConsentResponse,
     SessionCreateRequest,
     SessionCreateResponse,
+    Stream,
     StudyConfig,
     StudyInfo,
     VideoRef,
 )
-from app.session_meta import write_meta
+from app.session_meta import read_config, write_meta
 from app.settings import Settings
 from app.storage import raw_dir
 
 log = logging.getLogger("app.participant")
 
 router = APIRouter(prefix="/api")
+
+# `chunks.seq` is a 32-bit integer column.
+MAX_SEQ = 2**31 - 1
 
 
 def hash_token(token: str) -> str:
@@ -184,3 +201,91 @@ def consent(
     session.consent_at = datetime.now(UTC)
     db.commit()
     return ConsentResponse(status="consented")
+
+
+async def read_body(request: Request, limit: int) -> bytes:
+    """The raw request body, or 413 as soon as it is larger than `limit` bytes."""
+    too_big = HTTPException(status_code=413, detail=f"body larger than {limit} bytes")
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise too_big
+    body = bytearray()
+    async for part in request.stream():
+        body += part
+        if len(body) > limit:
+            raise too_big
+    return bytes(body)
+
+
+@router.put("/sessions/{session_id}/chunks/{stream}/{seq}")
+async def put_chunk(
+    stream: Stream,
+    seq: Annotated[int, Path(ge=0, le=MAX_SEQ)],
+    request: Request,
+    x_chunk_sha256: Annotated[str, Header()],
+    session: SessionRow = Depends(authed_session),
+    db: Db = Depends(get_db),
+) -> ChunkAck:
+    settings: Settings = request.app.state.settings
+    if session.status == SessionStatus.CREATED:
+        raise HTTPException(status_code=409, detail="consent missing: record consent first")
+    if session.status not in (SessionStatus.CONSENTED, SessionStatus.RECORDING):
+        done = session.status == SessionStatus.UPLOADED
+        detail = "session already completed" if done else f"session is {session.status.value}"
+        raise HTTPException(status_code=409, detail=detail)
+    body = await read_body(request, settings.max_upload_chunk_mb * MIB)
+    if not body:
+        raise HTTPException(status_code=400, detail="empty chunk")
+    if sha256_hex(body) != x_chunk_sha256:
+        raise HTTPException(status_code=400, detail="X-Chunk-SHA256 does not match the body")
+    try:
+        return await run_in_threadpool(
+            store_chunk,
+            db,
+            settings.data_root,
+            session,
+            stream,
+            seq,
+            body,
+            x_chunk_sha256,
+            settings.max_session_total_mb * MIB,
+        )
+    except ChunkConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SessionTotalExceeded as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/complete")
+def complete(
+    body: CompleteRequest,
+    request: Request,
+    session: SessionRow = Depends(authed_session),
+    db: Db = Depends(get_db),
+) -> CompleteResponse:
+    settings: Settings = request.app.state.settings
+    if session.status not in (
+        SessionStatus.CONSENTED,
+        SessionStatus.RECORDING,
+        SessionStatus.UPLOADED,
+    ):
+        raise HTTPException(status_code=409, detail=f"session already {session.status.value}")
+    missing = missing_chunks(db, session.id, dict(body.last_seq))
+    if missing:
+        return CompleteResponse(status="incomplete", missing=missing)
+
+    root = settings.data_root
+    try:
+        client_info = write_events_file(db, root, session)
+    except ValueError as exc:
+        log.error("events stream cannot be assembled", extra={"session_id": str(session.id)})
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    config = read_config(root, session)
+    if client_info is not None:
+        session.client_info = client_info
+    if body.interrupted and "interrupted" not in session.flags:
+        session.flags = [*session.flags, "interrupted"]
+    session.status = SessionStatus.UPLOADED
+    write_meta(root, session, config)
+    db.commit()
+    return CompleteResponse(status="uploaded", missing={})
