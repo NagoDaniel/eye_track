@@ -97,6 +97,19 @@ Containers restart automatically (`restart: unless-stopped`) and Docker starts a
 
 **Model weights and licence.** The Pipeline B weights are trained on Gaze360, whose terms restrict use to **non-commercial research**. This is acceptable for an academic study. Weights are not committed; they are downloaded and checked against a sha256 by `fetch_models.sh`. The system works without them; only Pipeline B jobs fail, with a clear message. The sources and hashes are in `shared/models.json` and `docs/DECISIONS.md`.
 
+### Running a study (admin)
+
+Log in at `https://<your domain>/admin/login`.
+
+1. **Videos**: upload the stimulus MP4 (title + file). H.264 with a constant frame rate is best; other files are accepted with a warning. A video that a study or an existing session uses cannot be deleted.
+2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, and the config JSON (every key is optional, defaults are in PLAN §4.1; `playlist` lists the video ids as strings, for example `{"playlist": ["1"]}`). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
+3. **Participants** open the link, enter their code (first two letters of the name, birth month, birth day), accept the consent text, and follow the screens. Without a camera in this version the session shows the dots and the video and uploads the events.
+4. **Sessions**: lists every session with its status, flags and chunk counts per stream; the detail page shows gaps in the uploaded chunks and the events received.
+
+The consent text is a plain-text file per version: `backend/app/consent/<consent_version>.txt` (`v1` is a placeholder, to be replaced by the text the ethics committee approves). A new version needs a rebuild: `docker compose up -d --build`. Formats of everything stored are in [`docs/DATA_FORMATS.md`](docs/DATA_FORMATS.md).
+
+Limits (all in `.env`, see `.env.example`): `MAX_UPLOAD_CHUNK_MB`, `MAX_VIDEO_UPLOAD_MB`, `MAX_ADMIN_REQUEST_MB`, `MAX_SESSION_TOTAL_MB`, `RATE_LIMIT_PER_HOUR` (session creations and error reports per network address; the default is high so that only bots hit it).
+
 ### Backup and restore
 
 ```bash
@@ -171,7 +184,8 @@ CI (`.github/workflows/ci.yml`) runs the same targets.
 ```
 frontend/   TypeScript + Vite (no framework)
 backend/    app/ (FastAPI), worker/ (job loop), alembic/ (migrations), cli.py
-shared/     definitions used by both sides (models.json)
+shared/     definitions used by both sides (protocol.json: streams, event types, config defaults, example payloads; models.json)
+e2e/        Playwright end-to-end test
 proxy/      Caddy image, entrypoint and shared routes
 scripts/    setup, backup, restore, fetch_models and their tests
 docs/       plan, progress, decisions
