@@ -69,7 +69,7 @@ def test_job_kind_without_handler_fails_loudly(migrated_engine: Engine) -> None:
         assert "no handler" in job.log and "compare_pipelines" in job.log
 
 
-def test_process_one_logs_job_id_and_stage(
+def test_process_one_logs_job_id(
     migrated_engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from app.logging import configure_logging
@@ -81,7 +81,8 @@ def test_process_one_logs_job_id_and_stage(
         db.commit()
     process_one(f, {JobKind.PROCESS_SESSION: lambda job: "ok"})
     records = [json.loads(x) for x in capsys.readouterr().err.splitlines()]
-    assert any(r.get("job_id") == "1" for r in records)
+    started = [r for r in records if r["msg"] == "job started"]
+    assert started and started[0]["job_id"] == "1" and started[0]["kind"] == "process_session"
     logging.getLogger().handlers.clear()
 
 
@@ -127,3 +128,17 @@ def test_healthcheck_fresh_stale_and_missing(migrated_engine: Engine) -> None:
         beat(db, "w1", now - timedelta(seconds=200))
         db.commit()
         assert heartbeat_is_fresh(db, max_age_s=90, now=now) is False
+
+
+@pytest.mark.parametrize("value", ["0", "2"])
+def test_main_rejects_concurrency_other_than_one(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from worker.run import main
+
+    monkeypatch.setenv("SECRET_KEY", "k" * 40)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "pw")
+    monkeypatch.setenv("WORKER_CONCURRENCY", value)
+    with pytest.raises(SystemExit, match="WORKER_CONCURRENCY must be 1"):
+        main()
+    logging.getLogger().handlers.clear()

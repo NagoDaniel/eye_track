@@ -34,6 +34,8 @@ jobs:
       - run: cd frontend && npm ci
       # ruff, mypy --strict, eslint, tsc --strict
       - run: make lint
+      # shellcheck on every script and the proxy entrypoint
+      - run: make lint-shell
       # pytest (database tests start a real postgres:16 container) and vitest
       - run: make test
 

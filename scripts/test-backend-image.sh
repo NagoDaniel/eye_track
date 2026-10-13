@@ -56,7 +56,7 @@ echo "$out" | grep -q "sha256 mismatch" || fail "build failed, but not because o
 echo "build rejected a wrong hash (expected)"
 
 echo "== api boots and logs JSON (no database: health must be 503)"
-cid=$(docker run -d --rm -e SECRET_KEY=image-test-secret -e POSTGRES_PASSWORD=x \
+cid=$(docker run -d --rm -e SECRET_KEY=image-test-secret-0123456789abcdef -e POSTGRES_PASSWORD=x \
   -e POSTGRES_HOST=127.0.0.1 -e API_WORKERS=1 "$IMAGE")
 trap 'docker stop "$cid" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
 for _ in $(seq 1 30); do

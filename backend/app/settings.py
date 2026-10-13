@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 from urllib.parse import quote
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PLACEHOLDER = "change-me"
@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     admin_cookie_secure: bool = True
     admin_session_max_age_s: int = 12 * 3600
     admin_min_password_length: int = 12
+    # Signs admin cookies and CSRF tokens; a short key is guessable.
+    secret_key_min_length: int = 32
 
     # Worker timing (PLAN §11.1: heartbeat every 30 s).
     worker_heartbeat_interval_s: float = 30.0
@@ -45,6 +47,15 @@ class Settings(BaseSettings):
         if not value or value == PLACEHOLDER:
             raise ValueError(f"must be set to a real secret, not '{PLACEHOLDER}' or empty")
         return value
+
+    @model_validator(mode="after")
+    def check_secret_key_length(self) -> Self:
+        if len(self.secret_key) < self.secret_key_min_length:
+            raise ValueError(
+                f"SECRET_KEY must be at least {self.secret_key_min_length} characters "
+                "(scripts/setup.sh generates a suitable one)"
+            )
+        return self
 
     @property
     def database_url(self) -> str:

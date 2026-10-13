@@ -58,7 +58,7 @@ docker run --rm -u "$(id -u):$(id -g)" -v "$work/videos/1:/out" --entrypoint ffm
   -c:v libx264 /out/video.mp4
 docker network create "$net" >/dev/null
 docker run -d --name "${net}-api" --network "$net" --network-alias api \
-  -e SECRET_KEY=proxy-test-secret -e POSTGRES_PASSWORD=x -e POSTGRES_HOST=127.0.0.1 \
+  -e SECRET_KEY=proxy-test-secret-0123456789abcdef -e POSTGRES_PASSWORD=x -e POSTGRES_HOST=127.0.0.1 \
   -e API_WORKERS=1 "$API_IMAGE" >/dev/null
 docker run -d --name "${net}-proxy" --network "$net" -p 127.0.0.1::443 -p 127.0.0.1::80 \
   -v "$work/videos:/data/videos:ro" \
@@ -90,6 +90,8 @@ expect "SPA fallback for deep route" 200 "$base/some/deep/route"
 expect "admin login page proxied" 200 "$base/admin/login"
 expect "api health proxied (503: no database)" 503 "$base/api/health"
 expect "unknown api path reaches the api" 404 "$base/api/nope"
+expect "/admin redirects to /admin/" 308 "$base/admin"
+curl -sk -D - -o /dev/null "$base/admin" | grep -qi '^location: /admin/' || fail "/admin does not redirect to /admin/"
 expect "video served" 200 "$base/media/videos/1.mp4"
 expect "unknown video 404" 404 "$base/media/videos/999.mp4"
 expect "non-numeric video id 404" 404 "$base/media/videos/abc.mp4"
