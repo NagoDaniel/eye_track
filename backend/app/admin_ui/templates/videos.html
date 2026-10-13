@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Videos{% endblock %}
+{% block width %}64rem{% endblock %}
+{% block body %}
+<h1>Videos</h1>
+<table>
+  <thead><tr><th>Id</th><th>Title</th><th class="num">Duration (s)</th><th class="num">Resolution</th><th class="num">fps</th></tr></thead>
+  <tbody>
+  {% for v in videos %}
+    <tr>
+      <td>{{ v.id }}</td>
+      <td><a href="/admin/videos/{{ v.id }}">{{ v.title }}</a></td>
+      <td class="num">{{ "%.2f"|format(v.duration) }}</td>
+      <td class="num">{{ v.width }}x{{ v.height }}</td>
+      <td class="num">{{ "%.3f"|format(v.fps) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No videos yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Upload a video</h2>
+<p>MP4 with H.264 and a constant frame rate is best; other files are accepted with a warning. Largest upload: {{ max_upload_mb }} MiB.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/api/videos" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Title <input name="title" required></label>
+  <label>File <input type="file" name="file" accept="video/mp4,.mp4" required></label>
+  <button type="submit">Upload</button>
+</form>
+{% endblock %}

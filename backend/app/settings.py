@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import quote
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PLACEHOLDER = "change-me"
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     worker_concurrency: int = 1
     onnx_provider: Literal["cpu", "cuda"] = "cpu"
     max_upload_chunk_mb: int = 10
+    max_video_upload_mb: int = Field(default=2048, gt=0)
     log_level: str = "INFO"
 
     # Admin login (PLAN §6, §10). Cookie is HTTPS-only unless disabled for plain-http local dev.
