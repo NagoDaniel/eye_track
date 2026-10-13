@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Studies{% endblock %}
+{% block width %}64rem{% endblock %}
+{% block body %}
+<h1>Studies</h1>
+<table>
+  <thead><tr><th>Id</th><th>Name</th><th>Code</th><th>Mode</th><th class="num">Sessions</th></tr></thead>
+  <tbody>
+  {% for s in studies %}
+    <tr>
+      <td>{{ s.id }}</td>
+      <td><a href="/admin/studies/{{ s.id }}">{{ s.name }}</a></td>
+      <td>{{ s.code }}</td>
+      <td>{{ s.mode }}</td>
+      <td class="num"><a href="/admin/sessions?study_id={{ s.id }}">{{ s.session_count }}</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No studies yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>New study</h2>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/studies">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Name <input name="name" value="{{ form.name }}" required></label>
+  <label>Code (3 to 32 letters, digits, - or _) <input name="code" value="{{ form.code }}" required pattern="[A-Za-z0-9_\-]{3,32}"></label>
+  <label>Mode
+    <select name="mode">
+      <option value="remote"{% if form.mode == "remote" %} selected{% endif %}>remote</option>
+      <option value="lab"{% if form.mode == "lab" %} selected{% endif %}>lab</option>
+    </select>
+  </label>
+  <label>Config (JSON; missing fields get their defaults, playlist lists video ids as strings)
+    <textarea name="config" rows="24" spellcheck="false" required>{{ form.config }}</textarea>
+  </label>
+  <button type="submit">Create study</button>
+</form>
+{% endblock %}
