@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     # Signs admin cookies and CSRF tokens; a short key is guessable.
     secret_key_min_length: int = 32
 
+    # Participant API limits (PLAN §6, §10; DECISIONS 1b item 9, 10). Sizes are in MiB / bytes.
+    upload_token_max_age_s: int = 24 * 3600
+    max_session_total_mb: int = 2048
+    client_error_max_bytes: int = 16384
+    # Session creations plus client-error reports per client IP per hour, per API process.
+    rate_limit_per_hour: int = 300
+
     # Worker timing (PLAN §11.1: heartbeat every 30 s).
     worker_heartbeat_interval_s: float = 30.0
     worker_heartbeat_max_age_s: float = 90.0
