@@ -32,6 +32,7 @@
     "IndexedDB",
     "WebAssembly"
   ],
+  "participant_code_pattern": "^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$",
   "study_config_default": {
     "playlist": [],
     "calibration": { "points": 13, "dot_duration_ms": 1500, "margin": 0.06 },
@@ -104,7 +105,7 @@
     "consent_request": { "consent_version": "v1" },
     "consent_response": { "status": "consented" },
     "chunk_ack": { "stream": "events", "seq": 0, "size": 412 },
-    "complete_request": { "last_seq": { "events": 3, "webcam": 12 } },
+    "complete_request": { "last_seq": { "events": 3, "webcam": 12 }, "interrupted": false },
     "complete_response_missing": { "status": "incomplete", "missing": { "events": [1] } },
     "complete_response_done": { "status": "uploaded", "missing": {} },
     "client_error_request": {

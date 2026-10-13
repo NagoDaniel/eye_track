@@ -189,6 +189,8 @@ class CompleteRequest(Strict):
     """`POST /api/sessions/{id}/complete`: the highest seq the client sent, per stream."""
 
     last_seq: dict[Stream, Annotated[int, Field(ge=0)]]
+    # True when the participant reloaded the page mid-session: the server flags `interrupted`.
+    interrupted: bool = False
 
 
 class CompleteResponse(Strict):

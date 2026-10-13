@@ -12,6 +12,9 @@ export const BROWSER_REQUIREMENTS = [
   "WebAssembly",
 ] as const;
 
+/** Same pattern as PARTICIPANT_CODE_PATTERN in backend/app/schemas.py (checked in protocol.test.ts). */
+export const PARTICIPANT_CODE_PATTERN = /^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$/;
+
 export interface StudyConfig {
   playlist: string[]; // video ids as strings
   calibration: { points: number; dot_duration_ms: number; margin: number };
@@ -86,6 +89,8 @@ export interface ChunkAck {
 /** POST /api/sessions/{id}/complete: highest seq sent per stream, and what the server misses. */
 export interface CompleteRequest {
   last_seq: Partial<Record<Stream, number>>;
+  /** true after a page reload mid-session; the server flags the session `interrupted`. */
+  interrupted?: boolean;
 }
 export interface CompleteResponse {
   status: "uploaded" | "incomplete";

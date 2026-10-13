@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import protocol from "../../shared/protocol.json";
 import {
   BROWSER_REQUIREMENTS,
+  PARTICIPANT_CODE_PATTERN,
   type ChunkAck,
   type ClientErrorRequest,
   type CompleteRequest,
@@ -19,6 +20,8 @@ import { EVENT_TYPES, type EventRecord, STREAMS } from "./eventLog";
 describe("names match shared/protocol.json (the Python side has the same test)", () => {
   it("streams", () => expect([...STREAMS]).toEqual(protocol.streams));
   it("event types", () => expect([...EVENT_TYPES]).toEqual(protocol.event_types));
+  it("participant code pattern", () =>
+    expect(PARTICIPANT_CODE_PATTERN.source).toBe(protocol.participant_code_pattern));
   it("browser requirements", () =>
     expect([...BROWSER_REQUIREMENTS]).toEqual(protocol.browser_requirements));
 });

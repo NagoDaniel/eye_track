@@ -11,6 +11,7 @@ from app import schemas
 from app.models import ChunkStream
 from app.schemas import (
     BROWSER_REQUIREMENTS,
+    PARTICIPANT_CODE_PATTERN,
     ChunkAck,
     ClientErrorRequest,
     CompleteRequest,
@@ -34,6 +35,7 @@ def test_names_match_shared_protocol() -> None:
     assert list(get_args(schemas.Stream)) == PROTOCOL["streams"]
     assert list(get_args(schemas.EventType)) == PROTOCOL["event_types"]
     assert list(BROWSER_REQUIREMENTS) == PROTOCOL["browser_requirements"]
+    assert PROTOCOL["participant_code_pattern"] == PARTICIPANT_CODE_PATTERN
     assert [s.value for s in ChunkStream] == PROTOCOL["streams"]  # DB enum agrees too
 
 
