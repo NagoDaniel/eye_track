@@ -1,0 +1,119 @@
+{
+  "streams": ["webcam", "features", "events", "stimulus_frames"],
+  "event_types": [
+    "session_start",
+    "viewport_change",
+    "fullscreen_change",
+    "visibility_change",
+    "window_blur",
+    "window_focus",
+    "calib_dot_show",
+    "calib_dot_click",
+    "calib_dot_hide",
+    "calib_gate_result",
+    "video_load",
+    "video_play",
+    "video_pause",
+    "video_ended",
+    "video_stall",
+    "face_lost",
+    "face_regained",
+    "recorder_start",
+    "recorder_dataavailable",
+    "recorder_stop",
+    "debug_skip",
+    "client_error"
+  ],
+  "browser_requirements": [
+    "getUserMedia",
+    "MediaRecorder",
+    "requestVideoFrameCallback",
+    "requestFullscreen",
+    "IndexedDB",
+    "WebAssembly"
+  ],
+  "study_config_default": {
+    "playlist": [],
+    "calibration": { "points": 13, "dot_duration_ms": 1500, "margin": 0.06 },
+    "validation": { "points": 5, "before_video": true, "between_videos": true, "after_last_video": true },
+    "calibration_gate": {
+      "enabled": true,
+      "max_mean_error_norm": 0.1,
+      "max_point_error_norm": 0.18,
+      "min_valid_frames_per_dot": 5,
+      "max_attempts": 3,
+      "on_fail": "continue_flagged"
+    },
+    "playback": { "allow_pause": false, "require_fullscreen": true },
+    "recording": { "width": 1280, "height": 720, "fps": 30, "chunk_ms": 2000 },
+    "quality": { "min_face_ratio_warn": 0.8, "max_face_ratio_warn": 1.25 },
+    "inclusion": { "max_validation_error_norm": 0.12, "min_valid_fraction": 0.7 },
+    "retention": { "raw_video_days_after_processing": null },
+    "consent_version": "v1",
+    "debug_allowed": false
+  },
+  "examples": {
+    "study_info": {
+      "name": "Physics lecture study",
+      "code": "phys1",
+      "mode": "remote",
+      "consent_version": "v1",
+      "consent_text": "Your webcam video is recorded and stored on a university server.",
+      "browser_requirements": [
+        "getUserMedia",
+        "MediaRecorder",
+        "requestVideoFrameCallback",
+        "requestFullscreen",
+        "IndexedDB",
+        "WebAssembly"
+      ]
+    },
+    "session_create_request": { "study_code": "phys1", "participant_code": "AB0315" },
+    "session_create_response": {
+      "session_id": "3f2b8c1e-5d4a-4e9b-9c1a-2f6d7e8a9b0c",
+      "upload_token": "k3Jx9wQ2mZpR7vNtB5yLcA8dFhG1sUeWoXiVq4TnYb0",
+      "config": {
+        "playlist": ["1"],
+        "calibration": { "points": 13, "dot_duration_ms": 1500, "margin": 0.06 },
+        "validation": { "points": 5, "before_video": true, "between_videos": true, "after_last_video": true },
+        "calibration_gate": {
+          "enabled": true,
+          "max_mean_error_norm": 0.1,
+          "max_point_error_norm": 0.18,
+          "min_valid_frames_per_dot": 5,
+          "max_attempts": 3,
+          "on_fail": "continue_flagged"
+        },
+        "playback": { "allow_pause": false, "require_fullscreen": true },
+        "recording": { "width": 1280, "height": 720, "fps": 30, "chunk_ms": 2000 },
+        "quality": { "min_face_ratio_warn": 0.8, "max_face_ratio_warn": 1.25 },
+        "inclusion": { "max_validation_error_norm": 0.12, "min_valid_fraction": 0.7 },
+        "retention": { "raw_video_days_after_processing": null },
+        "consent_version": "v1",
+        "debug_allowed": false
+      },
+      "videos": [
+        {
+          "id": "1",
+          "url": "/media/videos/1.mp4",
+          "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+          "duration": 12.5
+        }
+      ]
+    },
+    "consent_request": { "consent_version": "v1" },
+    "consent_response": { "status": "consented" },
+    "chunk_ack": { "stream": "events", "seq": 0, "size": 412 },
+    "complete_request": { "last_seq": { "events": 3, "webcam": 12 } },
+    "complete_response_missing": { "status": "incomplete", "missing": { "events": [1] } },
+    "complete_response_done": { "status": "uploaded", "missing": {} },
+    "client_error_request": {
+      "message": "TypeError: x is undefined",
+      "stack": "at main.ts:12",
+      "url": "https://eyetrack.example.org/s/phys1",
+      "t": 1234.5,
+      "session_id": "3f2b8c1e-5d4a-4e9b-9c1a-2f6d7e8a9b0c"
+    },
+    "event_record": { "t": 1234.5, "type": "calib_dot_show", "data": { "id": 0, "x": 640, "y": 360, "phase": "calibration" } }
+  }
+}
