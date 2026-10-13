@@ -40,6 +40,18 @@ export function p(text: string, className?: string): HTMLParagraphElement {
   return el("p", className === undefined ? { text } : { text, class: className });
 }
 
+/** A text screen with one continue button; resolves when the participant clicks it. */
+export function infoScreen(
+  root: HTMLElement,
+  title: string,
+  paragraphs: string[],
+  buttonLabel: string,
+): Promise<void> {
+  return new Promise((resolve) => {
+    render(root, card(title, ...paragraphs.map((text) => p(text)), button(buttonLabel, resolve)));
+  });
+}
+
 /** A screen the participant cannot leave (unsupported browser, failed integrity check, ...). */
 export function blockForever(): Promise<never> {
   return new Promise<never>(() => undefined);

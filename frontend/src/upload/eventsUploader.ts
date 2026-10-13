@@ -21,9 +21,9 @@ export class EventsUploader {
     this.buffer.push(record);
   };
 
-  /** True while records wait for the next chunk or a chunk is being written. */
+  /** True while records wait in the buffer for the next chunk. */
   hasUnsent(): boolean {
-    return this.buffer.length > 0 || this.timer !== null;
+    return this.buffer.length > 0;
   }
 
   start(): void {
