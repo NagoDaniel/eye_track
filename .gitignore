@@ -38,3 +38,8 @@ frontend/public/mediapipe/
 
 # agent worktrees
 .claude/worktrees/
+
+# e2e
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/

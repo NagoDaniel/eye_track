@@ -162,7 +162,7 @@ Slower suites that build and start real containers (they use temporary directori
 | `make test-backup` | backup, destroy everything, restore, compare every row and file |
 | `make test-fetch-models` | verified model download |
 | `make test-install-docker` | `scripts/install-docker.sh` in fresh Ubuntu and Debian containers |
-| `make e2e` | Playwright end-to-end test (arrives in Milestone 2) |
+| `make e2e` | Playwright end-to-end test: real Chromium against the real stack, a full dummy session |
 
 CI (`.github/workflows/ci.yml`) runs the same targets.
 
