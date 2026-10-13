@@ -12,8 +12,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session as Db
 
@@ -33,6 +34,7 @@ from app.models import SessionStatus, Study, Video
 from app.schemas import (
     BROWSER_REQUIREMENTS,
     ChunkAck,
+    ClientErrorRequest,
     CompleteRequest,
     CompleteResponse,
     ConsentRequest,
@@ -289,3 +291,30 @@ def complete(
     write_meta(root, session, config)
     db.commit()
     return CompleteResponse(status="uploaded", missing={})
+
+
+@router.post("/client-errors", status_code=204)
+async def client_error(request: Request) -> Response:
+    """Browser error report: no authentication, structured log only (DECISIONS 1b item 10)."""
+    enforce_rate_limit(request)
+    settings: Settings = request.app.state.settings
+    raw = await read_body(request, settings.client_error_max_bytes)
+    try:
+        report = ClientErrorRequest.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail=exc.errors(include_input=False, include_context=False)
+        ) from exc
+    # `message` is reserved by logging's LogRecord, hence `error_message`. Nothing else from the
+    # request (headers, IP, cookies) is logged.
+    log.warning(
+        "client error",
+        extra={
+            "error_message": report.message,
+            "stack": report.stack,
+            "url": report.url,
+            "t": report.t,
+            "session_id": report.session_id,
+        },
+    )
+    return Response(status_code=204)
