@@ -272,6 +272,12 @@ def complete(
         SessionStatus.UPLOADED,
     ):
         raise HTTPException(status_code=409, detail=f"session already {session.status.value}")
+    too_many = [s for s, last in body.last_seq.items() if last >= settings.max_chunks_per_stream]
+    if too_many:
+        raise HTTPException(
+            status_code=422,
+            detail=f"last_seq of {too_many} exceeds {settings.max_chunks_per_stream} chunks",
+        )
     missing = missing_chunks(db, session.id, dict(body.last_seq))
     if missing:
         return CompleteResponse(status="incomplete", missing=missing)

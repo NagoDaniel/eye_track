@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     client_error_max_bytes: int = 16384
     # Session creations plus client-error reports per client IP per hour, per API process.
     rate_limit_per_hour: int = 300
+    # Most chunks per stream a session may report in /complete (stops a huge `missing` list).
+    # 2 s chunks: 100 000 chunks is more than 50 hours.
+    max_chunks_per_stream: int = 100_000
 
     # Worker timing (PLAN §11.1: heartbeat every 30 s).
     worker_heartbeat_interval_s: float = 30.0

@@ -505,3 +505,14 @@ def test_complete_status_and_auth_rules(client: TestClient, study_id: int) -> No
     for body in bad:
         r = client.post(f"/api/sessions/{c['session_id']}/complete", json=body, headers=auth(c))
         assert r.status_code == 422, body
+
+
+def test_complete_refuses_an_absurd_last_seq(make_client: MakeClient, study_id: int) -> None:
+    client = make_client(max_chunks_per_stream=5)
+    c = create_session(client)
+    consent(client, c)
+    assert put(client, c, "events", 0, events_chunk(ev(1.0, "session_start"))).status_code == 200
+    r = complete(client, c, {"events": 5})  # 6th chunk would be seq 5: over the limit
+    assert r.status_code == 422 and "exceeds 5" in r.json()["detail"]
+    r = complete(client, c, {"events": 4})  # within the limit: reports the 4 missing chunks
+    assert r.status_code == 200 and r.json()["missing"] == {"events": [1, 2, 3, 4]}
