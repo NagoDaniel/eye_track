@@ -3,6 +3,11 @@
 {% block body %}
 <h1>eyetrack admin</h1>
 <p>Logged in as <strong>{{ username }}</strong>.</p>
+<ul>
+  <li><a href="/admin/studies">Studies</a></li>
+  <li><a href="/admin/videos">Videos</a></li>
+  <li><a href="/admin/sessions">Sessions</a></li>
+</ul>
 <form method="post" action="/admin/logout">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button type="submit">Log out</button>

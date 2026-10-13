@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Video {{ video.id }}{% endblock %}
+{% block width %}64rem{% endblock %}
+{% block body %}
+<p><a href="/admin/videos">All videos</a></p>
+<h1>{{ video.title }}</h1>
+{% for w in warnings %}<p class="warning" role="status">Warning: {{ w }}</p>{% endfor %}
+{% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<table>
+  <tr><th>Id</th><td>{{ video.id }}</td></tr>
+  <tr><th>Duration</th><td>{{ "%.3f"|format(video.duration) }} s</td></tr>
+  <tr><th>Frame rate</th><td>{{ "%.3f"|format(video.fps) }} fps</td></tr>
+  <tr><th>Resolution</th><td>{{ video.width }}x{{ video.height }}</td></tr>
+  <tr><th>File size</th><td>{% if video.size_bytes is not none %}{{ video.size_bytes }} bytes{% else %}file missing{% endif %}</td></tr>
+  <tr><th>sha256</th><td><code>{{ video.sha256 }}</code></td></tr>
+  <tr><th>File</th><td><code>{{ video.file_path }}</code></td></tr>
+</table>
+
+<h2>Edit</h2>
+<form method="post" action="/admin/videos/{{ video.id }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Title <input name="title" value="{{ title }}" required></label>
+  <label>AOIs (JSON object; empty for none)
+    <textarea name="aois" rows="16" spellcheck="false">{{ aois_text }}</textarea>
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+<h2>Delete</h2>
+<p>A video used by a study playlist or a recorded session cannot be deleted. There is no replace: upload a new video instead.</p>
+<form method="post" action="/admin/videos/{{ video.id }}/delete">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" class="danger">Delete video</button>
+</form>
+{% endblock %}

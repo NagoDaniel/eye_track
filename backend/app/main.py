@@ -8,10 +8,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 
 from app.api.admin import router as admin_router
+from app.api.admin_sessions import router as admin_sessions_router
+from app.api.admin_studies import router as admin_studies_router
+from app.api.admin_videos import router as admin_videos_router
 from app.api.participant import router as participant_router
 from app.db import make_engine, make_session_factory
 from app.logging import configure_logging
 from app.ratelimit import SlidingWindowLimiter
+from app.service_errors import AdminError
 from app.settings import Settings
 
 log = logging.getLogger("app.access")
@@ -68,8 +72,15 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
             return JSONResponse({"status": "unavailable", "error": "database"}, status_code=503)
         return JSONResponse({"status": "ok"})
 
+    @app.exception_handler(AdminError)
+    def admin_error(_request: Request, exc: AdminError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+
     app.include_router(admin_router)
     app.include_router(participant_router)
+    app.include_router(admin_studies_router)
+    app.include_router(admin_videos_router)
+    app.include_router(admin_sessions_router)
     return app
 
 
