@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 
 from app.api.admin import router as admin_router
+from app.api.admin_sessions import router as admin_sessions_router
 from app.api.admin_studies import router as admin_studies_router
 from app.api.admin_videos import router as admin_videos_router
 from app.db import make_engine, make_session_factory
@@ -75,6 +76,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.include_router(admin_router)
     app.include_router(admin_studies_router)
     app.include_router(admin_videos_router)
+    app.include_router(admin_sessions_router)
     return app
 
 

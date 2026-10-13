@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sessions{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block body %}
+<h1>Sessions</h1>
+<form method="get" action="/admin/sessions">
+  <label>Study
+    <select name="study_id">
+      <option value="">All studies</option>
+      {% for s in studies %}
+      <option value="{{ s.id }}"{% if s.id == chosen_study %} selected{% endif %}>{{ s.name }} ({{ s.code }})</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+<table>
+  <thead>
+    <tr>
+      <th>Session</th><th>Study</th><th>Participant</th><th>Status</th><th>Flags</th><th>Created</th>
+      {% if sessions %}{% for stream in sessions[0].chunks %}<th class="num">{{ stream }}</th>{% endfor %}{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in sessions %}
+    <tr>
+      <td><a href="/admin/sessions/{{ s.id }}"><code>{{ s.id[:8] }}</code></a></td>
+      <td>{{ s.study_code }}</td>
+      <td>{{ s.participant_code }}</td>
+      <td>{{ s.status }}</td>
+      <td>{{ s.flags | join(", ") }}</td>
+      <td>{{ s.created_at }}</td>
+      {% for n in s.chunks.values() %}<td class="num">{{ n }}</td>{% endfor %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No sessions.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p>The columns after "Created" count the chunks received per stream.</p>
+{% endblock %}
