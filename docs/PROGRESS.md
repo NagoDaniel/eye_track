@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**1b — Skeleton app** (PLAN §14), branch `m1b-skeleton-app`. Task list approved by Nágó Dániel on 2026-10-12; nothing implemented yet. Next task: T1.
+**1b — Skeleton app** (PLAN §14), branch `m1b-skeleton-app`. Task list approved by Nágó Dániel on 2026-10-12; nothing implemented yet. Next task: T2.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -21,7 +21,7 @@ Approved 2026-10-12. Each task ends with tests passing + output shown, then a co
 
 Scope boundary: no camera, no MediaRecorder, no face model, no `stimulus_frames` stream, no calibration gate, no debug mode, no job enqueue, no station screens (all M2 or later).
 
-- [ ] **T1. Carried review tasks R5 + R6** (§11.1, §11.5, §12.3). `/admin` (no slash) redirects to `/admin/`; `SECRET_KEY` minimum length 32 (named); `WORKER_CONCURRENCY` error message correct for 0; `test_worker.py` asserts `stage`; plan defaults of the heartbeat settings asserted; shellcheck in CI covers every script and `proxy/entrypoint.sh`. Recorded as deviations, no code change: `make test`/`lint` on the host, `create-admin --username` required, log keys absent when unbound, `WORKER_CONCURRENCY` fixed at 1, `setup.sh` does not offer `fetch_models.sh` (M5). Tests: proxy test `/admin` redirect; settings tests; CI step.
+- [x] **T1. Carried review tasks R5 + R6** (§11.1, §11.5, §12.3). `/admin` (no slash) redirects to `/admin/`; `SECRET_KEY` minimum length 32 (named); `WORKER_CONCURRENCY` error message correct for 0; `test_worker.py` asserts `stage`; plan defaults of the heartbeat settings asserted; shellcheck in CI covers every script and `proxy/entrypoint.sh`. Recorded as deviations, no code change: `make test`/`lint` on the host, `create-admin --username` required, log keys absent when unbound, `WORKER_CONCURRENCY` fixed at 1, `setup.sh` does not offer `fetch_models.sh` (M5). Tests: proxy test `/admin` redirect; settings tests; CI step.
 - [ ] **T2. Shared definitions** (§1, §4.1, §5.9). One shared JSON for stream names and event types; `backend/app/schemas.py` (`StudyConfig` with every §4.1 default, playlist of video-id strings, event record); TS mirror in `frontend/src/config.ts` and `eventLog.ts` types. Tests: §4.1 example validates, each default equals the plan value, bad values rejected; TS and Python read the same shared file and agree.
 - [ ] **T3. Storage helpers** (§7, §1). `backend/app/storage.py`: path helpers for `videos/{id}/` and `studies/{id}/sessions/{id}/raw/...`, atomic write (`*.tmp` then rename), traversal-safe. Tests on a real temp directory: no `.tmp` left, no partial file after a failed write, paths match §7.
 - [ ] **T4. Admin: studies** (§4, §4.1, §6). JSON API `/admin/api/studies` (create, list, read, update, delete) behind `csrf_protected`, Jinja pages, config editor validated by `StudyConfig` (unknown video id or unknown `consent_version` rejected), participant link `/s/<code>`. Consent texts are files `backend/app/consent/<version>.txt` (placeholder `v1`). Tests on real Postgres: CRUD round trip, 401 anonymous, 403 without CSRF, invalid config message, duplicate code 409.
@@ -41,7 +41,7 @@ Scope boundary: no camera, no MediaRecorder, no face model, no `stimulus_frames`
 "A full dummy session can be completed and its events appear on the server": automated by T14 (browser → proxy → api → disk + database), using T6, T7, T10–T13; visible to the researcher through T9; by a real person in T15.
 
 ## Done (current milestone)
-Nothing yet.
+- T1 carried review fixes. `make lint` and `make test` green (88 pytest, 1 vitest); `make lint-shell` (new, also a CI step) clean on all `scripts/*.sh` and `proxy/entrypoint.sh`; `make test-images` (new check: `/admin` gives 308 to `/admin/`) and `make test-stack` pass. `SECRET_KEY` must be at least 32 characters (`SECRET_KEY_MIN_LENGTH`, named setting; the image tests now use longer test keys; setup.sh already generates 40). Worker concurrency error says "must be 1" and covers 0, tested through `main()`. Heartbeat defaults (30 s, 90 s) asserted. The worker log test was renamed `test_process_one_logs_job_id` and now checks the `job started` line: the old name claimed `stage`, which does not exist before the pipeline stages (M3; `bind_context(stage=...)` is already tested in `test_logging.py`). Not run here: CI with the new `make lint-shell` step (runs on push).
 
 ## Open problems / questions for the human
 - `npm audit` reports 3 findings (2 critical) in `tinypool`, a vitest 3 dependency (dev only, never shipped). Fix is a breaking upgrade to vitest 4; not done. Decide whether to upgrade (suggest doing it in a small separate task).
@@ -56,4 +56,4 @@ Nothing yet.
 - The Hetzner VPS still runs the pre-review 1a build and costs money: update it (`cd /opt/eyetrack && git pull && docker compose up -d --build`), stop it or delete it.
 
 ## Next step
-`/milestone-next`: implement T1, then continue in order.
+`/milestone-next`: implement T2, then continue in order.
