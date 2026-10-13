@@ -28,7 +28,6 @@ export const UPLOAD_BACKOFF_MAX_MS = 30_000;
 export const UPLOAD_BACKOFF_FACTOR = 2;
 /** Rounds of `/complete` + re-sending missing chunks before giving up loudly. */
 export const COMPLETE_MAX_ROUNDS = 5;
-export const UPLOAD_PROGRESS_POLL_MS = 500;
 export const UPLOAD_DB_NAME = "eyetrack-upload";
 export const UPLOAD_DB_VERSION = 1;
 

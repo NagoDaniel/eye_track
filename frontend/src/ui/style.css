@@ -48,4 +48,5 @@ progress { width: 100%; height: 16px; }
 /* Playback: video letterboxed on black (PLAN §5.7). */
 .player { position: fixed; inset: 0; background: #000; }
 .player video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.player-overlay[hidden] { display: none; }
 .player-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.85); color: #fff; }
