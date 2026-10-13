@@ -155,7 +155,7 @@ The repository's automated version of this (`make test-backup`) destroys a seede
 
 ## 3. Development
 
-Needs Docker, Python 3.11 with [uv](https://docs.astral.sh/uv/), and Node 20.
+Needs Docker, Python 3.11 with [uv](https://docs.astral.sh/uv/), Node 20, and `ffmpeg` with `ffprobe` on the host (the video upload tests run the real tools; `brew install ffmpeg` or `apt install ffmpeg`).
 
 ```bash
 ./scripts/setup.sh --env-only      # once: creates .env with random secrets
