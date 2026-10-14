@@ -3,17 +3,34 @@
 
 import { expect, request as playwrightRequest, test } from "@playwright/test";
 
+import { createHash } from "node:crypto";
+
 import { type Admin, createStudy, login, sessionsOf, uploadVideo } from "./admin";
 import { runSession } from "./participant";
 
 const PARTICIPANT = "AB0315";
 let admin: Admin;
 let videoId: string;
+let videoSha: string;
 
 test.beforeAll(async ({ baseURL }) => {
   const context = await playwrightRequest.newContext({ baseURL, ignoreHTTPSErrors: true });
   admin = await login(context);
-  videoId = await uploadVideo(admin, "E2E clip");
+  const video = await uploadVideo(admin, "E2E clip");
+  videoId = video.id;
+  videoSha = video.sha256;
+});
+
+test("the admin can play the uploaded video", async () => {
+  const page = await admin.request.get(`/admin/videos/${videoId}`);
+  expect(page.status()).toBe(200);
+  expect(await page.text()).toContain(`src="/media/videos/${videoId}.mp4"`);
+  // Through the proxy: range requests work and the bytes are exactly what was uploaded.
+  const part = await admin.request.get(`/media/videos/${videoId}.mp4`, { headers: { Range: "bytes=0-99" } });
+  expect(part.status()).toBe(206);
+  expect(part.headers()["content-range"]).toMatch(/^bytes 0-99\//);
+  const whole = await admin.request.get(`/media/videos/${videoId}.mp4`);
+  expect(createHash("sha256").update(await whole.body()).digest("hex")).toBe(videoSha);
 });
 
 function indexOfType(types: string[], type: string, from = 0): number {
@@ -51,6 +68,14 @@ test("a full dummy session is completed and its events reach the server", async 
     session.events.filter((e) => e.type === "calib_dot_click" && e.data.phase === phase).length;
   expect(clicks("calibration")).toBe(13);
   expect(clicks("validation")).toBe(10);
+
+  // The participant's results page shows the same session with its summary.
+  const results = await admin.request.get(`/admin/participants/${studyId}/${PARTICIPANT}`);
+  expect(results.status()).toBe(200);
+  const html = await results.text();
+  expect(html).toContain(session.id.slice(0, 8));
+  expect(html).toContain("13 clicked of 13 shown");
+  expect(html).toContain("10 clicked of 10 shown");
 
   const times = session.events.map((e) => e.t);
   expect(times).toEqual([...times].sort((a, b) => a - b));

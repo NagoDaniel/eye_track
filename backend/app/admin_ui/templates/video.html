@@ -7,6 +7,7 @@
 {% for w in warnings %}<p class="warning" role="status">Warning: {{ w }}</p>{% endfor %}
 {% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<video controls preload="metadata" src="/media/videos/{{ video.id }}.mp4" style="width: 100%; max-height: 24rem; background: #000"></video>
 <table>
   <tr><th>Id</th><td>{{ video.id }}</td></tr>
   <tr><th>Duration</th><td>{{ "%.3f"|format(video.duration) }} s</td></tr>

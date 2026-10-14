@@ -26,7 +26,7 @@
     <tr>
       <td><a href="/admin/sessions/{{ s.id }}"><code>{{ s.id[:8] }}</code></a></td>
       <td>{{ s.study_code }}</td>
-      <td>{{ s.participant_code }}</td>
+      <td><a href="/admin/participants/{{ s.study_id }}/{{ s.participant_code }}">{{ s.participant_code }}</a></td>
       <td>{{ s.status }}</td>
       <td>{{ s.flags | join(", ") }}</td>
       <td>{{ s.created_at }}</td>

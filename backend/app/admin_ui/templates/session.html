@@ -6,7 +6,7 @@
 <h1>Session <code>{{ session.id }}</code></h1>
 <table>
   <tr><th>Study</th><td><a href="/admin/studies/{{ session.study_id }}">{{ session.study_name }}</a> ({{ session.study_code }})</td></tr>
-  <tr><th>Participant</th><td>{{ session.participant_code }}</td></tr>
+  <tr><th>Participant</th><td><a href="/admin/participants/{{ session.study_id }}/{{ session.participant_code }}">{{ session.participant_code }}</a></td></tr>
   <tr><th>Status</th><td>{{ session.status }}</td></tr>
   <tr><th>Flags</th><td>{{ session.flags | join(", ") }}</td></tr>
   <tr><th>Debug session</th><td>{{ "yes" if session.is_debug else "no" }}</td></tr>

@@ -38,7 +38,12 @@ export async function login(request: APIRequestContext): Promise<Admin> {
   return { request, headers: { "X-CSRF-Token": csrfFrom(await home.text()) } };
 }
 
-export async function uploadVideo(admin: Admin, title: string): Promise<string> {
+export interface UploadedVideo {
+  id: string;
+  sha256: string;
+}
+
+export async function uploadVideo(admin: Admin, title: string): Promise<UploadedVideo> {
   const path = env("E2E_VIDEO");
   const response = await admin.request.post("/admin/api/videos", {
     headers: admin.headers,
@@ -48,8 +53,8 @@ export async function uploadVideo(admin: Admin, title: string): Promise<string> 
     },
   });
   expect(response.status(), await response.text()).toBe(201);
-  const body = (await response.json()) as { id: number };
-  return String(body.id);
+  const body = (await response.json()) as { id: number; sha256: string };
+  return { id: String(body.id), sha256: body.sha256 };
 }
 
 export async function createStudy(admin: Admin, code: string, videoId: string): Promise<number> {

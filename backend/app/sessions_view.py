@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.events import assemble_events, parse_events
 from app.models import Chunk, Session, Study
+from app.schemas import EventRecord
 from app.service_errors import NotFoundError
 from app.storage import STREAMS, chunk_path
 
@@ -65,15 +66,20 @@ def _stream_summary(seqs: list[int], sizes: list[int]) -> dict[str, Any]:
     }
 
 
+def read_event_records(
+    data_root: Path, study_id: int, session_id: uuid.UUID, seqs: list[int]
+) -> list[EventRecord]:
+    """Decode the stored events chunks of a session, in seq order. Raises OSError or ValueError."""
+    chunks = [chunk_path(data_root, study_id, session_id, "events", n).read_bytes() for n in seqs]
+    return parse_events(assemble_events(chunks))
+
+
 def _read_events(
     data_root: Path, study_id: int, session_id: uuid.UUID, seqs: list[int]
 ) -> tuple[list[dict[str, Any]], int, str | None]:
     """Decode the stored events chunks, in seq order. Returns (shown, total, error)."""
     try:
-        chunks = [
-            chunk_path(data_root, study_id, session_id, "events", n).read_bytes() for n in seqs
-        ]
-        events = parse_events(assemble_events(chunks))
+        events = read_event_records(data_root, study_id, session_id, seqs)
     except (OSError, ValueError) as exc:
         return [], 0, str(exc)  # the rest of the detail is still worth showing
     shown = [e.model_dump(mode="json") for e in events[:MAX_EVENTS_SHOWN]]
