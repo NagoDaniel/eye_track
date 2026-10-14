@@ -17,6 +17,7 @@ import { instructionsScreen } from "./screens/instructions";
 import { playbackScreen } from "./screens/playback";
 import { preloadScreen } from "./screens/preload";
 import { resumeScreen } from "./screens/resume";
+import { resumeUnfinished } from "./screens/resumeFlow";
 import { uploadScreen } from "./screens/upload";
 import { validationScreen } from "./screens/validation";
 import { startRuntime } from "./session";
@@ -53,20 +54,23 @@ async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> 
   await browserGate(root, study);
   const db = await UploadDb.open();
 
-  // A session left unfinished by a reload: upload what is left and end it as interrupted (PLAN §5.8).
-  const [unfinished] = await db.listSessions();
-  if (unfinished !== undefined) {
-    const pending = (await db.chunksOf(unfinished.sessionId)).length;
-    if ((await resumeScreen(root, unfinished, pending)) === "resume") {
-      shared.sessionId = unfinished.sessionId;
+  // Sessions left unfinished by a reload: upload what is left and end each as interrupted (PLAN §5.8).
+  const uploaded = await resumeUnfinished(await db.listSessions(), {
+    pendingChunks: async (s) => (await db.chunksOf(s.sessionId)).length,
+    ask: (s, pending, problem) => resumeScreen(root, s, pending, problem),
+    resume: async (s) => {
+      shared.sessionId = s.sessionId;
       const release = installUnloadGuard(() => true);
-      const queue = await UploadQueue.open(db, api, unfinished);
-      await uploadScreen(root, queue, { events: null, interrupted: true });
-      release();
-      return doneScreen(root);
-    }
-    await db.deleteSession(unfinished.sessionId);
-  }
+      try {
+        const queue = await UploadQueue.open(db, api, s);
+        await uploadScreen(root, queue, { events: null, interrupted: true });
+      } finally {
+        release(); // also after a failure, or the page would warn on close forever
+      }
+    },
+    discard: (s) => db.deleteSession(s.sessionId),
+  });
+  if (uploaded > 0) return doneScreen(root);
 
   const session = await entryScreen(root, study, route.participantCode, (participantCode) =>
     api.createSession({ study_code: study.code, participant_code: participantCode }),

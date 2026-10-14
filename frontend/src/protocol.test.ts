@@ -15,11 +15,17 @@ import {
   type StudyConfig,
   type StudyInfo,
 } from "./config";
+import { CALIBRATION_POINT_COUNT, INNER_POINT_LOW, VALIDATION_POINT_COUNT } from "./constants";
 import { EVENT_TYPES, type EventRecord, STREAMS } from "./eventLog";
 
 describe("names match shared/protocol.json (the Python side has the same test)", () => {
   it("streams", () => expect([...STREAMS]).toEqual(protocol.streams));
   it("event types", () => expect([...EVENT_TYPES]).toEqual(protocol.event_types));
+  it("calibration and validation point layout", () => {
+    expect(CALIBRATION_POINT_COUNT).toBe(protocol.calibration_point_count);
+    expect(VALIDATION_POINT_COUNT).toBe(protocol.validation_point_count);
+    expect(INNER_POINT_LOW).toBe(protocol.inner_point_low);
+  });
   it("participant code pattern", () =>
     expect(PARTICIPANT_CODE_PATTERN.source).toBe(protocol.participant_code_pattern));
   it("browser requirements", () =>

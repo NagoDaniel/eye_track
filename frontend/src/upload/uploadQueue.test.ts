@@ -307,3 +307,21 @@ describe("EventsUploader", () => {
     expect(api.puts.map((p) => p.seq)).toEqual([0]);
   });
 });
+
+describe("a failed IndexedDB write", () => {
+  it("is fatal and loud: nothing is sent, the error is reported, later chunks are refused", async () => {
+    const api = new StubApi();
+    const errors: Error[] = [];
+    const queue = await open(api, (e) => errors.push(e));
+    vi.spyOn(db, "putChunk").mockRejectedValue(new Error("QuotaExceededError"));
+
+    await expect(queue.enqueue("events", bytes(1))).rejects.toThrow("QuotaExceededError");
+    expect(errors.map((e) => e.message)).toEqual(["QuotaExceededError"]);
+    expect(api.puts).toHaveLength(0);
+    // The chunk was never stored, so the queue must not carry on as if it had been.
+    await expect(queue.enqueue("events", bytes(2))).rejects.toThrow("QuotaExceededError");
+    await expect(queue.idle()).rejects.toThrow("QuotaExceededError");
+    expect(queue.stats().error?.message).toBe("QuotaExceededError");
+  });
+});
+

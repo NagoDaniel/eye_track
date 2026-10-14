@@ -10,6 +10,7 @@ export function resumeScreen(
   root: HTMLElement,
   session: StoredSession,
   pendingChunks: number,
+  problem: string | null = null,
 ): Promise<ResumeChoice> {
   return new Promise((resolve) => {
     const discard = button("Discard it", () => {
@@ -29,7 +30,8 @@ export function resumeScreen(
             ` (${pendingChunks} part${pendingChunks === 1 ? "" : "s"} waiting). The recording cannot be continued,` +
             " but the data already collected can be uploaded.",
         ),
-        button("Resume upload", () => resolve("resume")),
+        ...(problem === null ? [] : [p(`The upload failed: ${problem}`, "error")]),
+        button(problem === null ? "Resume upload" : "Try again", () => resolve("resume")),
         discard,
       ),
     );
