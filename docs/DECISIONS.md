@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-14 — Admin additions: video preview and per-participant results page
+- Plan section: §6 (admin), §10, §12.2, §14
+- Decision: two admin features are added to the plan's scope; `docs/PLAN.md` itself is not edited (project rule), this entry is the record.
+  1. **Stimulus video preview.** The admin page of a video plays the uploaded stimulus video (`<video controls>` on `/media/videos/{id}.mp4`) so the researcher can check what was uploaded. Milestone 1b, task T16.
+  2. **Participant results page.** A page for one participant code in one study (`/admin/participants/{study_id}/{code}`, JSON at `/admin/api/participants/{study_id}/{code}`) listing all of that participant's sessions (status, flags, chunk counts) and a summary derived from the events (calibration and validation dots clicked, per video: played, ended, watch time, pauses and stalls, fullscreen exits), with links to the session detail. Reached from the sessions list. Milestone 1b, task T17. Later milestones add their results to this same page instead of creating new ones: quality report and plots (M3, with the session inspector of §12.2), heatmaps, AOI metrics and synchrony for this participant (M4), Pipeline B and the comparison (M5).
+  3. **Webcam recording playback (later).** Playing a participant's recorded webcam video in the admin is part of the Milestone 3 session inspector (§12.2 already has the debug replay). It is only served to logged-in admins (§10), is shown on request, and is labelled as containing participant video. It is not in 1b because the webcam is recorded from Milestone 2.
+- Reason: requested by the human on 2026-10-14. The stimulus videos are served to every participant by design (the proxy route is public), so a preview exposes nothing new; participant results are admin-only, like all other admin pages.
+- Approved by: Nágó Dániel
+
+---
+
 ## 2026-10-13 — Milestone 1b implementation choices (found while building T4-T13)
 - Plan section: §4.1, §5.2, §5.5, §5.7, §5.8, §6, §10
 - Decision: choices the plan leaves open, made by the implementing agents with the simplest option and reviewed at checkpoint 1.
