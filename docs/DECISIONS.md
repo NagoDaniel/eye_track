@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-10-15 — Milestone 2 T3: feature definition and the face fixture
+- Plan section: §5.4, §5.6 step 2, §8.4
+- Decision:
+  1. **Definitions** (§8.4 leaves details open; full text in the docstring of `backend/worker/pipeline/features_a.py` and the header of `frontend/src/face/features.ts`): landmarks are scaled to `(x * aspect, y)` first (the functions take the frame's aspect ratio); iris centre = mean of the 5 iris landmarks in the eye-local frame (origin: midpoint of the corners, x-axis corner to corner pointing image-right for both eyes, y-axis towards the image bottom, unit: eye width); openness = distance of the middle lid landmarks (right 159/145, left 386/374) over eye width; face scale `face_ratio` = distance of the two eye midpoints over the frame width; head angles in degrees from `R = Rz(roll) Ry(yaw) Rx(pitch)` (positive pitch: head down, positive yaw: face turned to the image right, positive roll: counter-clockwise), translation in cm.
+  2. **`matrix` layout in feature records: 16 numbers, row-major** (translation at indices 3, 7, 11), as MediaPipe's Python API returns it. The browser API's layout is checked against the same clip in T6 and converted if needed.
+  3. **Blink rule not in T3** (the openness threshold of §8.4 is "tuned on calibration data"; the fixture shows blinks at openness 0.07 to 0.14 against 0.3 to 0.39 with eyes open): it comes with the gate in T4/T10.
+  4. **Face clip fixture:** `e2e/fixtures/face.mp4` (first 12 s of the human's clip, 854x480, 30 fps, no audio, 229 KB; the 1280x720 original with sound stays untracked as `face_test.mov`). 854x480 keeps the 16:9 shape and meets the 640x480 camera minimum of §5.2. `shared/fixtures/face_frames.json` holds 45 real MediaPipe frames (landmark subset, matrix, blink scores) and the features the Python code computes; `scripts/make_face_fixture.py` regenerates it. Both languages are tested on it (agreement far below the 1e-4 of §5.6).
+  5. **Corrects T1 item 6:** the real clip has a face ratio of 0.070 at 44 cm from a 16:9 laptop camera, so the starting band is `face_ratio_min` 0.045 and `face_ratio_max` 0.16 (was 0.07 and 0.2, which would have rejected normal arm's-length use). Still a starting value for the pilot.
+  6. The frontend imports `shared/landmark_subset.json`: the dev server may serve `..` (`server.fs.allow`), the proxy image build context includes the file and the test fixture, and the backend image carries `/shared/landmark_subset.json` (same layout as the repository, checked in `make test-images`).
+- Reason: plan leaves the exact definitions open; the numbers come from real data.
+- Approved by: plan leaves open (flag if you object); the clip use was approved by the human
+
 ## 2026-10-15 — Milestone 2 T2: backend for the new streams
 - Plan section: §5.4, §5.6, §6, §7, §12.1
 - Decision:
@@ -33,7 +45,7 @@ Format:
   3. **Stimulus-frame record keys are snake_case** (`expected_display_time`, `media_time`, `presented_frames`), like the rest of our JSON, not the camelCase of the browser API. The record has no video id; the `video_*` events delimit the videos.
   4. **Camera settings and mime type** (§5.9 puts them in `session_start`) are logged in `recorder_start` instead, because the camera starts after `session_start`.
   5. **`calib_gate_result` data** (§5.6) adds `block` (`before_video`, `between_videos`, `after_last_video`), `skipped` (`passed` is null exactly then) and a fixed `reason` list; the participant-facing message is chosen from it. Rule for T2: `calibration_gate_failed` is set when the last `before_video` result has `passed: false`.
-  6. **Quality keys** under `quality` with starting values: `brightness_min` 0.25, `brightness_max` 0.85, `face_ratio_min` 0.07, `face_ratio_max` 0.2 (interocular distance over frame width at roughly arm's length; the plan's own example is 0.162), `max_yaw_deg` 20, `max_pitch_deg` 20. Not from a published source; tune on the pilot (debug-mode sliders, T11). Lower bounds must stay below upper bounds.
+  6. **Quality keys** under `quality` with starting values: `brightness_min` 0.25, `brightness_max` 0.85, `face_ratio_min` 0.07, `face_ratio_max` 0.2 (interocular distance over frame width at roughly arm's length; the plan's own example is 0.162; corrected in T3, item 5), `max_yaw_deg` 20, `max_pitch_deg` 20. Not from a published source; tune on the pilot (debug-mode sliders, T11). Lower bounds must stay below upper bounds.
   7. Other new event data: `recorder_start {mime_type, bits_per_second, settings}`, `recorder_dataavailable {seq, size}`, `recorder_stop {chunks, bytes}`, `face_lost {}`, `face_regained {lost_ms}`, `debug_skip {target}`. The server does not validate event data (as in 1b), except `calib_gate_result` from T2 on.
 - Reason: the plan names these records and events without exact shapes; both sides need one definition (§1 single source of truth).
 - Approved by: plan leaves open (item 3 and the snake_case naming: flag if you object)

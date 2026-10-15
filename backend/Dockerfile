@@ -32,6 +32,8 @@ COPY backend/alembic.ini backend/cli.py backend/uvicorn_logging.json ./
 COPY backend/alembic ./alembic
 COPY backend/app ./app
 COPY backend/worker ./worker
+# worker/pipeline/features_a.py reads /shared/landmark_subset.json (same layout as the repository)
+COPY shared/landmark_subset.json /shared/landmark_subset.json
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

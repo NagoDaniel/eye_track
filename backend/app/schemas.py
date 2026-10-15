@@ -153,8 +153,8 @@ class QualityConfig(Strict):
     brightness_min: float = Field(default=0.25, ge=0, le=1)
     brightness_max: float = Field(default=0.85, ge=0, le=1)
     # Interocular distance as a fraction of the frame width; the band for roughly arm's length.
-    face_ratio_min: float = Field(default=0.07, gt=0)
-    face_ratio_max: float = Field(default=0.2, gt=0)
+    face_ratio_min: float = Field(default=0.045, gt=0)
+    face_ratio_max: float = Field(default=0.16, gt=0)
     # "Roughly frontal": head yaw and pitch from the transformation matrix, in degrees.
     max_yaw_deg: float = Field(default=20, gt=0, le=90)
     max_pitch_deg: float = Field(default=20, gt=0, le=90)

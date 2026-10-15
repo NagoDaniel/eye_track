@@ -60,7 +60,7 @@
     "quality": {
       "min_face_ratio_warn": 0.8, "max_face_ratio_warn": 1.25,
       "brightness_min": 0.25, "brightness_max": 0.85,
-      "face_ratio_min": 0.07, "face_ratio_max": 0.2,
+      "face_ratio_min": 0.045, "face_ratio_max": 0.16,
       "max_yaw_deg": 20, "max_pitch_deg": 20
     },
     "inclusion": { "max_validation_error_norm": 0.12, "min_valid_fraction": 0.7 },
@@ -105,7 +105,7 @@
         "quality": {
           "min_face_ratio_warn": 0.8, "max_face_ratio_warn": 1.25,
           "brightness_min": 0.25, "brightness_max": 0.85,
-          "face_ratio_min": 0.07, "face_ratio_max": 0.2,
+          "face_ratio_min": 0.045, "face_ratio_max": 0.16,
           "max_yaw_deg": 20, "max_pitch_deg": 20
         },
         "inclusion": { "max_validation_error_norm": 0.12, "min_valid_fraction": 0.7 },

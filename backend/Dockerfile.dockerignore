@@ -10,5 +10,6 @@
 !backend/worker/**
 !shared/models.json
 !shared/download_model.py
+!shared/landmark_subset.json
 **/__pycache__
 **/*.pyc
