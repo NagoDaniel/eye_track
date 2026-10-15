@@ -14,6 +14,24 @@ Format:
 
 ---
 
+## 2026-10-15 — Milestone 2 scope and open choices
+- Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13, §14
+- Decision:
+  1. **Face fixture.** Nágó Dániel records a short clip of his own face (about 6 to 10 s) for the fake-camera e2e test and the feature fixtures; a small MP4 is committed, `e2e.sh` converts it to `.y4m`.
+  2. **Python features.** The pure function `backend/worker/pipeline/features_a.py` is written in M2 (needed for the TS/Python agreement test of §5.6 step 2); M3 reuses it.
+  3. **Quality thresholds.** The plan gives numbers only for `min_face_ratio_warn` and `max_face_ratio_warn`. Brightness bounds, the face-size band for the device check and the frontal-head limits are new keys under `quality` in `StudyConfig` with starting values chosen by the implementer from common practice (not from a published algorithm; none exists for this). They are tuned on the pilot. To make tuning easy, debug mode (§12.1) gets live sliders for these thresholds next to the measured values, and a "copy as JSON" button that prints a `quality` block for the study config. Assumption to confirm in T1: `min/max_face_ratio_warn` are multipliers of the median face ratio measured in the 3 s device check.
+  4. **Face model placement.** Web Worker first; main thread if MediaPipe does not run reliably in a worker. CPU delegate only (headless CI has no GPU).
+  5. **Gate flag.** The server derives `calibration_gate_failed` from the `calib_gate_result` events at `/complete`; the client sends nothing extra.
+  6. **Debug authorization.** `POST /api/sessions` accepts `debug: true` only if the study has `debug_allowed` or an admin is logged in on that browser (`/admin/api/me`); otherwise 403. Debug sessions are listed normally in the admin pages.
+  7. **Webcam assembly.** `/complete` also writes `raw/browser_features.jsonl` and `raw/stimulus_frames.jsonl`. Concatenating and remuxing `webcam.webm` stays in the M3 ingest; the e2e test checks the chunk concatenation with ffprobe.
+  8. **Gate without validation.** A study with `calibration_gate.enabled` and `validation.before_video: false` is not refused. The gate cannot be scored, so it is skipped and logged as a `calib_gate_result` with `skipped: true` and the reason.
+  9. **Fullscreen exit during calibration/validation.** The same "Return to fullscreen to continue" gate as during playback blocks the dots until re-entry; the exit is logged.
+  10. **Face model rate (deviation from "about 15 fps", §5.4).** The target face model rate is the stimulus video's fps (capped at the camera's actual fps) during playback, and the camera's fps during calibration and validation, instead of a fixed 15. The playback-smoothness rule stays: if the stimulus drops frames, the rate is reduced (named constants for the window, the dropped share, the minimum rate and the recovery, tuned on real laptops).
+  11. **IndexedDB growth.** No cap on pending webcam bytes; the debug panel shows them and a storage error fails loudly (existing behaviour).
+  12. **No split.** Milestone 2 stays one milestone with the 14 tasks.
+- Reason: answers to the planning questions of `/milestone-start 2`.
+- Approved by: Nágó Dániel (item 10 was his suggestion; item 3 assumption still open)
+
 ## 2026-10-14 — Milestone 1b review decisions
 - Plan section: §1, §5.8, §6, §10
 - Decision: results of `/milestone-review 1b`.
