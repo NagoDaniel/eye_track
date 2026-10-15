@@ -67,26 +67,36 @@ def _stream_summary(seqs: list[int], sizes: list[int]) -> dict[str, Any]:
 
 
 def read_event_records(
-    data_root: Path, study_id: int, session_id: uuid.UUID, seqs: list[int]
+    data_root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    seqs: list[int],
+    max_inflated_bytes: int,
 ) -> list[EventRecord]:
     """Decode the stored events chunks of a session, in seq order. Raises OSError or ValueError."""
     chunks = [chunk_path(data_root, study_id, session_id, "events", n).read_bytes() for n in seqs]
-    return parse_events(assemble_events(chunks))
+    return parse_events(assemble_events(chunks, max_inflated_bytes=max_inflated_bytes))
 
 
 def _read_events(
-    data_root: Path, study_id: int, session_id: uuid.UUID, seqs: list[int]
+    data_root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    seqs: list[int],
+    max_inflated_bytes: int,
 ) -> tuple[list[dict[str, Any]], int, str | None]:
     """Decode the stored events chunks, in seq order. Returns (shown, total, error)."""
     try:
-        events = read_event_records(data_root, study_id, session_id, seqs)
+        events = read_event_records(data_root, study_id, session_id, seqs, max_inflated_bytes)
     except (OSError, ValueError) as exc:
         return [], 0, str(exc)  # the rest of the detail is still worth showing
     shown = [e.model_dump(mode="json") for e in events[:MAX_EVENTS_SHOWN]]
     return shown, len(events), None
 
 
-def session_detail(db: DbSession, data_root: Path, session_id: uuid.UUID) -> dict[str, Any]:
+def session_detail(
+    db: DbSession, data_root: Path, session_id: uuid.UUID, max_inflated_bytes: int
+) -> dict[str, Any]:
     found = db.execute(
         select(Session, Study)
         .join(Study, Study.id == Session.study_id)
@@ -107,7 +117,9 @@ def session_detail(db: DbSession, data_root: Path, session_id: uuid.UUID) -> dic
         per_stream[stream.value][1].append(size)
     streams = {name: _stream_summary(seqs, sizes) for name, (seqs, sizes) in per_stream.items()}
 
-    events, total, error = _read_events(data_root, study.id, session_id, per_stream["events"][0])
+    events, total, error = _read_events(
+        data_root, study.id, session_id, per_stream["events"][0], max_inflated_bytes
+    )
     return {
         **_row(session, study),
         "consent_version": session.consent_version,

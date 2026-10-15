@@ -108,7 +108,7 @@ Log in at `https://<your domain>/admin/login`.
 
 The consent text is a plain-text file per version: `backend/app/consent/<consent_version>.txt` (`v1` is a placeholder, to be replaced by the text the ethics committee approves). A new version needs a rebuild: `docker compose up -d --build`. Formats of everything stored are in [`docs/DATA_FORMATS.md`](docs/DATA_FORMATS.md).
 
-Limits (all in `.env`, see `.env.example`): `MAX_UPLOAD_CHUNK_MB`, `MAX_VIDEO_UPLOAD_MB`, `MAX_ADMIN_REQUEST_MB`, `MAX_SESSION_TOTAL_MB`, `RATE_LIMIT_PER_HOUR` (session creations and error reports per network address; the default is high so that only bots hit it).
+Limits (all in `.env`, see `.env.example`): `MAX_UPLOAD_CHUNK_MB`, `MAX_VIDEO_UPLOAD_MB`, `MAX_ADMIN_REQUEST_MB`, `MAX_SESSION_TOTAL_MB`, `MAX_EVENTS_CHUNK_INFLATED_MB`, `RATE_LIMIT_PER_HOUR` (session creations and error reports per network address; the default is high so that only bots hit it).
 
 ### Backup and restore
 

@@ -20,7 +20,7 @@
   <tr class="gap"><th>Events</th><td class="error">{{ s.events_error }}</td></tr>
   {% endif %}
   {% if s.summary %}
-  <tr><th>Duration</th><td>{{ "%.1f"|format(s.summary.duration_s) if s.summary.duration_s is not none else "no events" }} s</td></tr>
+  <tr><th>Duration</th><td>{% if s.summary.duration_s is not none %}{{ "%.1f"|format(s.summary.duration_s) }} s{% else %}no events{% endif %}</td></tr>
   <tr><th>Calibration dots</th><td>{{ s.summary.dots.calibration.clicked }} clicked of {{ s.summary.dots.calibration.shown }} shown</td></tr>
   <tr><th>Validation dots</th><td>{{ s.summary.dots.validation.clicked }} clicked of {{ s.summary.dots.validation.shown }} shown</td></tr>
   <tr><th>Fullscreen exits</th><td>{{ s.summary.fullscreen_exits }}</td></tr>

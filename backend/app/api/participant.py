@@ -15,10 +15,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as Db
 
-from app.auth import get_db
+from app.auth import get_db, release_connection
 from app.chunks import (
     MIB,
     ChunkConflict,
@@ -29,8 +29,9 @@ from app.chunks import (
     write_events_file,
 )
 from app.consent import UnknownConsentVersion, consent_text
+from app.events import gunzip_limited
+from app.models import Chunk, SessionStatus, Study, Video
 from app.models import Session as SessionRow
-from app.models import SessionStatus, Study, Video
 from app.schemas import (
     BROWSER_REQUIREMENTS,
     ChunkAck,
@@ -72,8 +73,8 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def enforce_rate_limit(request: Request) -> None:
-    if not request.app.state.limiter.allow(client_ip(request)):
+def enforce_rate_limit(request: Request, bucket: str = "limiter") -> None:
+    if not getattr(request.app.state, bucket).allow(client_ip(request)):
         raise HTTPException(status_code=429, detail="too many requests, try again later")
 
 
@@ -103,6 +104,7 @@ def authed_session(
     age_s = (datetime.now(UTC) - session.created_at).total_seconds()
     if age_s > settings.upload_token_max_age_s:
         raise unauthorized
+    release_connection(db)  # before the body of a chunk upload is read, see release_connection
     return session
 
 
@@ -144,13 +146,15 @@ def create_session(
 
     videos: list[VideoRef] = []
     for video_id in config.playlist:
-        video = db.get(Video, int(video_id)) if video_id.isdigit() else None
+        video = db.get(Video, int(video_id)) if video_id.isascii() and video_id.isdigit() else None
         if video is None:
             log.error(
                 "playlist references a video that does not exist",
                 extra={"study_code": study.code, "video_id": video_id},
             )
-            raise HTTPException(status_code=500, detail=f"playlist video {video_id} is missing")
+            raise HTTPException(
+                status_code=500, detail="the study is not set up correctly"
+            ) from None
         videos.append(
             VideoRef(
                 id=str(video.id),
@@ -240,6 +244,17 @@ async def put_chunk(
         raise HTTPException(status_code=400, detail="empty chunk")
     if sha256_hex(body) != x_chunk_sha256:
         raise HTTPException(status_code=400, detail="X-Chunk-SHA256 does not match the body")
+    if stream == "events":
+        # Only gzip validity and size are checked here, so a corrupt or bomb chunk is never
+        # stored; event types are not (an unknown type must not block the upload, see /complete).
+        try:
+            await run_in_threadpool(
+                gunzip_limited, body, settings.max_events_chunk_inflated_mb * MIB
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"events chunk is not valid gzip: {exc}"
+            ) from exc
     try:
         return await run_in_threadpool(
             store_chunk,
@@ -283,16 +298,36 @@ def complete(
         return CompleteResponse(status="incomplete", missing=missing)
 
     root = settings.data_root
+    client_info, events_error = write_events_file(
+        db, root, session, settings.max_events_chunk_inflated_mb * MIB
+    )
+    if events_error is not None:
+        # Stored chunks never change, so the participant could never fix this: finish the session,
+        # flag it and let the researcher decide (PLAN §1: flag the session and move on).
+        log.error(
+            "events stream cannot be assembled",
+            extra={"session_id": str(session.id), "error": events_error},
+        )
     try:
-        client_info = write_events_file(db, root, session)
-    except ValueError as exc:
-        log.error("events stream cannot be assembled", extra={"session_id": str(session.id)})
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    config = read_config(root, session)
+        config = read_config(root, session)
+    except (OSError, ValueError, KeyError) as exc:
+        log.error(
+            "session metadata is unreadable",
+            extra={"session_id": str(session.id), "error": str(exc)},
+        )
+        raise HTTPException(status_code=500, detail="session metadata is unreadable") from exc
     if client_info is not None:
         session.client_info = client_info
-    if body.interrupted and "interrupted" not in session.flags:
-        session.flags = [*session.flags, "interrupted"]
+    no_chunks = not db.scalar(
+        select(func.count()).select_from(Chunk).where(Chunk.session_id == session.id)
+    )
+    for flag, wanted in (
+        ("interrupted", body.interrupted),
+        ("events_invalid", events_error is not None),
+        ("empty", no_chunks),
+    ):
+        if wanted and flag not in session.flags:
+            session.flags = [*session.flags, flag]
     session.status = SessionStatus.UPLOADED
     write_meta(root, session, config)
     db.commit()
@@ -302,7 +337,7 @@ def complete(
 @router.post("/client-errors", status_code=204)
 async def client_error(request: Request) -> Response:
     """Browser error report: no authentication, structured log only (DECISIONS 1b item 10)."""
-    enforce_rate_limit(request)
+    enforce_rate_limit(request, "error_limiter")
     settings: Settings = request.app.state.settings
     raw = await read_body(request, settings.client_error_max_bytes)
     try:

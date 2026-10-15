@@ -67,7 +67,7 @@ def test_crud_round_trip(admin: Admin) -> None:
     assert c.get(f"{URL}/{sid}").json() == study
     assert [s["id"] for s in c.get(URL).json()] == [sid]
 
-    new_config = {"calibration": {"points": 9}, "debug_allowed": True}
+    new_config = {"calibration": {"margin": 0.1}, "debug_allowed": True}
     r = c.put(
         f"{URL}/{sid}",
         json=body(name="Physics 2", code="phys2", mode="lab", config=new_config),
@@ -76,7 +76,7 @@ def test_crud_round_trip(admin: Admin) -> None:
     assert r.status_code == 200, r.text
     got = c.get(f"{URL}/{sid}").json()
     assert (got["name"], got["code"], got["mode"]) == ("Physics 2", "phys2", "lab")
-    assert got["config"]["calibration"] == {"points": 9, "dot_duration_ms": 1500, "margin": 0.06}
+    assert got["config"]["calibration"] == {"points": 13, "dot_duration_ms": 1500, "margin": 0.1}
     assert got["config"]["debug_allowed"] is True
 
     assert c.delete(f"{URL}/{sid}", headers=admin.headers).status_code == 204
@@ -214,9 +214,10 @@ def test_form_routes_create_edit_delete(admin: Admin, migrated_engine: Engine) -
         assert study.mode is StudyMode.LAB
         assert study.config == default_config
 
-    detail = c.get(detail_url)
+    detail = c.get(detail_url, headers={"X-Forwarded-Proto": "https"})  # as set by Caddy
     assert detail.status_code == 200
     assert "https://testserver/s/form1" in detail.text  # participant link
+    assert "http://testserver/s/form1" in c.get(detail_url).text  # dev: plain http
     assert "Form study" in detail.text
 
     edit = {**form, "name": "Edited", "config": json.dumps({"debug_allowed": True})}

@@ -78,7 +78,7 @@ def summarize_events(events: list[EventRecord]) -> dict[str, Any]:
 
 
 def participant_results(
-    db: DbSession, data_root: Path, study_id: int, participant_code: str
+    db: DbSession, data_root: Path, study_id: int, participant_code: str, max_inflated_bytes: int
 ) -> dict[str, Any]:
     """All sessions of a participant code in a study, each with its event summary.
 
@@ -103,7 +103,9 @@ def participant_results(
         summary: dict[str, Any] | None = None
         error: str | None = None
         try:
-            events = read_event_records(data_root, study.id, uuid.UUID(row["id"]), seqs)
+            events = read_event_records(
+                data_root, study.id, uuid.UUID(row["id"]), seqs, max_inflated_bytes
+            )
             summary = summarize_events(events)
         except (OSError, ValueError) as exc:
             error = str(exc)

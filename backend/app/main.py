@@ -36,6 +36,9 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
         app.state.engine = engine or make_engine(cfg.database_url)
         app.state.session_factory = make_session_factory(app.state.engine)
         app.state.limiter = SlidingWindowLimiter(cfg.rate_limit_per_hour)
+        # Error reports have their own bucket: a page stuck in an error loop must not use up the
+        # session creations of everyone behind the same address.
+        app.state.error_limiter = SlidingWindowLimiter(cfg.rate_limit_per_hour)
         try:
             yield
         finally:

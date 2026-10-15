@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 from app import sessions_view
 from app.api.pages import Page, page_admin, render
 from app.auth import current_admin, get_db
+from app.chunks import MIB
 from app.models import AdminUser
 from app.settings import Settings
 from app.studies import list_studies
@@ -33,7 +34,9 @@ def api_get(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
-    return sessions_view.session_detail(db, settings.data_root, session_id)
+    return sessions_view.session_detail(
+        db, settings.data_root, session_id, settings.max_events_chunk_inflated_mb * MIB
+    )
 
 
 @router.get("/sessions")
@@ -62,5 +65,7 @@ def detail_page(
     db: DbSession = Depends(get_db),
 ) -> Response:
     settings: Settings = request.app.state.settings
-    detail = sessions_view.session_detail(db, settings.data_root, session_id)
+    detail = sessions_view.session_detail(
+        db, settings.data_root, session_id, settings.max_events_chunk_inflated_mb * MIB
+    )
     return render(request, page, "session.html", session=detail)

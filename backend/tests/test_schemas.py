@@ -11,7 +11,10 @@ from app import schemas
 from app.models import ChunkStream
 from app.schemas import (
     BROWSER_REQUIREMENTS,
+    CALIBRATION_POINT_COUNT,
+    INNER_POINT_LOW,
     PARTICIPANT_CODE_PATTERN,
+    VALIDATION_POINT_COUNT,
     ChunkAck,
     ClientErrorRequest,
     CompleteRequest,
@@ -36,6 +39,9 @@ def test_names_match_shared_protocol() -> None:
     assert list(get_args(schemas.EventType)) == PROTOCOL["event_types"]
     assert list(BROWSER_REQUIREMENTS) == PROTOCOL["browser_requirements"]
     assert PROTOCOL["participant_code_pattern"] == PARTICIPANT_CODE_PATTERN
+    assert PROTOCOL["calibration_point_count"] == CALIBRATION_POINT_COUNT
+    assert PROTOCOL["validation_point_count"] == VALIDATION_POINT_COUNT
+    assert PROTOCOL["inner_point_low"] == INNER_POINT_LOW
     assert [s.value for s in ChunkStream] == PROTOCOL["streams"]  # DB enum agrees too
 
 
@@ -44,8 +50,8 @@ def test_default_config_is_the_plan_4_1_example() -> None:
 
 
 def test_partial_config_gets_plan_defaults() -> None:
-    cfg = StudyConfig.model_validate({"calibration": {"points": 9}, "playlist": ["3", "4"]})
-    assert cfg.calibration.points == 9
+    cfg = StudyConfig.model_validate({"calibration": {"margin": 0.1}, "playlist": ["3", "4"]})
+    assert cfg.calibration.points == 13 and cfg.calibration.margin == 0.1
     assert cfg.calibration.dot_duration_ms == 1500
     assert cfg.calibration_gate.max_mean_error_norm == 0.10
     assert cfg.playlist == ["3", "4"]
@@ -55,6 +61,10 @@ def test_partial_config_gets_plan_defaults() -> None:
     "bad",
     [
         {"calibration": {"points": 0}},
+        {"calibration": {"points": 9}},  # the app supports exactly 13
+        {"validation": {"points": 9}},  # and exactly 5
+        {"calibration": {"margin": 0.25}},  # the grid margin must stay below the 25 % points
+        {"calibration": {"margin": 0}},
         {"calibration": {"margin": 0.5}},
         {"calibration_gate": {"on_fail": "ignore"}},
         {"calibration_gate": {"max_attempts": 0}},

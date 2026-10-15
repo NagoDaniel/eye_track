@@ -112,7 +112,9 @@ def _detail_page(
         "mode": study["mode"],
         "config": json.dumps(study["config"], indent=2),
     }
-    link = f"https://{request.url.netloc}/s/{study['code']}"
+    # The api sees plain http from the proxy; Caddy says which scheme the browser used.
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    link = f"{scheme}://{request.url.netloc}/s/{study['code']}"
     return render(
         request,
         page,

@@ -26,7 +26,7 @@ In Milestone 1b only the `events` stream is used.
 
 ## The `events` stream
 
-Each chunk is the **gzip** of newline-terminated JSON lines. The browser starts a new chunk every `recording.chunk_ms` (default 2000 ms) and sends none for an empty interval. The sha256 is over the compressed bytes. `raw/events.jsonl` is the gunzipped chunks concatenated in seq order (`backend/app/events.py`, also used by the later ingest stage).
+Each chunk is the **gzip** of newline-terminated JSON lines. The browser starts a new chunk every `recording.chunk_ms` (default 2000 ms) and sends none for an empty interval. The sha256 is over the compressed bytes. The server refuses (422) an events chunk that is not one complete gzip stream or that inflates to more than `MAX_EVENTS_CHUNK_INFLATED_MB`. `raw/events.jsonl` is the gunzipped chunks concatenated in seq order (`backend/app/events.py`, also used by the later ingest stage); it is written when the session completes and the stream is valid.
 
 One line:
 
@@ -35,7 +35,7 @@ One line:
 ```
 
 - `t` is `performance.now()` in milliseconds on the participant's clock (PLAN §5.3); events are written in the order they happened.
-- `type` is one of the names in `shared/protocol.json` (`event_types`). The server refuses to complete a session that has an unknown type or an invalid line.
+- `type` is one of the names in `shared/protocol.json` (`event_types`). If a line is invalid or has an unknown type, the session still completes, is flagged `events_invalid`, and has no `raw/events.jsonl` (the chunks are kept).
 - Coordinates are viewport CSS pixels.
 
 | type | `data` |
@@ -76,7 +76,7 @@ Written when the session is created and rewritten (atomically) when it completes
 
 - `config` is a snapshot of the study config (PLAN §4.1, every default filled in). It never changes afterwards, so later edits to the study do not change how an existing session is processed.
 - `status`, `consent_*`, `flags` and `client_info` are empty or `created` in the first version and final in the second.
-- `flags` contains `interrupted` when the participant reloaded the page mid-session and finished the upload from a later page load.
+- `flags` can contain: `interrupted` (the participant reloaded the page mid-session and finished the upload from a later page load), `events_invalid` (the events stream could not be assembled, see above), `empty` (the session completed without any chunk).
 
 ## Session status
 

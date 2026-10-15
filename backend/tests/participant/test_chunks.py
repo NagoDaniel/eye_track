@@ -126,9 +126,10 @@ def test_first_chunk_flips_status_to_recording(
     client: TestClient, created: dict[str, Any], migrated_engine: Engine
 ) -> None:
     assert status_of(migrated_engine, created) == SessionStatus.CONSENTED
-    assert put(client, created, "events", 0, b"a").status_code == 200
+    # Any stream will do; the events stream itself must be gzip, so use another one here.
+    assert put(client, created, "features", 0, b"a").status_code == 200
     assert status_of(migrated_engine, created) == SessionStatus.RECORDING
-    assert put(client, created, "events", 1, b"b").status_code == 200
+    assert put(client, created, "features", 1, b"b").status_code == 200
     assert status_of(migrated_engine, created) == SessionStatus.RECORDING
 
 
@@ -211,7 +212,7 @@ def test_session_total_limit_is_413_but_repeats_still_ack(
     assert put(client, c, "webcam", 0, part).status_code == 200
     assert put(client, c, "webcam", 1, part).status_code == 413
     assert put(client, c, "webcam", 0, part).status_code == 200  # a repeat adds nothing
-    assert put(client, c, "events", 0, b"small").status_code == 200  # fits
+    assert put(client, c, "features", 0, b"small").status_code == 200  # fits
 
 
 def test_put_before_consent_and_after_complete_is_409(
@@ -457,7 +458,36 @@ def test_complete_creates_no_job_and_leaves_no_tmp_files(
     assert list(session_dir(data_root, study_id, created).rglob("*.tmp")) == []
 
 
-def test_complete_with_undecodable_events_is_422_and_changes_nothing(
+def test_corrupt_events_chunk_is_refused_at_the_put_and_not_stored(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    good = events_chunk(ev(0.0, "session_start"))
+    corrupt_body = good[:12] + bytes([good[12] ^ 0xFF]) + good[13:]  # makes zlib.error
+    for bad in (b"this is not gzip", corrupt_body, good[:-6], good + b"junk"):
+        r = put(client, created, "events", 1, bad)
+        assert r.status_code == 422 and "not valid gzip" in r.json()["detail"]
+    assert chunk_count(migrated_engine, created) == 0
+    assert not chunk_file(data_root, study_id, created, "events", 1).exists()
+
+
+def test_gzip_bomb_is_refused_at_the_put(
+    make_client: MakeClient, study_id: int, migrated_engine: Engine
+) -> None:
+    client = make_client(max_events_chunk_inflated_mb=1)
+    created = create_session(client)
+    consent(client, created)
+    bomb = gzip.compress(b"\0" * (5 * 1024 * 1024))
+    assert len(bomb) < 10_000
+    r = put(client, created, "events", 0, bomb)
+    assert r.status_code == 422 and "inflates to more than" in r.json()["detail"]
+    assert chunk_count(migrated_engine, created) == 0
+
+
+def test_complete_with_an_unknown_event_type_finishes_and_flags_the_session(
     client: TestClient,
     created: dict[str, Any],
     data_root: Path,
@@ -465,19 +495,59 @@ def test_complete_with_undecodable_events_is_422_and_changes_nothing(
     migrated_engine: Engine,
 ) -> None:
     put(client, created, "events", 0, events_chunk(ev(0.0, "session_start")))
-    put(client, created, "events", 1, b"this is not gzip")
+    put(client, created, "events", 1, events_chunk(ev(1.0, "a_type_from_a_newer_frontend")))
     r = complete(client, created, {"events": 1})
-    assert r.status_code == 422 and "events chunk 1" in r.json()["detail"]
-    assert status_of(migrated_engine, created) == SessionStatus.RECORDING
+    assert r.status_code == 200 and r.json()["status"] == "uploaded"
+    assert status_of(migrated_engine, created) == SessionStatus.UPLOADED
+    with Db(migrated_engine) as db:
+        row = db.get_one(SessionRow, uuid.UUID(created["session_id"]))
+        assert row.flags == ["events_invalid"]
     assert not (session_dir(data_root, study_id, created) / "raw" / "events.jsonl").exists()
+    # The chunks themselves are kept, and the meta.json carries the flag.
+    assert chunk_file(data_root, study_id, created, "events", 1).exists()
+    meta = json.loads((session_dir(data_root, study_id, created) / "raw" / "meta.json").read_text())
+    assert meta["flags"] == ["events_invalid"] and meta["status"] == "uploaded"
+    # Completing again changes nothing (no duplicate flag).
+    assert complete(client, created, {"events": 1}).status_code == 200
+    with Db(migrated_engine) as db:
+        assert db.get_one(SessionRow, uuid.UUID(created["session_id"])).flags == ["events_invalid"]
 
 
-def test_complete_with_invalid_event_line_is_422(
-    client: TestClient, created: dict[str, Any]
+def test_complete_of_a_session_without_any_chunk_is_flagged_empty(
+    client: TestClient, created: dict[str, Any], migrated_engine: Engine
 ) -> None:
-    put(client, created, "events", 0, events_chunk(ev(0.0, "not_an_event_type")))
+    r = complete(client, created, {}, interrupted=True)
+    assert r.status_code == 200 and r.json()["status"] == "uploaded"
+    with Db(migrated_engine) as db:
+        row = db.get_one(SessionRow, uuid.UUID(created["session_id"]))
+        assert row.flags == ["interrupted", "empty"]
+
+
+def test_a_session_with_events_is_not_flagged_empty(
+    client: TestClient, created: dict[str, Any], migrated_engine: Engine
+) -> None:
+    put(client, created, "events", 0, events_chunk(ev(0.0, "session_start")))
+    assert complete(client, created, {"events": 0}).status_code == 200
+    with Db(migrated_engine) as db:
+        assert db.get_one(SessionRow, uuid.UUID(created["session_id"])).flags == []
+
+
+def test_complete_with_a_garbage_event_line_finishes_and_flags_the_session(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    put(client, created, "events", 0, gzip.compress(b"this is not json\n"))
     r = complete(client, created, {"events": 0})
-    assert r.status_code == 422 and "line 1" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["status"] == "uploaded"
+    with Db(migrated_engine) as db:
+        row = db.get_one(SessionRow, uuid.UUID(created["session_id"]))
+        assert row.flags == ["events_invalid"] and row.client_info is None
+    assert not (session_dir(data_root, study_id, created) / "raw" / "events.jsonl").exists()
+    assert any("line 1" in str(getattr(r, "error", "")) for r in caplog.records)  # reason logged
 
 
 def test_complete_without_session_start_keeps_client_info_empty(

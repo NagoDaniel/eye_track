@@ -47,6 +47,13 @@ BROWSER_REQUIREMENTS: tuple[str, ...] = (
     "WebAssembly",
 )
 
+# The participant app supports exactly these point layouts (PLAN §5.5); mirrored in
+# frontend/src/constants.ts and checked against shared/protocol.json, so a study the app cannot run
+# is rejected when it is saved. The grid margin must stay below the inner points at 25 %.
+CALIBRATION_POINT_COUNT = 13
+VALIDATION_POINT_COUNT = 5
+INNER_POINT_LOW = 0.25
+
 # First two letters of the name + birth month + birth day (DECISIONS, milestone 1b item 11).
 PARTICIPANT_CODE_PATTERN = r"^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$"
 _PARTICIPANT_CODE_RE = re.compile(PARTICIPANT_CODE_PATTERN)
@@ -62,16 +69,34 @@ class Strict(BaseModel):
 
 
 class CalibrationConfig(Strict):
-    points: int = Field(default=13, gt=0)
+    points: int = Field(default=CALIBRATION_POINT_COUNT)
     dot_duration_ms: int = Field(default=1500, gt=0)
-    margin: float = Field(default=0.06, ge=0, lt=0.5)
+    margin: float = Field(default=0.06, gt=0, lt=INNER_POINT_LOW)
+
+    @field_validator("points")
+    @classmethod
+    def supported_points(cls, value: int) -> int:
+        if value != CALIBRATION_POINT_COUNT:
+            raise ValueError(
+                f"the participant app supports exactly {CALIBRATION_POINT_COUNT} points"
+            )
+        return value
 
 
 class ValidationConfig(Strict):
-    points: int = Field(default=5, gt=0)
+    points: int = Field(default=VALIDATION_POINT_COUNT)
     before_video: bool = True
     between_videos: bool = True
     after_last_video: bool = True
+
+    @field_validator("points")
+    @classmethod
+    def supported_points(cls, value: int) -> int:
+        if value != VALIDATION_POINT_COUNT:
+            raise ValueError(
+                f"the participant app supports exactly {VALIDATION_POINT_COUNT} points"
+            )
+        return value
 
 
 class CalibrationGateConfig(Strict):

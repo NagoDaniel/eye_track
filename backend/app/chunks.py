@@ -95,12 +95,15 @@ def missing_chunks(
     return missing
 
 
-def write_events_file(db: Db, root: Path, session: SessionRow) -> dict[str, Any] | None:
+def write_events_file(
+    db: Db, root: Path, session: SessionRow, max_inflated_bytes: int
+) -> tuple[dict[str, Any] | None, str | None]:
     """Assemble `raw/events.jsonl` from the events chunks in seq order.
 
-    Returns `data.client_info` of the first `session_start` event, if there is one. Raises
-    ValueError (naming the problem) if a chunk is not valid gzip or a line is not a valid event;
-    nothing is written in that case.
+    Returns `(client_info, error)`: `data.client_info` of the first `session_start` event if there
+    is one, and None for the error. If a chunk is not valid gzip or a line is not a valid event
+    (for example an event type this server does not know), nothing is written and the problem is
+    returned as `error`: the session still completes and the caller flags it (DECISIONS, 1b review).
     """
     seqs = db.scalars(
         select(Chunk.seq)
@@ -110,11 +113,14 @@ def write_events_file(db: Db, root: Path, session: SessionRow) -> dict[str, Any]
     chunks = [
         chunk_path(root, session.study_id, session.id, "events", seq).read_bytes() for seq in seqs
     ]
-    jsonl = assemble_events(chunks)
-    events = parse_events(jsonl)
+    try:
+        jsonl = assemble_events(chunks, max_inflated_bytes=max_inflated_bytes)
+        events = parse_events(jsonl)
+    except ValueError as exc:
+        return None, str(exc)
     atomic_write_bytes(events_path(root, session.study_id, session.id), jsonl)
     for event in events:
         if event.type == "session_start":
             info = event.data.get("client_info")
-            return info if isinstance(info, dict) else None
-    return None
+            return (info if isinstance(info, dict) else None), None
+    return None, None
