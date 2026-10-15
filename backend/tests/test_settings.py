@@ -25,6 +25,19 @@ def test_defaults_match_plan_env_example() -> None:
     assert s.data_root == Path("/data")
 
 
+def test_timing_defaults_match_plan() -> None:
+    s = make()
+    assert s.worker_heartbeat_interval_s == 30.0  # PLAN §11.1: heartbeat every 30 s
+    assert s.worker_heartbeat_max_age_s == 90.0
+    assert s.secret_key_min_length == 32
+
+
+def test_short_secret_key_rejected() -> None:
+    with pytest.raises(ValidationError, match="at least 32 characters"):
+        make(secret_key="s" * 31)
+    assert make(secret_key="s" * 32).secret_key == "s" * 32
+
+
 def test_missing_secrets_fail_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)

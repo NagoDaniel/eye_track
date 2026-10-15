@@ -2,6 +2,7 @@
 **
 !frontend/**
 !shared/models.json
+!shared/protocol.json
 !Caddyfile
 !proxy/entrypoint.sh
 !proxy/routes.caddy

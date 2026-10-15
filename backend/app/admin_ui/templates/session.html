@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Session {{ session.id[:8] }}{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block body %}
+<p><a href="/admin/sessions?study_id={{ session.study_id }}">Sessions of this study</a></p>
+<h1>Session <code>{{ session.id }}</code></h1>
+<table>
+  <tr><th>Study</th><td><a href="/admin/studies/{{ session.study_id }}">{{ session.study_name }}</a> ({{ session.study_code }})</td></tr>
+  <tr><th>Participant</th><td><a href="/admin/participants/{{ session.study_id }}/{{ session.participant_code }}">{{ session.participant_code }}</a></td></tr>
+  <tr><th>Status</th><td>{{ session.status }}</td></tr>
+  <tr><th>Flags</th><td>{{ session.flags | join(", ") }}</td></tr>
+  <tr><th>Debug session</th><td>{{ "yes" if session.is_debug else "no" }}</td></tr>
+  <tr><th>Created</th><td>{{ session.created_at }}</td></tr>
+  <tr><th>Consent</th><td>{% if session.consent_at %}{{ session.consent_version }} at {{ session.consent_at }}{% else %}none{% endif %}</td></tr>
+  <tr><th>Client info</th><td><pre>{{ session.client_info | tojson(indent=2) }}</pre></td></tr>
+  <tr><th>Quality</th><td><pre>{{ session.quality | tojson(indent=2) }}</pre></td></tr>
+</table>
+
+<h2>Chunks per stream</h2>
+<table>
+  <thead><tr><th>Stream</th><th class="num">Chunks</th><th class="num">Highest seq</th><th class="num">Total bytes</th><th>Missing seqs</th></tr></thead>
+  <tbody>
+  {% for name, s in session.streams.items() %}
+    <tr{% if s.missing %} class="gap"{% endif %}>
+      <td>{{ name }}</td>
+      <td class="num">{{ s.count }}</td>
+      <td class="num">{{ s.highest_seq if s.highest_seq is not none else "-" }}</td>
+      <td class="num">{{ s.total_bytes }}</td>
+      <td>{% if s.missing %}<strong>{{ s.missing | join(", ") }}</strong>{% else %}none{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Events</h2>
+{% if session.events_error %}
+<p class="error" role="alert">Events could not be read: {{ session.events_error }}</p>
+{% endif %}
+<p>{{ session.events_total }} event(s){% if session.events_total > session.events | length %}, showing the first {{ session.events | length }}{% endif %}.
+{% if session.streams.events.missing %}<strong class="error">Events chunks {{ session.streams.events.missing | join(", ") }} are missing: events in between are absent.</strong>{% endif %}</p>
+<table>
+  <thead><tr><th class="num">t (ms)</th><th>Type</th><th>Data</th></tr></thead>
+  <tbody>
+  {% for e in session.events %}
+    <tr><td class="num">{{ e.t }}</td><td>{{ e.type }}</td><td><pre>{{ e.data | tojson }}</pre></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

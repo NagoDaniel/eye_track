@@ -58,7 +58,7 @@ docker run --rm -u "$(id -u):$(id -g)" -v "$work/videos/1:/out" --entrypoint ffm
   -c:v libx264 /out/video.mp4
 docker network create "$net" >/dev/null
 docker run -d --name "${net}-api" --network "$net" --network-alias api \
-  -e SECRET_KEY=proxy-test-secret -e POSTGRES_PASSWORD=x -e POSTGRES_HOST=127.0.0.1 \
+  -e SECRET_KEY=proxy-test-secret-0123456789abcdef -e POSTGRES_PASSWORD=x -e POSTGRES_HOST=127.0.0.1 \
   -e API_WORKERS=1 "$API_IMAGE" >/dev/null
 docker run -d --name "${net}-proxy" --network "$net" -p 127.0.0.1::443 -p 127.0.0.1::80 \
   -v "$work/videos:/data/videos:ro" \
@@ -90,6 +90,8 @@ expect "SPA fallback for deep route" 200 "$base/some/deep/route"
 expect "admin login page proxied" 200 "$base/admin/login"
 expect "api health proxied (503: no database)" 503 "$base/api/health"
 expect "unknown api path reaches the api" 404 "$base/api/nope"
+expect "/admin redirects to /admin/" 308 "$base/admin"
+curl -sk -D - -o /dev/null "$base/admin" | grep -qi '^location: /admin/' || fail "/admin does not redirect to /admin/"
 expect "video served" 200 "$base/media/videos/1.mp4"
 expect "unknown video 404" 404 "$base/media/videos/999.mp4"
 expect "non-numeric video id 404" 404 "$base/media/videos/abc.mp4"
@@ -153,6 +155,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self):
+        # Echo what the proxy forwarded, for the X-Forwarded-For check.
+        body = self.headers.get("X-Forwarded-For", "").encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *args):
         pass
 
@@ -181,6 +191,15 @@ done
 r=$(code -X PUT --data-binary @"$work/over.bin" "$base2/api/sessions/x/chunks/webcam/0")
 [ "$r" = "413" ] || fail "10 MiB + 1 byte: expected 413, got $r"
 echo "ok  1 KiB and exactly 10 MiB accepted, 10 MiB + 1 byte rejected with 413"
+
+echo "== the api sees the real client address, whatever the client puts in X-Forwarded-For"
+# api/participant.py takes the RIGHTMOST entry as the client address (rate limiting). That is only
+# safe if the proxy does not pass a client-supplied value through as the last entry.
+seen=$(curl -sk -H "X-Forwarded-For: 1.2.3.4" "$base2/api/whoami")
+last="${seen##*,}"; last="${last// /}"
+[ -n "$last" ] || fail "the api received no X-Forwarded-For header from the proxy"
+[ "$last" != "1.2.3.4" ] || fail "a client-supplied X-Forwarded-For reached the api as the last entry: '$seen'"
+echo "ok  client sent 1.2.3.4, the api's last entry is the real peer ($last)"
 
 echo "== admin video upload cap (MAX_VIDEO_UPLOAD_MB=2 in this test) only on /admin/api/videos"
 head -c 2097152 /dev/zero > "$work/v2.bin"

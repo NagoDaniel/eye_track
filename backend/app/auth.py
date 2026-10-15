@@ -120,11 +120,24 @@ def get_db(request: Request) -> Generator[Session]:
         yield db
 
 
+def release_connection(db: Session) -> None:
+    """End the transaction so the pooled connection goes back to the pool.
+
+    Called once a request is authenticated and before a slow body is read: otherwise a stalled
+    upload holds a connection (5 + 10 per process by default) and enough of them block every other
+    request, including the health check. Objects loaded so far stay usable (`expire_on_commit`
+    is off) and the next query starts a new transaction.
+    """
+    db.commit()
+
+
 def optional_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser | None:
     session = read_session(request)
     if session is None or session.admin_id is None:
         return None
-    return db.get(AdminUser, session.admin_id)
+    admin = db.get(AdminUser, session.admin_id)
+    release_connection(db)
+    return admin
 
 
 def current_admin(admin: AdminUser | None = Depends(optional_admin)) -> AdminUser:

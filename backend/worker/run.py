@@ -86,7 +86,10 @@ def main() -> None:
     settings = Settings()  # type: ignore[call-arg]
     configure_logging(settings.log_level)
     if settings.worker_concurrency != 1:
-        raise SystemExit("WORKER_CONCURRENCY > 1 is not implemented yet (M3, with real jobs)")
+        raise SystemExit(
+            f"WORKER_CONCURRENCY must be 1 (got {settings.worker_concurrency}); "
+            "running jobs in parallel is not implemented"
+        )
     factory = make_session_factory(make_engine(settings.database_url))
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
 

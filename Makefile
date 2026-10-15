@@ -1,4 +1,4 @@
-.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint e2e
+.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e
 
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
@@ -40,7 +40,12 @@ test-stack:
 lint:
 	cd backend && uv run ruff check . ../shared && uv run ruff format --check . ../shared && uv run mypy
 	cd frontend && npm run lint && npm run typecheck
+	cd e2e && npm run typecheck
 
+# shellcheck for every shell script, run in a container so the host needs only Docker.
+lint-shell:
+	docker run --rm -v "$(CURDIR):/mnt" koalaman/shellcheck:stable proxy/entrypoint.sh scripts/*.sh
+
+# Playwright end-to-end test against the production stack (PLAN §13).
 e2e:
-	@echo "e2e: not implemented until Milestone 2 (needs fake-camera fixtures, PLAN §12.4)" >&2
-	@exit 1
+	./scripts/e2e.sh

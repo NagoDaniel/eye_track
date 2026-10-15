@@ -5,14 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Admin{% endblock %} · eyetrack</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 4rem auto; padding: 0 1rem; }
+    body { font-family: system-ui, sans-serif; max-width: {% block width %}28rem{% endblock %}; margin: 4rem auto; padding: 0 1rem; }
     label { display: block; margin-top: 1rem; }
-    input { width: 100%; padding: .5rem; box-sizing: border-box; }
+    input, select, textarea { width: 100%; padding: .5rem; box-sizing: border-box; }
+    textarea { font-family: ui-monospace, monospace; }
     button { margin-top: 1.5rem; padding: .5rem 1rem; }
     .error { color: #b00020; }
+    .ok { color: #1b6e2d; }
+    .warning { color: #8a5a00; }
+    nav a { margin-right: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { text-align: left; padding: .25rem .5rem; border-bottom: 1px solid #ccc; vertical-align: top; }
+    td.num, th.num { text-align: right; }
+    code, pre { font-family: ui-monospace, monospace; }
+    pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
+    .gap { background: #ffe0e0; }
+    .danger { color: #b00020; }
   </style>
 </head>
 <body>
+{% if username %}
+<nav>
+  <a href="/admin/">Home</a>
+  <a href="/admin/studies">Studies</a>
+  <a href="/admin/videos">Videos</a>
+  <a href="/admin/sessions">Sessions</a>
+</nav>
+{% endif %}
 {% block body %}{% endblock %}
 </body>
 </html>
