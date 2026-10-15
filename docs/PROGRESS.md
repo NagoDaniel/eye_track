@@ -3,14 +3,14 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**1b — Skeleton app** (PLAN §14), branch `m1b-skeleton-app`, draft PR #2. All tasks T1-T17 done, human dummy-session check passed (2026-10-14). `/milestone-review 1b` run on 2026-10-14: no blockers; the review fixes R1, R3-R7 are done (R2 skipped by the human). Waiting for the human to accept the milestone.
+**2 — Recording and sync data** (PLAN §14): not started; run `/milestone-start 2`. Milestone 1b (Skeleton app) was accepted by Nágó Dániel and merged into `main` on 2026-10-15; its task list, results and review fixes are in git history and in DECISIONS.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
 |---|---|---|---|
 | 1a Infrastructure | done (accepted and merged 2026-10-12) | m1a-infrastructure | task record and review are in git history (`41e299d`) |
-| 1b Skeleton app | in progress | m1b-skeleton-app | task list approved 2026-10-12 |
-| 2 Recording and sync data | not started | | |
+| 1b Skeleton app | done (accepted and merged 2026-10-15) | m1b-skeleton-app | PR #2; reviewed, review fixes done, CI green on `745c48c`; task record in git history |
+| 2 Recording and sync data | next, not started | | |
 | 3 Pipeline A | not started | | carries over R2 (stale `running` jobs) from the 1a review |
 | 4 Analysis | not started | | |
 | 5 Pipeline B and comparison | not started | | |
@@ -81,5 +81,4 @@ Reviewer verdict: no blockers, "ready after fixes". Human decisions 2026-10-14: 
 - The Hetzner VPS still runs the pre-review 1a build and costs money: update it (`cd /opt/eyetrack && git pull && docker compose up -d --build`), stop it or delete it.
 
 ## Next step
-1. Human: accept milestone 1b (or ask for changes). Then merge PR #2 and `/milestone-start 2`.
-2. Still open for the human: fresh-VM run of PLAN §11.6 (postponed), the Hetzner VPS (update, stop or delete).
+`/milestone-start 2` (new branch `m2-recording` from `main`). Still open for the human: fresh-VM run of PLAN §11.6 (postponed), the Hetzner VPS (update, stop or delete).
