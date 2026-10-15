@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     # Most chunks per stream a session may report in /complete (stops a huge `missing` list).
     # 2 s chunks: 100 000 chunks is more than 50 hours.
     max_chunks_per_stream: int = 100_000
-    # Most one gzip-compressed events chunk may inflate to (a few KB of gzip can inflate to GBs).
+    # Most one gzip-compressed JSONL chunk (events, features, stimulus_frames) may inflate to
+    # (a few KB of gzip can inflate to GBs).
     max_events_chunk_inflated_mb: int = 32
 
     # Worker timing (PLAN §11.1: heartbeat every 30 s).

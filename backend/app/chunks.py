@@ -2,6 +2,7 @@
 
 import hashlib
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,13 +10,23 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as Db
 
-from app.events import assemble_events, parse_events
+from app.events import assemble_events, calibration_gate_failed, parse_events, parse_records
 from app.models import Chunk, ChunkStream, SessionStatus
 from app.models import Session as SessionRow
-from app.schemas import ChunkAck, Stream
-from app.storage import atomic_write_bytes, chunk_path, events_path
+from app.schemas import ChunkAck, FeatureRecord, StimulusFrameRecord, Stream
+from app.storage import (
+    atomic_write_bytes,
+    browser_features_path,
+    chunk_path,
+    events_path,
+    stimulus_frames_path,
+)
 
 MIB = 1024 * 1024
+
+# Every WebM (EBML) file starts with these four bytes; only chunk 0 of the webcam stream has them
+# (PLAN §5.4).
+EBML_MAGIC = b"\x1a\x45\xdf\xa3"
 
 
 class ChunkConflict(Exception):
@@ -95,32 +106,101 @@ def missing_chunks(
     return missing
 
 
-def write_events_file(
-    db: Db, root: Path, session: SessionRow, max_inflated_bytes: int
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Assemble `raw/events.jsonl` from the events chunks in seq order.
+@dataclass(frozen=True)
+class EventsResult:
+    client_info: dict[str, Any] | None = None
+    gate_failed: bool = False
+    error: str | None = None
 
-    Returns `(client_info, error)`: `data.client_info` of the first `session_start` event if there
-    is one, and None for the error. If a chunk is not valid gzip or a line is not a valid event
-    (for example an event type this server does not know), nothing is written and the problem is
-    returned as `error`: the session still completes and the caller flags it (DECISIONS, 1b review).
-    """
+
+def _stored_chunks(db: Db, root: Path, session: SessionRow, stream: Stream) -> list[bytes]:
     seqs = db.scalars(
         select(Chunk.seq)
-        .where(Chunk.session_id == session.id, Chunk.stream == ChunkStream.EVENTS)
+        .where(Chunk.session_id == session.id, Chunk.stream == ChunkStream(stream))
         .order_by(Chunk.seq)
     ).all()
-    chunks = [
-        chunk_path(root, session.study_id, session.id, "events", seq).read_bytes() for seq in seqs
+    return [
+        chunk_path(root, session.study_id, session.id, stream, seq).read_bytes() for seq in seqs
     ]
+
+
+def write_events_file(
+    db: Db, root: Path, session: SessionRow, max_inflated_bytes: int
+) -> EventsResult:
+    """Assemble `raw/events.jsonl` from the events chunks in seq order.
+
+    The result holds `data.client_info` of the first `session_start` event if there is one, and
+    whether the last pre-video calibration gate failed (PLAN §5.6). If a chunk is not valid gzip or
+    a line is not a valid event (for example an event type this server does not know, or a
+    `calib_gate_result` of the wrong shape), nothing is written and the problem is returned as
+    `error`: the session still completes and the caller flags it (DECISIONS, 1b review).
+    """
+    chunks = _stored_chunks(db, root, session, "events")
     try:
         jsonl = assemble_events(chunks, max_inflated_bytes=max_inflated_bytes)
         events = parse_events(jsonl)
+        gate_failed = calibration_gate_failed(events)
     except ValueError as exc:
-        return None, str(exc)
+        return EventsResult(error=str(exc))
     atomic_write_bytes(events_path(root, session.study_id, session.id), jsonl)
     for event in events:
         if event.type == "session_start":
             info = event.data.get("client_info")
-            return (info if isinstance(info, dict) else None), None
-    return None, None
+            return EventsResult(
+                client_info=info if isinstance(info, dict) else None, gate_failed=gate_failed
+            )
+    return EventsResult(gate_failed=gate_failed)
+
+
+def write_features_file(
+    db: Db, root: Path, session: SessionRow, max_inflated_bytes: int
+) -> str | None:
+    """Assemble `raw/browser_features.jsonl`; nothing is written when there are no chunks.
+
+    Returns None, or the problem if a chunk or a line is invalid (then nothing is written).
+    """
+    return _write_records(
+        db,
+        root,
+        session,
+        "features",
+        browser_features_path(root, session.study_id, session.id),
+        FeatureRecord,
+        max_inflated_bytes,
+    )
+
+
+def write_stimulus_frames_file(
+    db: Db, root: Path, session: SessionRow, max_inflated_bytes: int
+) -> str | None:
+    """Assemble `raw/stimulus_frames.jsonl`; same rules as `write_features_file`."""
+    return _write_records(
+        db,
+        root,
+        session,
+        "stimulus_frames",
+        stimulus_frames_path(root, session.study_id, session.id),
+        StimulusFrameRecord,
+        max_inflated_bytes,
+    )
+
+
+def _write_records(
+    db: Db,
+    root: Path,
+    session: SessionRow,
+    stream: Stream,
+    path: Path,
+    model: type[FeatureRecord] | type[StimulusFrameRecord],
+    max_inflated_bytes: int,
+) -> str | None:
+    chunks = _stored_chunks(db, root, session, stream)
+    if not chunks:
+        return None
+    try:
+        jsonl = assemble_events(chunks, max_inflated_bytes=max_inflated_bytes, name=stream)
+        parse_records(jsonl, model, stream)
+    except ValueError as exc:
+        return str(exc)
+    atomic_write_bytes(path, jsonl)
+    return None

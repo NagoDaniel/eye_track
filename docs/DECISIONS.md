@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-15 — Milestone 2 T2: backend for the new streams
+- Plan section: §5.4, §5.6, §6, §7, §12.1
+- Decision:
+  1. **Debug authorization is decided by the server alone** (refines item 6 of "Milestone 2 scope"): `POST /api/sessions` with `debug: true` is accepted when the study has `debug_allowed` or the request carries a valid admin session cookie (same origin, so the browser sends it); otherwise 403 and no session is created. The participant app does not call `/admin/api/me`.
+  2. **Validation at the PUT:** `features` and `stimulus_frames` chunks must be valid gzip within `MAX_EVENTS_CHUNK_INFLATED_MB` (the same setting as `events`; its name is kept so `.env` files stay valid), else 422 and nothing is stored. The first webcam chunk (seq 0) must start with the WebM (EBML) magic bytes `1A 45 DF A3`, else 422. Other webcam chunks are not inspected.
+  3. **At `/complete`:** `raw/browser_features.jsonl` and `raw/stimulus_frames.jsonl` are written when the stream has chunks (gunzip and concatenate, every line validated as `FeatureRecord` / `StimulusFrameRecord`; about 0.6 s for 10 minutes of features at 30 fps). A bad chunk or line writes nothing for that stream, the session still completes, and it gets the flag `features_invalid` or `stimulus_frames_invalid` (like `events_invalid`). A session without such chunks gets no flag here.
+  4. **`calibration_gate_failed`** is set when the last `before_video` `calib_gate_result` of the events has `passed: false`; skipped results and later blocks do not count. A `calib_gate_result` of the wrong shape counts as an invalid events stream (`events_invalid`).
+  5. `webcam.webm` (concatenate and remux) is not produced by the server in M2 (M3 ingest).
+- Reason: details the plan leaves open; keep the participant's upload from ever blocking on a stream problem (§1: flag the session and move on).
+- Approved by: plan leaves open
+
 ## 2026-10-15 — Milestone 2 T1: stream records and event data (choices the plan leaves open)
 - Plan section: §4.1, §5.3, §5.4, §5.6, §5.9, §12.1
 - Decision:

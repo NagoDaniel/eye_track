@@ -5,7 +5,14 @@ import zlib
 import pytest
 
 from app.consent import UnknownConsentVersion, consent_text, consent_versions
-from app.events import assemble_events, gunzip_limited, parse_events
+from app.events import (
+    assemble_events,
+    calibration_gate_failed,
+    gunzip_limited,
+    parse_events,
+    parse_records,
+)
+from app.schemas import EventRecord, StimulusFrameRecord
 
 LIMIT = 1_000_000
 
@@ -89,3 +96,51 @@ def test_exactly_the_limit_is_accepted() -> None:
     assert gunzip_limited(gzip.compress(b"a" * 1000), 1000) == b"a" * 1000
     with pytest.raises(ValueError, match="inflates to more than"):
         gunzip_limited(gzip.compress(b"a" * 1001), 1000)
+
+
+def test_assemble_names_the_stream_in_its_error() -> None:
+    with pytest.raises(ValueError, match="features chunk 1 is not valid gzip"):
+        assemble_events([gz(), b"junk"], max_inflated_bytes=LIMIT, name="features")
+
+
+def test_parse_records_validates_every_line_as_the_given_model() -> None:
+    good = {"t": 1.0, "expected_display_time": 2.0, "media_time": 0.5, "presented_frames": 3}
+    jsonl = (json.dumps(good) + "\n\n" + json.dumps(good) + "\n").encode()
+    assert len(parse_records(jsonl, StimulusFrameRecord, "stimulus_frames")) == 2
+    bad = jsonl + b'{"t": 1.0}\n'
+    with pytest.raises(ValueError, match="stimulus_frames line 4 is invalid"):
+        parse_records(bad, StimulusFrameRecord, "stimulus_frames")
+    with pytest.raises(ValueError, match="line 1 is invalid"):
+        parse_records(b"not json\n", StimulusFrameRecord, "stimulus_frames")
+
+
+def gate_event(t: float, **data: object) -> EventRecord:
+    base: dict[str, object] = {
+        "block": "before_video",
+        "attempt": 1,
+        "passed": False,
+        "skipped": False,
+        "mean_error_norm": 0.2,
+        "point_errors": [0.2, None],
+        "valid_frames_per_dot": [10, 10],
+        "reason": "high_error",
+    }
+    return EventRecord(t=t, type="calib_gate_result", data={**base, **data})
+
+
+def test_calibration_gate_failed_uses_the_last_pre_video_result() -> None:
+    assert calibration_gate_failed([]) is False
+    assert calibration_gate_failed([gate_event(1)]) is True
+    assert calibration_gate_failed([gate_event(1), gate_event(2, attempt=2, passed=True)]) is False
+    assert calibration_gate_failed([gate_event(1, passed=True), gate_event(2, attempt=2)]) is True
+    later = gate_event(3, block="after_last_video", passed=False)
+    assert calibration_gate_failed([gate_event(1, passed=True), later]) is False
+    skipped = gate_event(1, passed=None, skipped=True, reason="no_validation")
+    assert calibration_gate_failed([skipped]) is False
+
+
+def test_calibration_gate_failed_rejects_wrong_shapes() -> None:
+    with pytest.raises(ValueError, match="calib_gate_result at t=1.0 is invalid"):
+        calibration_gate_failed([gate_event(1.0, attempt=0)])
+    with pytest.raises(ValueError, match="invalid"):
+        calibration_gate_failed([gate_event(1.0, passed=None)])  # null verdict but not skipped
