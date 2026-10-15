@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-15 — Milestone 2 T1: stream records and event data (choices the plan leaves open)
+- Plan section: §4.1, §5.3, §5.4, §5.6, §5.9, §12.1
+- Decision:
+  1. **Landmark subset** (`shared/landmark_subset.json`): 49 MediaPipe mesh indices in named groups (both iris rings 468-477, both eyes' corners and upper/lower lids, nose tip 1, chin 152, forehead 10, cheeks 234/454/205/425). `lm` holds the groups in file order. Checked against real MediaPipe output in T3; the list may change until then.
+  2. **Feature record without a face:** `face: false` and every measurement null. The webcam-frame values of §5.3 (`captureTime?`, `presentedFrames`) are two extra fields of the feature record (`capture_time`, `presented_frames`), because the plan logs them "at every frame where the face model ran" but names no stream.
+  3. **Stimulus-frame record keys are snake_case** (`expected_display_time`, `media_time`, `presented_frames`), like the rest of our JSON, not the camelCase of the browser API. The record has no video id; the `video_*` events delimit the videos.
+  4. **Camera settings and mime type** (§5.9 puts them in `session_start`) are logged in `recorder_start` instead, because the camera starts after `session_start`.
+  5. **`calib_gate_result` data** (§5.6) adds `block` (`before_video`, `between_videos`, `after_last_video`), `skipped` (`passed` is null exactly then) and a fixed `reason` list; the participant-facing message is chosen from it. Rule for T2: `calibration_gate_failed` is set when the last `before_video` result has `passed: false`.
+  6. **Quality keys** under `quality` with starting values: `brightness_min` 0.25, `brightness_max` 0.85, `face_ratio_min` 0.07, `face_ratio_max` 0.2 (interocular distance over frame width at roughly arm's length; the plan's own example is 0.162), `max_yaw_deg` 20, `max_pitch_deg` 20. Not from a published source; tune on the pilot (debug-mode sliders, T11). Lower bounds must stay below upper bounds.
+  7. Other new event data: `recorder_start {mime_type, bits_per_second, settings}`, `recorder_dataavailable {seq, size}`, `recorder_stop {chunks, bytes}`, `face_lost {}`, `face_regained {lost_ms}`, `debug_skip {target}`. The server does not validate event data (as in 1b), except `calib_gate_result` from T2 on.
+- Reason: the plan names these records and events without exact shapes; both sides need one definition (§1 single source of truth).
+- Approved by: plan leaves open (item 3 and the snake_case naming: flag if you object)
+
 ## 2026-10-15 — Milestone 2 scope and open choices
 - Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13, §14
 - Decision:

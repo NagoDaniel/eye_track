@@ -21,7 +21,7 @@ Approved 2026-10-15. Each task ends with tests passing + output shown, then a co
 
 Scope boundary: no offline gaze estimation, no job enqueue, no webcam remux (all M3), no admin display of features.
 
-- [ ] **T1. Protocol additions** (§5.4, §5.6, §5.9, §12.1). `shared/protocol.json` and the Python/TS mirrors get: the feature record schema, the stimulus-frame record, `data` shapes for `recorder_*`, `face_lost`/`face_regained`, `calib_gate_result` (incl. `skipped`) and `debug_skip`, `SessionCreateRequest.debug`, `StudyConfig.debug_allowed`, the new `quality` keys (brightness bounds, face-size band, frontal-head limits; DECISIONS item 3) and `shared/landmark_subset.json`. Tests: examples validate on both sides; names and defaults agree with the JSON. Files: `shared/`, `schemas.py`, `config.ts`, `eventLog.ts`, `protocol.test.ts`, `test_schemas.py`.
+- [x] **T1. Protocol additions** (§5.4, §5.6, §5.9, §12.1). `shared/protocol.json` and the Python/TS mirrors get: the feature record schema, the stimulus-frame record, `data` shapes for `recorder_*`, `face_lost`/`face_regained`, `calib_gate_result` (incl. `skipped`) and `debug_skip`, `SessionCreateRequest.debug`, `StudyConfig.debug_allowed`, the new `quality` keys (brightness bounds, face-size band, frontal-head limits; DECISIONS item 3) and `shared/landmark_subset.json`. Tests: examples validate on both sides; names and defaults agree with the JSON. Files: `shared/`, `schemas.py`, `config.ts`, `eventLog.ts`, `protocol.test.ts`, `test_schemas.py`.
 - [ ] **T2. Backend for the new streams** (§5.4, §6, §7, §12.1). `features` and `stimulus_frames` chunks validated like `events` (gzip, inflated cap); the first `webcam` chunk must start with the EBML header; `/complete` writes `raw/browser_features.jsonl` and `raw/stimulus_frames.jsonl`; `calibration_gate_failed` flag derived from `calib_gate_result` events; `debug` at session creation sets `is_debug`, 403 unless `debug_allowed` or an admin cookie. Tests on real Postgres and files: bomb, truncated gzip, bad WebM header, unauthorized debug request, gate flag. Files: `chunks.py`, `api/participant.py`, `events.py`, tests.
 - [ ] **T3. Feature definition in TS and Python** (§5.6 step 2, §8.4). `face/features.ts` and `backend/worker/pipeline/features_a.py`: pure functions from the landmark subset and the transformation matrix to eye-local iris position, openness, head yaw/pitch/roll and face scale. Tests: both agree within 1e-4 on real MediaPipe output frames recorded from the human's face clip. **Human:** the face clip.
 - [ ] **T4. Ridge fit and gate maths** (§5.6). `face/ridge.ts` (standardize, degree-2 expansion, closed-form ridge, alpha 1) and `face/quickCalib.ts` (`error_norm` per validation point, pass/fail against `calibration_gate`). Tests: synthetic mapping recovered; numbers equal scikit-learn on a stored fixture; hand-built gate cases incl. too few frames per dot.
@@ -40,7 +40,7 @@ Scope boundary: no offline gaze estimation, no job enqueue, no webcam remux (all
 "The E2E test produces complete raw data for a session": demonstrated by T13 (browser, fake camera, proxy, api, disk and database), using T2, T5, T6, T8, T10 and T12; repeated by hand on real hardware in T14.
 
 ## Done (current milestone)
-Nothing yet.
+- T1 protocol additions. `shared/landmark_subset.json` (49 indices), `shared/protocol.json` (new `quality` keys in the default config, `debug` in the session request, `feature_record`, `feature_record_no_face`, `stimulus_frame_record`, `event_data` examples, `event_data_values`, `landmark_count`, `feature_matrix_size`). Python: `QualityConfig` (ordered bounds), `SessionCreateRequest.debug`, `FeatureRecord`, `StimulusFrameRecord`, typed event data (`EVENT_DATA_MODELS`). TypeScript: `config.ts`, `eventLog.ts` (typed event data, value lists), new `records.ts`, constants. Both test suites compare names and validate every example. `make lint` clean; `make test`: 316 pytest, 124 vitest passed. Choices in DECISIONS ("Milestone 2 T1"). The face clip (`face_test.mov`, 22.7 s, 1280x720, 28 MB, with audio) is in the repo root, git-ignored; T3 turns it into the fixtures.
 
 ## Open problems / questions for the human
 - `npm audit` reports 3 findings (2 critical) in `tinypool`, a vitest 3 dependency (dev only, never shipped). Fix is a breaking upgrade to vitest 4; not done. Decide whether to upgrade (suggest doing it in a small separate task).
@@ -49,10 +49,10 @@ Nothing yet.
 - From the 1a review: stale `running` jobs (R2) must be solved in M3 (DECISIONS).
 
 ## Needs human testing
-- Record a short clip of your own face (about 6 to 10 s, frontal, normal room light, 640x480 or larger) for T3/T13; hand it over when T1 to T2 are done.
+- Face clip: received (`face_test.mov`, repo root, git-ignored). Check later that the committed fixture is acceptable to you (your face in a public repo).
 - T14 real-webcam session in debug mode (steps follow when T13 is done).
 - Postponed by the human: fresh-VM run of PLAN §11.6.
 - The Hetzner VPS is stopped (human, 2026-10-15). It still has the pre-review 1a build; update it (`cd /opt/eyetrack && git pull && docker compose up -d --build`) before the next use, or delete it if it is no longer needed.
 
 ## Next step
-`/milestone-next` starts T1 (protocol additions).
+`/milestone-next` starts T2 (backend for the new streams).

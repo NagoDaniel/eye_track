@@ -22,6 +22,11 @@ export const INNER_POINT_HIGH = 0.75;
 export const CALIBRATION_POINT_COUNT = 13;
 export const VALIDATION_POINT_COUNT = 5;
 
+// --- Feature records (PLAN §5.4) ---
+/** Landmarks in a feature record's `lm` and numbers in its `matrix`; see shared/landmark_subset.json. */
+export const LANDMARK_COUNT = 49;
+export const FEATURE_MATRIX_SIZE = 16;
+
 // --- Upload queue (PLAN §5.8) ---
 export const UPLOAD_BACKOFF_BASE_MS = 500;
 export const UPLOAD_BACKOFF_MAX_MS = 30_000;
