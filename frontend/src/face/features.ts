@@ -33,6 +33,8 @@ function loadSubset(): Map<number, number> {
 
 export const SUBSET_POSITION: ReadonlyMap<number, number> = loadSubset();
 export const SUBSET_SIZE = SUBSET_POSITION.size;
+/** Mesh index at each position of `lm` (the inverse of `SUBSET_POSITION`). */
+export const SUBSET_MESH_INDICES: readonly number[] = [...SUBSET_POSITION.keys()];
 
 export interface EyeLandmarks {
   cornerA: number;
