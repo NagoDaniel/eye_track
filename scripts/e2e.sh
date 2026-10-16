@@ -75,7 +75,7 @@ def sh(script: str) -> str:
     return run("exec", "-T", "api", "sh", "-c", script)
 
 dirs = sh("ls -d /data/studies/*/sessions/*/raw").split()
-assert len(dirs) == 4, dirs
+assert len(dirs) == 5, dirs
 recorded = 0
 for raw in dirs:
     meta = json.loads(sh(f"cat {raw}/meta.json"))
@@ -108,7 +108,7 @@ for raw in dirs:
     print(f"{raw.split('/')[-2][:8]}: {len(features)} feature records ({with_face} with a face), "
           f"{len(frames)} stimulus frames, webcam {probe['codec_name']} {probe['width']}x{probe['height']} "
           f"{last_pts:.1f} s (features span {span:.1f} s)")
-assert recorded == 3, recorded
+assert recorded == 4, recorded
 print(f"{len(dirs)} sessions, {recorded} with a complete recording")
 PY
 echo "ALL E2E CHECKS PASSED"

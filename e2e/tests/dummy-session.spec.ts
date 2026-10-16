@@ -7,7 +7,7 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 
 import { type Admin, createStudy, login, sessionsOf, uploadVideo } from "./admin";
-import { runSession } from "./participant";
+import { runSession, runUntilDot } from "./participant";
 
 const PARTICIPANT = "AB0315";
 let admin: Admin;
@@ -170,4 +170,37 @@ test("a reload while the webcam chunks wait in the browser still ends with the f
   }
   const types = session?.events.map((e) => e.type) ?? [];
   expect(types).toContain("recorder_stop");
+});
+
+test("debug mode: the overlay shows, S skips the calibration, the session is a debug session", async ({
+  page,
+}) => {
+  const studyId = await createStudy(admin, "e2e-debug", videoId, { debug_allowed: true });
+  await page.goto(`/s/e2e-debug?p=${PARTICIPANT}&debug=1`);
+  // Click through to the first calibration dot, then skip the calibration with S (PLAN §12.1).
+  await runSession(page, "Before you start");
+  await expect(page.locator(".debug-panel")).toContainText("DEBUG");
+  // The panel covers the right part of the screen, where dots appear: hide it with D, as a person would.
+  await page.keyboard.press("d");
+  await expect(page.locator(".debug-root")).toBeHidden();
+  await runUntilDot(page);
+  await page.keyboard.press("s");
+  await runSession(page);
+
+  const [session] = await sessionsOf(admin, studyId);
+  expect(session?.status).toBe("uploaded");
+  expect(session?.is_debug).toBe(true);
+  const skips = session?.events.filter((e) => e.type === "debug_skip") ?? [];
+  expect(skips.map((e) => e.data.target)).toEqual(["calibration"]);
+  const clicked = session?.events.filter(
+    (e) => e.type === "calib_dot_click" && e.data.phase === "calibration",
+  );
+  expect(clicked?.length ?? 99).toBeLessThan(13);
+});
+
+test("debug mode is refused for a study that does not allow it", async ({ page }) => {
+  await createStudy(admin, "e2e-nodebug", videoId);
+  await page.goto(`/s/e2e-nodebug?p=${PARTICIPANT}&debug=1`);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByText(/debug mode is not allowed/i)).toBeVisible();
 });

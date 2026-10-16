@@ -62,7 +62,12 @@ export async function uploadVideo(admin: Admin, title: string): Promise<Uploaded
  * browser gate fails: one attempt only (`max_attempts` 1) keeps the test short, and the session
  * continues flagged (`continue_flagged`, the plan default).
  */
-export async function createStudy(admin: Admin, code: string, videoId: string): Promise<number> {
+export async function createStudy(
+  admin: Admin,
+  code: string,
+  videoId: string,
+  extraConfig: Record<string, unknown> = {},
+): Promise<number> {
   const response = await admin.request.post("/admin/api/studies", {
     headers: admin.headers,
     data: {
@@ -74,6 +79,7 @@ export async function createStudy(admin: Admin, code: string, videoId: string): 
         playlist: [videoId],
         calibration: { dot_duration_ms: 700 },
         calibration_gate: { max_attempts: 1 },
+        ...extraConfig,
       },
     },
   });
@@ -91,6 +97,7 @@ export interface SessionEvent {
 export interface SessionDetail {
   id: string;
   status: string;
+  is_debug: boolean;
   flags: string[];
   chunks: Record<string, number>;
   streams: Record<string, { missing: number[]; count: number }>;

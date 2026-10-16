@@ -234,5 +234,11 @@ want=$(python3 -c "import json; print(json.load(open('shared/models.json'))['fac
 got=$(curl -sk "$base/mediapipe/face_landmarker.task" | sha256 - | cut -d' ' -f1)
 [ "$want" = "$got" ] || fail "served face_landmarker.task hash $got != $want"
 echo "ok  face_landmarker.task sha256 matches shared/models.json"
+expect "face model worker (classic script)" 200 "$base/mediapipe/face-worker.js"
+curl -skI "$base/mediapipe/face-worker.js" | grep -qiE '^content-type: (text|application)/javascript' \
+  || fail "face-worker.js is not served as JavaScript"
+curl -sk "$base/mediapipe/face-worker.js" | grep -q "importScripts" \
+  || fail "face-worker.js does not look like the bundled MediaPipe worker (no importScripts)"
+echo "ok  face-worker.js is served as JavaScript and loads MediaPipe through importScripts"
 
 echo "ALL PROXY CHECKS PASSED"
