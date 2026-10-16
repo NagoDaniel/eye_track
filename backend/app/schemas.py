@@ -320,20 +320,15 @@ class FeatureRecord(Strict):
 
     @model_validator(mode="after")
     def measurements_match_face(self) -> "FeatureRecord":
-        values = (
-            self.lm,
-            self.matrix,
-            self.blink_l,
-            self.blink_r,
-            self.face_ratio,
-            self.brightness,
-        )
+        # `brightness` is the one measurement that can be unknown for a frame with a face (the
+        # pixels could not be read); everything else comes from the face model.
+        values = (self.lm, self.matrix, self.blink_l, self.blink_r, self.face_ratio)
         if not self.face:
-            if any(v is not None for v in values):
+            if any(v is not None for v in (*values, self.brightness)):
                 raise ValueError("a frame without a face has no measurements")
             return self
         if any(v is None for v in values):
-            raise ValueError("a frame with a face needs every measurement")
+            raise ValueError("a frame with a face needs every measurement except brightness")
         if self.lm is not None and len(self.lm) != LANDMARK_COUNT:
             raise ValueError(f"lm must hold {LANDMARK_COUNT} landmarks")
         if self.matrix is not None and len(self.matrix) != FEATURE_MATRIX_SIZE:

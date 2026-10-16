@@ -205,6 +205,52 @@ describe("Capture", () => {
     expect(fatals).toEqual([]);
   });
 
+  it("a failure while starting the tracker releases the camera and the model", async () => {
+    await expect(
+      Capture.open(
+        CONFIG,
+        sinks(),
+        makeParts({
+          createVideo: () => {
+            const video = document.createElement("video");
+            video.play = () => Promise.reject(new Error("play refused"));
+            return video;
+          },
+        }),
+      ),
+    ).rejects.toThrow("play refused");
+    expect([modelClosed, cameraStopped]).toEqual([1, 1]);
+  });
+
+  it("a camera without a reported frame rate is assumed to deliver the study's, and says so in the events", async () => {
+    const parts = makeParts();
+    const camera = await parts.requestCamera(CONFIG.recording);
+    const noRate: CameraHandle = { ...camera, settings: { width: 854, height: 480 } };
+    const capture = await Capture.open(CONFIG, sinks(), {
+      ...parts,
+      requestCamera: async () => noRate,
+    });
+    expect(capture.rate.currentFps()).toBe(CONFIG.recording.fps);
+    expect(events.map((e) => e.type)).toEqual(["client_error"]);
+    expect(String(events[0]?.data.message)).toContain("no frame rate");
+    await capture.close();
+  });
+
+  it("a failing stop of the recording during close is logged, and the camera still goes off", async () => {
+    const parts = makeParts({
+      startRecorder: () => ({
+        mimeType: "video/webm",
+        stop: () => Promise.reject(new Error("disk full")),
+      }),
+    });
+    const capture = await Capture.open(CONFIG, sinks(), parts);
+    capture.startRecording();
+    await capture.close();
+    expect(cameraStopped).toBe(1);
+    expect(events.map((e) => e.type)).toEqual(["client_error"]);
+    expect(String(events[0]?.data.message)).toContain("disk full");
+  });
+
   it("a camera error rejects open; a model error stops the camera again", async () => {
     await expect(
       Capture.open(

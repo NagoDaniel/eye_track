@@ -84,7 +84,17 @@ export class Capture {
     private readonly model: Pick<FaceModel, "detect" | "close">,
     readonly video: HTMLVideoElement,
   ) {
-    this.cameraFps = camera.settings.frameRate ?? config.recording.fps;
+    // A camera that reports no frame rate is assumed to deliver the one the study asks for; this is
+    // logged (it shows up in the events) because the model's target rate depends on it.
+    const reported = camera.settings.frameRate;
+    this.cameraFps = reported ?? config.recording.fps;
+    if (reported === undefined) {
+      sinks.log.log("client_error", {
+        message: `The camera reported no frame rate; assuming ${config.recording.fps} fps`,
+        stack: null,
+        url: location.href,
+      });
+    }
     this.rate = new AdaptiveRate({ targetFps: targetFps(null, this.cameraFps) });
   }
 
@@ -103,23 +113,37 @@ export class Capture {
       throw e;
     }
     const video = parts.createVideo();
-    video.srcObject = camera.stream;
-    const capture = new Capture(config, sinks, parts, camera, model, video);
-    camera.onEnded(() => {
-      if (!capture.closed) sinks.onFatal(new Error("The camera stopped working during the study."));
-    });
-    await video.play();
-    capture.tracker = new FaceTracker({
-      video,
-      model,
-      gate: new FrameGate(capture.rate),
-      onFrame: (frame) => capture.onFrame(frame),
-      onWebcamFrame: () => capture.webcamFps.tick(),
-      onError: (error) => sinks.onFatal(error),
-      ...parts.frameIo,
-    });
-    capture.tracker.start();
-    return capture;
+    // From here on a failure must not leave the camera on or the model worker running.
+    const release = (): void => {
+      model.close();
+      camera.stop();
+      video.srcObject = null;
+      video.remove();
+    };
+    try {
+      video.srcObject = camera.stream;
+      const capture = new Capture(config, sinks, parts, camera, model, video);
+      camera.onEnded(() => {
+        if (!capture.closed) {
+          sinks.onFatal(new Error("The camera stopped working during the study."));
+        }
+      });
+      await video.play();
+      capture.tracker = new FaceTracker({
+        video,
+        model,
+        gate: new FrameGate(capture.rate),
+        onFrame: (frame) => capture.onFrame(frame),
+        onWebcamFrame: () => capture.webcamFps.tick(),
+        onError: (error) => sinks.onFatal(error),
+        ...parts.frameIo,
+      });
+      capture.tracker.start();
+      return capture;
+    } catch (e) {
+      release();
+      throw e;
+    }
   }
 
   /** The camera stream (for the device-check preview). */
@@ -161,7 +185,16 @@ export class Capture {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    if (this.recording) await this.stopRecording().catch(() => undefined);
+    if (this.recording) {
+      await this.stopRecording().catch((e: unknown) => {
+        // Closing must go on (camera off), but the lost tail of the recording is not hidden.
+        this.sinks.log.log("client_error", {
+          message: `Stopping the recording failed: ${e instanceof Error ? e.message : String(e)}`,
+          stack: e instanceof Error ? (e.stack ?? null) : null,
+          url: location.href,
+        });
+      });
+    }
     this.tracker?.stop();
     this.model.close();
     this.camera.stop();

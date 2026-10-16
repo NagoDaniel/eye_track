@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-10-16 — Milestone 2 review decisions and admin additions
+- Plan section: §4, §4.1, §5.4, §5.6, §6, §12.1
+- Decision:
+  1. **Admin study pages (addition, after the first real run).** The study forms pick the playlist from a table of videos (tick, type the order; unnumbered ticked videos come last, by id) instead of ids in the JSON; the text box holds every other setting, and the table always wins over a `playlist` key typed into the box. `POST /admin/studies/{id}/debug` switches `debug_allowed` on or off and the study page then shows the link with `?debug=1`. The JSON API is unchanged. Approved by Nágó Dániel ("create a button for debug toggle ... add a video selection").
+  2. **A feature record with a face may have `brightness: null`** (the pixels could not be read; the device check then skips the brightness check). The schema, the shared example `feature_record_unmeasured_brightness` and DATA_FORMATS say so; before, the server would have refused the whole features stream for one such frame.
+  3. **The face model must not give half a result:** a face without landmarks or matrix, or without a blink blendshape, is an error (fatal in the session), not a silent "no face" or "no blink". A camera that reports no frame rate is assumed to deliver the study's `recording.fps`, and the browser logs a `client_error` event saying so; a failing stop of the recording during cleanup is logged the same way.
+  4. **`quality.min_face_ratio_warn` and `max_face_ratio_warn` are reserved for the M3 quality flags** (the reading as multipliers of the device-check face ratio stays the working assumption). The browser shows the ratio relative to the device check in the debug panel only; no warning is shown to participants.
+  5. **Gate disabled** (`calibration_gate.enabled: false`): no `calib_gate_result` is logged at all, also not for later validation blocks, and the session is never flagged `calibration_gate_failed`.
+  6. Left as they are by the human: the device check preview is the mirrored camera image with a text line and a progress bar (no face box); the banner for a missing face also shows during calibration and validation; `recorder_dataavailable` is logged after the chunk was stored in the browser.
+- Reason: `/milestone-review 2` (plan-reviewer) found these; the first and the last two points are choices the plan leaves open.
+- Approved by: Nágó Dániel (2026-10-16: fix major 1 and 3, minor 1, 3, 4, 5, 7, 8; reserve the warn ratios for M3; leave the device check as it is)
+
 ## 2026-10-16 — Browser model chosen by cross-validation; smoothed gaze dot (deviation from §5.6 step 3)
 - Plan section: §5.6 (step 3: degree 2, alpha fixed 1.0), §8.6, §12.1
 - Decision: the browser gate fits the quick model as §8.6 describes the server's fit: leave-one-dot-out cross-validation over a plain linear ridge and the degree-2 ridge, each with alpha on the log grid 1e-3 to 1e3, and keeps the best (ties go to the simpler model). The chosen degree, alpha and CV error are shown in the debug panel; the gate thresholds and everything else in §5.6 are unchanged. The live gaze dot (debug only) is smoothed with a one-euro filter (0.5 Hz at rest, beta 0.0005) and kept inside the viewport.

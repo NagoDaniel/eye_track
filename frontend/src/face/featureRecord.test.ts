@@ -155,10 +155,28 @@ describe("buildFeatureRecord without a face", () => {
     });
   });
 
-  it("treats missing landmarks or matrix as no face, whatever `faces` says", () => {
-    expect(buildFeatureRecord(input({ ...NO_FACE, faces: 1 })).face).toBe(false);
-    expect(buildFeatureRecord(input({ ...resultOf(frame0), matrix: null })).face).toBe(false);
-    expect(buildFeatureRecord(input({ ...resultOf(frame0), landmarks: null })).face).toBe(false);
+  it("a face without landmarks or matrix is an error, not a silent no-face frame", () => {
+    expect(() => buildFeatureRecord(input({ ...NO_FACE, faces: 1 }))).toThrow(
+      /no landmarks or matrix/,
+    );
+    expect(() => buildFeatureRecord(input({ ...resultOf(frame0), matrix: null }))).toThrow();
+    expect(() => buildFeatureRecord(input({ ...resultOf(frame0), landmarks: null }))).toThrow();
+  });
+
+  it("no faces with null landmarks is a normal no-face frame", () => {
+    expect(buildFeatureRecord(input(NO_FACE)).face).toBe(false);
+  });
+
+  it("a face with an unknown brightness has exactly the shape of the shared example the server accepts", () => {
+    const record = buildFeatureRecord(input(resultOf(frame0), null));
+    const example = protocol.examples.feature_record_unmeasured_brightness;
+    expect(Object.keys(record).sort()).toEqual(Object.keys(example).sort());
+    expect(record.face).toBe(true);
+    expect(record.brightness).toBeNull();
+    expect(example.face).toBe(true);
+    expect(example.brightness).toBeNull();
+    expect(record.lm).toHaveLength(example.lm.length);
+    expect(record.matrix).toHaveLength(example.matrix.length);
   });
 });
 

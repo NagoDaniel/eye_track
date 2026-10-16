@@ -621,6 +621,22 @@ def test_complete_assembles_features_and_stimulus_frames_files(
     assert list(raw.rglob("*.tmp")) == []
 
 
+def test_a_face_frame_with_an_unknown_brightness_is_accepted_at_complete(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    unmeasured = EXAMPLES["feature_record_unmeasured_brightness"]
+    put(client, created, "features", 0, events_chunk(FEATURE, unmeasured))
+    assert complete(client, created, {"features": 0}).json()["status"] == "uploaded"
+    raw = session_dir(data_root, study_id, created) / "raw"
+    lines = (raw / "browser_features.jsonl").read_text().splitlines()
+    assert [json.loads(line)["brightness"] for line in lines] == [FEATURE["brightness"], None]
+    assert flags_of(migrated_engine, created) == []
+
+
 def test_session_without_features_or_frames_writes_no_such_files(
     client: TestClient,
     created: dict[str, Any],

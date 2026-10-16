@@ -128,6 +128,7 @@ def test_invalid_config_rejected(bad: dict[str, Any]) -> None:
         ("event_record", EventRecord),
         ("feature_record", FeatureRecord),
         ("feature_record_no_face", FeatureRecord),
+        ("feature_record_unmeasured_brightness", FeatureRecord),
         ("stimulus_frame_record", StimulusFrameRecord),
     ],
 )
@@ -204,7 +205,7 @@ def test_example_feature_record_matches_the_subset() -> None:
         {"lm": EXAMPLES["feature_record"]["lm"][:-1]},  # one landmark short
         {"matrix": [1.0] * 15},
         {"lm": [[0.1, 0.2]] * 49},  # not x, y, z
-        {"blink_l": None},  # a face needs every measurement
+        {"blink_l": None},  # a face needs every measurement except brightness
         {"face": False},  # no face but measurements present
         {"presented_frames": -1},
         {"extra": 1},
@@ -213,6 +214,13 @@ def test_example_feature_record_matches_the_subset() -> None:
 def test_invalid_feature_record_rejected(change: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         FeatureRecord.model_validate({**EXAMPLES["feature_record"], **change})
+
+
+def test_a_face_frame_may_have_an_unknown_brightness_but_a_no_face_frame_may_not_have_one() -> None:
+    record = FeatureRecord.model_validate({**EXAMPLES["feature_record"], "brightness": None})
+    assert record.face and record.brightness is None
+    with pytest.raises(ValidationError):
+        FeatureRecord.model_validate({**EXAMPLES["feature_record_no_face"], "brightness": 0.4})
 
 
 def test_stimulus_frame_record_rejects_unknown_and_missing_fields() -> None:

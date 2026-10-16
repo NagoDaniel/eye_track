@@ -123,6 +123,8 @@ describe("example payloads fit the TypeScript types", () => {
   it("feature and stimulus-frame records", () => {
     const withFace = ex.feature_record as FeatureRecord;
     const noFace: FeatureRecord = ex.feature_record_no_face;
+    const unmeasured = ex.feature_record_unmeasured_brightness as FeatureRecord;
+    expect(unmeasured.face && unmeasured.brightness === null).toBe(true);
     const frame: StimulusFrameRecord = ex.stimulus_frame_record;
     expect(withFace.lm).toHaveLength(LANDMARK_COUNT);
     expect(withFace.matrix).toHaveLength(FEATURE_MATRIX_SIZE);

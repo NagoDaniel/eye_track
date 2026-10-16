@@ -72,9 +72,10 @@ export function subsetOf(landmarks: readonly Landmark[]): Landmark[] {
 }
 
 /**
- * The feature record of one frame. No face (zero faces, or no landmarks or matrix) gives
- * `face: false` and every measurement null. With several faces the first one is used; the device
- * check looks at `result.faces` separately. Throws on malformed landmarks or matrix.
+ * The feature record of one frame. Zero faces gives `face: false` and every measurement null. With
+ * several faces the first one is used; the device check looks at `result.faces` separately. A face
+ * without landmarks or matrix, and malformed landmarks or matrix, throw: the model must not give
+ * half a result. `brightness` may be null (the pixels could not be read; the server accepts that).
  */
 export function buildFeatureRecord(input: FeatureRecordInput): FeatureRecord {
   const { result } = input;
@@ -84,6 +85,9 @@ export function buildFeatureRecord(input: FeatureRecordInput): FeatureRecord {
     capture_time: input.captureTime,
     presented_frames: input.presentedFrames,
   };
+  if (result.faces >= 1 && (result.landmarks === null || result.matrix === null)) {
+    throw new Error("the face model found a face but gave no landmarks or matrix");
+  }
   if (result.faces < 1 || result.landmarks === null || result.matrix === null) {
     return {
       ...base,

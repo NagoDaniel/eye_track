@@ -32,8 +32,14 @@ function detect(bitmap: ImageBitmap, timestampMs: number): RawModelResult {
   const first = result.faceLandmarks[0];
   const matrix = result.facialTransformationMatrixes[0];
   const blendshapes = result.faceBlendshapes[0]?.categories ?? [];
-  const score = (name: string): number =>
-    blendshapes.find((c) => c.categoryName === name)?.score ?? 0;
+  // Without a face there are no blendshapes (and nothing reads the scores). With a face a missing
+  // score would read as "no blink", so it is an error.
+  const score = (name: string): number => {
+    if (first === undefined) return 0;
+    const found = blendshapes.find((c) => c.categoryName === name);
+    if (found === undefined) throw new Error(`the face model gave no ${name} blendshape`);
+    return found.score;
+  };
   return {
     faces: result.faceLandmarks.length,
     landmarks: first === undefined ? null : first.flatMap((p) => [p.x, p.y, p.z]),

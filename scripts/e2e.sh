@@ -92,6 +92,19 @@ for raw in dirs:
     assert len(features) > 100, f"{raw}: only {len(features)} feature records"
     assert with_face > 0.9 * len(features), f"{raw}: face found in {with_face}/{len(features)} frames"
     assert all(len(f["lm"]) == 49 and len(f["matrix"]) == 16 for f in features if f["face"])
+    # The browser's own MediaPipe output is read correctly (the fixtures come from the Python API):
+    # the matrix is row-major (bottom row 0 0 0 1, translation in cm in indices 3, 7, 11), the head
+    # of someone looking at the screen is roughly frontal, and the measurements are plausible.
+    quality = meta["config"]["quality"]
+    for f in (f for f in features if f["face"]):
+        m = f["matrix"]
+        assert all(abs(v) < 1e-3 for v in m[12:15]) and abs(m[15] - 1) < 1e-3, f"matrix layout: {m}"
+        assert -100 < m[11] < -10, f"distance (cm) {m[11]}"
+        assert abs(m[3]) < 30 and abs(m[7]) < 30, f"translation {m[3]}, {m[7]}"
+        assert abs(m[8]) < 0.5 and abs(m[9]) < 0.5, "yaw or pitch over 30 degrees on a frontal clip"
+        assert quality["face_ratio_min"] <= f["face_ratio"] <= quality["face_ratio_max"], f["face_ratio"]
+        assert f["brightness"] is not None and 0 < f["brightness"] < 1, f["brightness"]
+        assert 0 <= f["blink_l"] <= 1 and 0 <= f["blink_r"] <= 1
     assert len(frames) > 40, f"{raw}: only {len(frames)} stimulus frames"
     assert [f["t"] for f in features] == sorted(f["t"] for f in features)
     assert [f["t"] for f in frames] == sorted(f["t"] for f in frames)

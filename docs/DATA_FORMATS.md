@@ -62,13 +62,12 @@ One line:
 | `video_play`, `video_pause`, `video_stall` | `video_id`, `media_time` (s) |
 | `video_ended` | `video_id` |
 | `client_error` | `message`, `stack` (or `null`), `url` |
-
 | `recorder_start` | `mime_type`, `bits_per_second`, `settings` (the camera's `track.getSettings()` as the browser reports it: actual width, height, frame rate). Logged from the recorder's `start` event, a moment after the recording begins. |
 | `recorder_dataavailable` | `seq`, `size`: one per webcam chunk, after it was stored in the browser |
 | `recorder_stop` | `chunks`, `bytes`: totals of the recording, after the last chunk was stored |
 | `face_lost` | `{}`: no face for at least 500 ms while recording; `t` is when this was confirmed |
 | `face_regained` | `lost_ms`: the face was back for 500 ms; `lost_ms` is the length of the loss from the first frame without a face |
-| `calib_gate_result` | `block` (`before_video`, `between_videos`, `after_last_video`), `attempt` (1-based; later blocks use 1), `passed` (`true`, `false`, or `null` when skipped), `skipped`, `mean_error_norm` (or `null`), `point_errors` (per validation point, normalised by the viewport diagonal; `null` for a point without a usable frame), `valid_frames_per_dot` (per calibration dot, in dot order), `reason` (`ok`, `few_face_frames`, `low_brightness`, `head_or_distance_change`, `high_error`, `no_validation`, `forced_debug`). Only `before_video` results can block the participant; later blocks are logged for the quality report. |
+| `calib_gate_result` | `block` (`before_video`, `between_videos`, `after_last_video`), `attempt` (1-based; later blocks use 1), `passed` (`true`, `false`, or `null` when skipped), `skipped`, `mean_error_norm` (or `null`), `point_errors` (per validation point, normalised by the viewport diagonal; `null` for a point without a usable frame), `valid_frames_per_dot` (per calibration dot, in dot order), `reason` (`ok`, `few_face_frames`, `low_brightness`, `head_or_distance_change`, `high_error`, `no_validation`, `forced_debug`). Only `before_video` results can block the participant; later blocks are logged for the quality report. With `calibration_gate.enabled: false` no `calib_gate_result` is logged at all (neither for the pre-video block nor for later ones) and the session is never flagged `calibration_gate_failed`. |
 | `debug_skip` | `target` (`calibration`, `validation`, `video`): debug mode `S` |
 
 A dot that was interrupted (fullscreen left) and restarted has two `calib_dot_show` events with the same `id` (the first closed by a `calib_dot_hide`); consumers use the **last** show and click of each `(phase, id)`.
@@ -84,7 +83,7 @@ One line per frame the live face model processed, at the study video's frame rat
 ```
 
 - `t`: client clock (`performance.now()`, ms) when the webcam frame was presented to the page, from `requestVideoFrameCallback` on the hidden webcam preview. `webcam_media_time`, `capture_time` (or `null`) and `presented_frames` are that callback's metadata.
-- `face`: `false` when no face was found; then `lm`, `matrix`, `blink_l`, `blink_r`, `face_ratio` and `brightness` are all `null`. If there were several faces, the first one is used.
+- `face`: `false` when no face was found; then `lm`, `matrix`, `blink_l`, `blink_r`, `face_ratio` and `brightness` are all `null`. If there were several faces, the first one is used. With a face, everything is set except that `brightness` may be `null` (the pixels could not be read).
 - `lm`: 49 MediaPipe mesh landmarks (normalised image x, y, z; 5 decimals), the subset and order of `shared/landmark_subset.json` (both iris rings, eye corners and lids, nose tip, chin, forehead, cheeks).
 - `matrix`: the facial transformation matrix, **row-major** (translation in indices 3, 7, 11, in cm). The browser API delivers it column-major; the app converts it.
 - `blink_l`, `blink_r`: the `eyeBlinkLeft` / `eyeBlinkRight` blendshape scores. `face_ratio`: distance between the two eye centres as a fraction of the frame width. `brightness`: mean luminance of the face bounding box, 0 to 1.
