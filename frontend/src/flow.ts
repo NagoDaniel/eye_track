@@ -2,11 +2,16 @@
 
 import { Api } from "./api";
 import { assertPointCounts } from "./calibration/points";
+import { now } from "./clock";
+import { Capture } from "./capture";
 import type { SessionCreateResponse } from "./config";
 import { createErrorReporter } from "./errorReporter";
 import type { EventLog } from "./eventLog";
+import { CalibrationGate, DotTracker } from "./face/calibrationGate";
+import { startStimulusFrameLogging } from "./media/stimulusFrames";
 import { parseRoute } from "./route";
 import { calibrationScreen } from "./screens/calibration";
+import { calibrationFlow } from "./screens/calibrationFlow";
 import { consentScreen } from "./screens/consent";
 import { deviceCheckScreen } from "./screens/deviceCheck";
 import { doneScreen } from "./screens/done";
@@ -24,16 +29,20 @@ import { startRuntime } from "./session";
 import { SessionEvents } from "./sessionEvents";
 import { sessionPlan } from "./sessionPlan";
 import { UploadDb } from "./upload/idb";
+import { createFaceBanner } from "./ui/faceBanner";
+import { infoScreen } from "./ui/dom";
 import { installUnloadGuard } from "./upload/unloadGuard";
 import { UploadQueue } from "./upload/uploadQueue";
 
 interface Shared {
   sessionId: string | null;
   log: EventLog | null;
+  /** Released on any failure, so the camera light does not stay on behind the error screen. */
+  capture: Capture | null;
 }
 
 export async function runApp(root: HTMLElement, api: Api): Promise<never> {
-  const shared: Shared = { sessionId: null, log: null };
+  const shared: Shared = { sessionId: null, log: null, capture: null };
   const reporter = createErrorReporter({
     api,
     getLog: () => shared.log,
@@ -44,6 +53,7 @@ export async function runApp(root: HTMLElement, api: Api): Promise<never> {
     return await run(root, api, shared);
   } catch (e) {
     reporter.report(e);
+    void shared.capture?.close();
     return errorScreen(root, e, shared.sessionId);
   }
 }
@@ -99,27 +109,96 @@ async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> 
   events.start();
 
   const videoUrls = await step(preloadScreen(root, session.videos));
-  await step(deviceCheckScreen(root));
+  const { capture } = await step(
+    deviceCheckScreen<Capture>(
+      root,
+      () =>
+        Capture.open(session.config, {
+          log: runtime.log,
+          pushFeature: runtime.features.push,
+          enqueueWebcam: (bytes) => runtime.queue.enqueue("webcam", bytes),
+          onFatal: fail,
+        }),
+      session.config.quality,
+    ),
+  );
+  shared.capture = capture;
+  const banner = createFaceBanner();
+  capture.listeners.add(() => banner.setVisible(capture.bannerVisible()));
+  const dots = new DotTracker();
+  runtime.eventSinks.add(dots.push);
+  const gate = new CalibrationGate({
+    config: session.config,
+    log: runtime.log,
+    frames: capture.frames,
+    dots,
+    viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+  });
   await step(instructionsScreen(root));
 
+  let ended = false; // `on_fail: end_session`: skip to the upload
   for (const planned of sessionPlan(session.config)) {
+    if (ended && planned.kind !== "upload" && planned.kind !== "done") continue;
     switch (planned.kind) {
       case "fullscreen":
         await step(fullscreenScreen(root, session.config.playback.require_fullscreen));
+        capture.startRecording(); // PLAN §5.2 step 6: recording starts with the fullscreen step
         break;
-      case "calibration":
-        await step(calibrationScreen(root, session.config, runtime.log));
+      case "calibration": {
+        const outcome = await step(
+          calibrationFlow({
+            config: session.config,
+            gate,
+            now,
+            calibrate: () => calibrationScreen(root, session.config, runtime.log),
+            validate: () => validationScreen(root, session.config, runtime.log),
+            retry: (message) => infoScreen(root, "Let's calibrate again", [message], "Try again"),
+            end: () =>
+              infoScreen(
+                root,
+                "Thank you",
+                [
+                  "We could not calibrate the camera on this device, so the study ends here.",
+                  "Thank you for your time.",
+                ],
+                "Continue",
+              ),
+          }),
+        );
+        ended = outcome === "end";
         break;
+      }
       case "validation":
+        dots.reset("validation");
         await step(validationScreen(root, session.config, runtime.log));
+        gate.scoreLater(planned.block);
         break;
       case "playback": {
         const { video, url } = findVideo(session, videoUrls, planned.videoId);
-        await step(playbackScreen(root, video, url, session.config.playback, runtime.log, events));
+        capture.setPlaybackFps(video.fps);
+        await step(
+          playbackScreen(root, video, url, session.config.playback, runtime.log, events, {
+            trackFrames: (element) =>
+              startStimulusFrameLogging(element, (record, dropped) => {
+                runtime.stimulusFrames.push(record);
+                capture.droppedStimulusFrames += dropped;
+                capture.rate.report(record.t, 1, dropped);
+              }),
+          }),
+        );
+        capture.setPlaybackFps(null);
         break;
       }
       case "upload":
-        await step(uploadScreen(root, runtime.queue, { uploaders: [runtime.features, runtime.stimulusFrames, runtime.events], interrupted: false }));
+        await step(capture.stopRecording()); // the last chunk and `recorder_stop` before the flush
+        banner.destroy();
+        await capture.close();
+        await step(
+          uploadScreen(root, runtime.queue, {
+            uploaders: [runtime.features, runtime.stimulusFrames, runtime.events],
+            interrupted: false,
+          }),
+        );
         events.stop();
         runtime.releaseUnloadGuard();
         break;
