@@ -3,6 +3,7 @@
 
 import { contentRect } from "../calibration/points";
 import type { StudyConfig, VideoRef } from "../config";
+import type { SkipSignal } from "../debug/skip";
 import { PAUSE_KEY } from "../constants";
 import type { EventLog, Size } from "../eventLog";
 import { fullscreenGate, isSeekAttempt } from "../playbackGate";
@@ -17,6 +18,8 @@ export interface PlaybackDeps {
    * stops it. Called once the video's metadata is loaded, stopped when playback ends or fails.
    */
   trackFrames?: (video: HTMLVideoElement) => () => void;
+  /** Debug mode `S` (PLAN §12.1): end the video now, as if it had ended. */
+  skip?: SkipSignal;
 }
 
 /** Resolves when the video has ended. Rejects if it cannot be loaded or played. */
@@ -80,7 +83,9 @@ export function playbackScreen(
       listeners.push([target, type, handler]);
     };
     let stopFrames: (() => void) | null = null;
+    let stopListeningToSkip: (() => void) | null = null;
     const finish = (): void => {
+      stopListeningToSkip?.();
       stopFrames?.();
       stopFrames = null;
       for (const [target, type, handler] of listeners) target.removeEventListener(type, handler);
@@ -88,6 +93,13 @@ export function playbackScreen(
       media.removeAttribute("src");
       resolve();
     };
+
+    stopListeningToSkip =
+      deps.skip?.onSkip(() => {
+        media.pause();
+        log.log("video_ended", { video_id: video.id });
+        finish();
+      }) ?? null;
 
     on(media, "loadedmetadata", () => {
       const size: Size = { width: media.videoWidth, height: media.videoHeight };

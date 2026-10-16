@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudyConfig, VideoRef } from "../config";
+import { type SkipSignal, SkipBus } from "../debug/skip";
 import { EventLog, type EventRecord, type Size } from "../eventLog";
 import { playbackScreen } from "./playback";
 
@@ -41,6 +42,7 @@ afterEach(() => vi.restoreAllMocks());
 function start(
   playback: StudyConfig["playback"],
   trackFrames?: (video: HTMLVideoElement) => () => void,
+  skip?: SkipSignal,
 ): { media: HTMLVideoElement; done: Promise<void> } {
   const done = playbackScreen(
     root,
@@ -49,7 +51,7 @@ function start(
     playback,
     log,
     { setVideoIntrinsic: (s) => intrinsic.push(s) },
-    { doc, trackFrames },
+    { doc, trackFrames, skip },
   );
   const media = root.querySelector("video") as HTMLVideoElement;
   let currentTime = 0;
@@ -65,6 +67,27 @@ function start(
 }
 const types = (): string[] => records.map((r) => r.type);
 const overlay = (): HTMLElement => root.querySelector(".player-overlay") as HTMLElement;
+
+describe("playbackScreen debug skip (PLAN §12.1)", () => {
+  it("ends the video as if it had ended: logs video_ended, stops frame tracking, resolves", async () => {
+    const skip = new SkipBus();
+    const calls: string[] = [];
+    const { media, done } = start(
+      { allow_pause: false, require_fullscreen: false },
+      () => {
+        calls.push("start");
+        return () => calls.push("stop");
+      },
+      skip,
+    );
+    media.dispatchEvent(new Event("loadedmetadata"));
+    skip.fire();
+    await done;
+    expect(types()).toContain("video_ended");
+    expect(calls).toEqual(["start", "stop"]);
+    expect(skip.fire()).toBe(0); // unsubscribed
+  });
+});
 
 describe("playbackScreen frame tracking (PLAN §5.3)", () => {
   it("starts it once the metadata is loaded and stops it when the video ends", async () => {

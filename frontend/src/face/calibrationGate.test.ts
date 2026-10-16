@@ -154,6 +154,25 @@ describe("CalibrationGate on real frames", () => {
     expect((result?.point_errors as number[]).every((e) => e < 0.12)).toBe(true);
   });
 
+  it("keeps a report of the last validation for the debug panel: targets and median predictions", () => {
+    const h = harness();
+    h.gate.beginAttempt(0);
+    h.run("calibration", 0, 12);
+    h.run("validation", 24, 5);
+    h.gate.evaluatePreVideo(1);
+    const report = h.gate.lastReport;
+    expect(report).toMatchObject({ block: "before_video", attempt: 1 });
+    expect(report?.points).toHaveLength(5);
+    const diagonal = Math.hypot(VIEWPORT.width, VIEWPORT.height);
+    report?.points.forEach((point, i) => {
+      const error = Math.hypot(
+        (point.prediction?.x ?? NaN) - point.target.x,
+        (point.prediction?.y ?? NaN) - point.target.y,
+      );
+      expect(error / diagonal).toBeCloseTo(report.measured.pointErrors[i] ?? NaN, 9);
+    });
+  });
+
   it("fails when the validation targets are far from the prediction", () => {
     const h = harness();
     h.gate.beginAttempt(0);

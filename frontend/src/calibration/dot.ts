@@ -10,6 +10,7 @@ import {
   DOT_OUTER_RADIUS_PX,
   DOT_SHRUNK_RADIUS_PX,
 } from "../constants";
+import type { SkipSignal } from "../debug/skip";
 import type { DotPhase, EventLog } from "../eventLog";
 import { fullscreenGate } from "../playbackGate";
 import { button, el, p } from "../ui/dom";
@@ -48,6 +49,8 @@ export interface DotDeps {
    * (at most one is ever logged per id, because an accepted click ends the dot's restarts).
    */
   fullscreen?: { required: boolean; doc?: Document };
+  /** Debug mode `S` (PLAN §12.1): a skip ends the dot at once and the rest of the block. */
+  skip?: SkipSignal;
 }
 
 /**
@@ -72,7 +75,9 @@ export function runDot(
     let frame = 0;
 
     const onFullscreenChange = (): void => applyGate();
+    let stopListeningToSkip: (() => void) | null = null;
     const cleanup = (): void => {
+      stopListeningToSkip?.();
       doc.removeEventListener("fullscreenchange", onFullscreenChange);
       cancelAnimationFrame(frame);
       overlay.remove();
@@ -155,6 +160,12 @@ export function runDot(
       overlay.hidden = !held;
     };
 
+    stopListeningToSkip =
+      deps.skip?.onSkip(() => {
+        if (hit !== null) removeDot();
+        cleanup();
+        resolve();
+      }) ?? null;
     stage.append(overlay);
     if (requireFullscreen) doc.addEventListener("fullscreenchange", onFullscreenChange);
     applyGate();
@@ -173,7 +184,16 @@ export async function runDotBlock(
 ): Promise<void> {
   const stage = el("div", { class: "stage" });
   root.replaceChildren(stage);
-  for (const [id, point] of points.entries()) {
-    await runDot(stage, { phase, id, ...point }, durationMs, log, deps);
+  let skipped = false;
+  const stopListening = deps.skip?.onSkip(() => {
+    skipped = true;
+  });
+  try {
+    for (const [id, point] of points.entries()) {
+      if (skipped) break;
+      await runDot(stage, { phase, id, ...point }, durationMs, log, deps);
+    }
+  } finally {
+    stopListening?.();
   }
 }

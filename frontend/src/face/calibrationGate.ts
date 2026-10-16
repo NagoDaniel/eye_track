@@ -16,10 +16,13 @@ import {
   featureVector,
   fitCalibration,
   isBlink,
+  median,
   scoreValidation,
   skippedGateEventData,
+  usableVectors,
+  type GateMeasurements,
 } from "./quickCalib";
-import type { RidgeModel } from "./ridge";
+import { type RidgeModel, predict } from "./ridge";
 
 /** A processed webcam frame as the gate needs it. */
 export interface GateFrame extends CalibFrame {
@@ -119,7 +122,19 @@ export interface GateDeps {
   forceFailure?: () => boolean;
 }
 
+/** A scored validation block as the debug panel shows it (PLAN §12.1). */
+export interface GateReport {
+  block: GateBlock;
+  attempt: number;
+  decision: GateDecision;
+  measured: GateMeasurements;
+  /** Per validation point: the target and the median prediction, in viewport pixels. */
+  points: Array<{ target: { x: number; y: number }; prediction: { x: number; y: number } | null }>;
+}
+
 export class CalibrationGate {
+  /** The last scored validation block (null before the first). */
+  lastReport: GateReport | null = null;
   /** The model of the last passed attempt, or of the last attempt if none passed. */
   model: RidgeModel | null = null;
   private passedOnce = false;
@@ -135,6 +150,36 @@ export class CalibrationGate {
     this.deps.dots.reset("calibration");
     this.deps.dots.reset("validation");
     this.deps.frames.dropBefore(t);
+  }
+
+  private report(
+    block: GateBlock,
+    attempt: number,
+    decision: GateDecision,
+    measured: GateMeasurements,
+    model: RidgeModel | null,
+    validation: DotSamples[],
+  ): void {
+    this.lastReport = {
+      block,
+      attempt,
+      decision,
+      measured,
+      points: validation.map((dot) => {
+        const vectors = usableVectors(dot);
+        if (model === null || vectors.length === 0) {
+          return { target: { x: dot.x, y: dot.y }, prediction: null };
+        }
+        const predictions = vectors.map((v) => predict(model, v));
+        return {
+          target: { x: dot.x, y: dot.y },
+          prediction: {
+            x: median(predictions.map((q) => q[0])),
+            y: median(predictions.map((q) => q[1])),
+          },
+        };
+      }),
+    };
   }
 
   private samples(phase: "calibration" | "validation"): {
@@ -174,6 +219,7 @@ export class CalibrationGate {
     if (this.deps.forceFailure?.() === true) decision = { passed: false, reason: "forced_debug" };
     if (decision.passed || !this.passedOnce) this.model = fit.model;
     if (decision.passed) this.passedOnce = true;
+    this.report("before_video", attempt, decision, measured, fit.model, validation.dots);
     if (!this.enabled) return { passed: true, reason: "ok" };
     this.deps.log.log(
       "calib_gate_result",
@@ -211,6 +257,7 @@ export class CalibrationGate {
       },
       { meanBrightness: null, faceRatioSpread: 0, headAngleSpreadDeg: 0 },
     );
+    this.report(block, 1, decision, measured, this.model, validation.dots);
     this.deps.log.log("calib_gate_result", calibGateEventData(block, 1, measured, decision));
   }
 }
