@@ -32,7 +32,8 @@
       <option value="lab"{% if form.mode == "lab" %} selected{% endif %}>lab</option>
     </select>
   </label>
-  <label>Config (JSON; missing fields get their defaults, playlist lists video ids as strings)
+  {% include "_playlist.html" %}
+  <label>Other settings (JSON; missing fields get their defaults)
     <textarea name="config" rows="24" spellcheck="false" required>{{ form.config }}</textarea>
   </label>
   <button type="submit">Create study</button>

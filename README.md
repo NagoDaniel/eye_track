@@ -102,13 +102,13 @@ Containers restart automatically (`restart: unless-stopped`) and Docker starts a
 Log in at `https://<your domain>/admin/login`.
 
 1. **Videos**: upload the stimulus MP4 (title + file). H.264 with a constant frame rate is best; other files are accepted with a warning. A video that a study or an existing session uses cannot be deleted.
-2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, and the config JSON (every key is optional, defaults are in PLAN §4.1; `playlist` lists the video ids as strings, for example `{"playlist": ["1"]}`). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
+2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, the videos (tick them in the table and number them in the order they play) and, if you want, other settings as JSON (every key is optional, defaults are in PLAN §4.1). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
 3. **Participants** open the link, enter their code (first two letters of the name, birth month, birth day), accept the consent text, and follow the screens: a camera check (the face must be found, alone, lit and at a sensible distance for 3 seconds), instructions, fullscreen, 13 calibration dots, 5 validation dots, the videos with a validation between and after, and the upload. The webcam is recorded from the fullscreen step to the end of the last validation. A calibration that is clearly off is repeated (up to `calibration_gate.max_attempts`), then the session continues flagged `calibration_gate_failed` or ends, depending on `calibration_gate.on_fail`.
 4. **Sessions**: lists every session with its status, flags and chunk counts per stream; the detail page shows gaps in the uploaded chunks and the events received.
 
 ### Debug mode (researchers)
 
-Open the participant link with `&debug=1` (for example `https://<your domain>/s/<code>?p=AB0315&debug=1`). It works only if the study's config has `"debug_allowed": true` or you are logged in to the admin in the same browser; otherwise the session is refused. Debug sessions are stored with `is_debug` set and listed like the others.
+On the study's page in the admin, press **Turn debug mode on and show the debug link**. This sets `debug_allowed` for the study and shows a link ending in `?debug=1`; open that link (add `&p=AB0315` to prefill a participant code). Without the setting, or without `debug=1` in the link, there is no panel (a logged-in admin in the same browser may use `debug=1` without the setting). **Turn it off again before collecting real data.** Debug sessions are stored with `is_debug` set and listed like the others.
 
 | Key | Does |
 |---|---|
