@@ -63,7 +63,7 @@ async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> 
       const release = installUnloadGuard(() => true);
       try {
         const queue = await UploadQueue.open(db, api, s);
-        await uploadScreen(root, queue, { events: null, interrupted: true });
+        await uploadScreen(root, queue, { uploaders: [], interrupted: true });
       } finally {
         release(); // also after a failure, or the page would warn on close forever
       }
@@ -119,7 +119,7 @@ async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> 
         break;
       }
       case "upload":
-        await step(uploadScreen(root, runtime.queue, { events: runtime.events, interrupted: false }));
+        await step(uploadScreen(root, runtime.queue, { uploaders: [runtime.features, runtime.stimulusFrames, runtime.events], interrupted: false }));
         events.stop();
         runtime.releaseUnloadGuard();
         break;
