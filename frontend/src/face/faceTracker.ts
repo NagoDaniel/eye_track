@@ -119,7 +119,10 @@ export class FaceTracker {
     }
     this.busy = true;
     this.process(t, metadata)
-      .catch((e: unknown) => this.options.onError(e instanceof Error ? e : new Error(String(e))))
+      .catch((e: unknown) => {
+        if (!this.running) return; // a frame in flight when the tracker was stopped (model closed)
+        this.options.onError(e instanceof Error ? e : new Error(String(e)));
+      })
       .finally(() => {
         this.busy = false;
       });

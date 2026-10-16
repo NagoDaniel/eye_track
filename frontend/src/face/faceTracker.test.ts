@@ -189,6 +189,19 @@ describe("FaceTracker", () => {
     expect(frames).toHaveLength(1);
   });
 
+  it("a frame still in flight when the tracker stops is not an error", async () => {
+    let fail: (e: Error) => void = () => undefined;
+    const pending = new Promise<FaceResult>((_resolve, reject) => (fail = reject));
+    const { tracker, fire, errors, frames } = setup([pending]);
+    tracker.start();
+    fire(0, 1);
+    tracker.stop();
+    fail(new Error("the face model was closed"));
+    await flush();
+    expect(errors).toEqual([]);
+    expect(frames).toEqual([]);
+  });
+
   it("stop cancels the pending callback and ignores later ones", async () => {
     const { tracker, armed, frames } = setup([meshOf(0)]);
     tracker.start();
