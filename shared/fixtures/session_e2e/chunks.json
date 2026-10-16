@@ -1,0 +1,140 @@
+[
+{
+"stream": "events",
+"seq": 0,
+"size": 366,
+"sha256": "b6fce3ed2256643c04cac17fb6bf692888cc8e5c7494a80591135fd2c3c51642"
+},
+{
+"stream": "events",
+"seq": 1,
+"size": 368,
+"sha256": "1f6c8639d6a1969df730d9a90a1f3f64332981f717afaecf83012d8ba080af17"
+},
+{
+"stream": "events",
+"seq": 2,
+"size": 333,
+"sha256": "7ffbf455c5e6cd3963c1253514453b86f680835cf038fd3eec494cb201f9499d"
+},
+{
+"stream": "events",
+"seq": 3,
+"size": 305,
+"sha256": "5ca278edebdfd7f26ba0aaa3923b680462d618ffebc64a08381108481efdf4c8"
+},
+{
+"stream": "events",
+"seq": 4,
+"size": 316,
+"sha256": "b3f0ec15d364b666ba7666dbbd721b1b4b7fac8ec4e751f53f2666c3c7e96bd0"
+},
+{
+"stream": "events",
+"seq": 5,
+"size": 534,
+"sha256": "0b5f62b6fd85b92f57e299f8be1da7e1f83d0b4c6cbcb88dcdbd285b7da9de1b"
+},
+{
+"stream": "events",
+"seq": 6,
+"size": 294,
+"sha256": "17c1f7f2e0114ecc91d3dfa27eaef42ec9b454474b30e2af2773a7b735028b04"
+},
+{
+"stream": "events",
+"seq": 7,
+"size": 469,
+"sha256": "8013f6e40d92edfa23a3cc61c38b1ee83b10e3ab447bf3c0e85015ebf8146f93"
+},
+{
+"stream": "features",
+"seq": 0,
+"size": 1655,
+"sha256": "e65d3759fc786e3ba684151de542c9ac2c84db9e38aebb06c9e13f06f05697fc"
+},
+{
+"stream": "features",
+"seq": 1,
+"size": 28195,
+"sha256": "e9b9e943fb52669fc9db6882b5001d65f0ac1cb48902658556debc81e170de4e"
+},
+{
+"stream": "features",
+"seq": 2,
+"size": 26351,
+"sha256": "dbf4115045d413619b9f616fb0d8a44f59355e04872a4629a9e3ed1713cc74bb"
+},
+{
+"stream": "features",
+"seq": 3,
+"size": 26933,
+"sha256": "79f3f7924aa8de6bd7779a640b104b1c1760429c492e560b8fa8071f29e8292e"
+},
+{
+"stream": "features",
+"seq": 4,
+"size": 23689,
+"sha256": "de626af268ce28cd6033d02c58bf8af0db68438fe2c3740deb9cdcdac05e1f50"
+},
+{
+"stream": "features",
+"seq": 5,
+"size": 23283,
+"sha256": "c9f36ffa870a38cad04fb9d39181c571db96d79d8b16847d100e7163a848aea9"
+},
+{
+"stream": "features",
+"seq": 6,
+"size": 14878,
+"sha256": "6c59075f4e2364e4f6da8d59790e29467bdbe69da9134195f32589167470121a"
+},
+{
+"stream": "stimulus_frames",
+"seq": 0,
+"size": 576,
+"sha256": "642371be17994f32c8c6e08e6a47a00042a120d4328ef24e985522620a0e7ec4"
+},
+{
+"stream": "stimulus_frames",
+"seq": 1,
+"size": 528,
+"sha256": "e3dbd0f2abdc60ff61811a60c3762bb05bb2b4b75bebecf5985c6063ebdc8985"
+},
+{
+"stream": "webcam",
+"seq": 0,
+"size": 365510,
+"sha256": "5b867ff858b3dbb74cb7862139778aa40ead3258ac56617e247ac88a9d8ab84e"
+},
+{
+"stream": "webcam",
+"seq": 1,
+"size": 402588,
+"sha256": "b36bcb2e69bac83296192bd8f7476daa35dd41cf26a88283976f488b12aa6385"
+},
+{
+"stream": "webcam",
+"seq": 2,
+"size": 397021,
+"sha256": "552cebf66809f3a8a397fc30c274c1d8bf0e21215549baf0bc376ba3b87a8fbd"
+},
+{
+"stream": "webcam",
+"seq": 3,
+"size": 404103,
+"sha256": "2ae01db661dc0f15460bad7c3c49bc4ded126e63ff4d4798b334bf5ee3918ef1"
+},
+{
+"stream": "webcam",
+"seq": 4,
+"size": 434219,
+"sha256": "2dde6a9344cc0f24a71337cb8735a0922d46ff4d467adeaf1feebed0e333fe81"
+},
+{
+"stream": "webcam",
+"seq": 5,
+"size": 291226,
+"sha256": "ddd6e474756de3dba8b170b5b4f0ed1996cce17d7b1486ba35d941a1ca210f1a"
+}
+]

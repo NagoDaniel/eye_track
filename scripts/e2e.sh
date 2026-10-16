@@ -65,7 +65,7 @@ install_browser="npx playwright install chromium"
 
 echo "== raw data on the server is complete (PLAN §14, milestone 2)"
 python3 - "$project" "$envf" <<'PY'
-import json, subprocess, sys
+import json, os, subprocess, sys
 project, envf = sys.argv[1:3]
 def run(*args: str) -> str:
     return subprocess.run(
@@ -77,6 +77,7 @@ def sh(script: str) -> str:
 dirs = sh("ls -d /data/studies/*/sessions/*/raw").split()
 assert len(dirs) == 5, dirs
 recorded = 0
+complete = []  # recorded sessions that played the video (candidates for E2E_EXPORT_SESSION)
 for raw in dirs:
     meta = json.loads(sh(f"cat {raw}/meta.json"))
     assert meta["status"] == "uploaded" and meta["config"]["playlist"], (raw, meta)
@@ -86,6 +87,8 @@ for raw in dirs:
     if "recorder_stop" not in kinds:
         continue  # the session that was reloaded early never recorded
     recorded += 1
+    if "video_ended" in kinds and kinds.count("calib_gate_result") == 2:
+        complete.append(raw)
     features = [json.loads(l) for l in sh(f"cat {raw}/browser_features.jsonl").splitlines()]
     frames = [json.loads(l) for l in sh(f"cat {raw}/stimulus_frames.jsonl").splitlines()]
     with_face = sum(1 for f in features if f["face"])
@@ -125,5 +128,26 @@ for raw in dirs:
           f"{last_pts:.1f} s (features span {span:.1f} s)")
 assert recorded == 4, recorded
 print(f"{len(dirs)} sessions, {recorded} with a complete recording")
+
+# E2E_EXPORT_SESSION=<dir>: copy the raw directory of one complete session and the server's chunk
+# manifest out of the stack, for scripts/make_session_fixture.py (the pipeline tests' real session).
+export = os.environ.get("E2E_EXPORT_SESSION")
+if export:
+    assert complete, "no session played the video and logged both gate results"
+    raw = complete[0]
+    session_id = raw.split("/")[-2]
+    os.makedirs(export, exist_ok=True)
+    tar = subprocess.run(
+        ["docker", "compose", "-p", project, "--env-file", envf, "-f", "docker-compose.yml",
+         "exec", "-T", "api", "tar", "-C", raw, "-cf", "-", "."],
+        check=True, capture_output=True).stdout
+    subprocess.run(["tar", "-C", export, "-xf", "-"], input=tar, check=True)
+    query = ("select coalesce(json_agg(json_build_object('stream', stream, 'seq', seq, "
+             "'size', size, 'sha256', sha256) order by stream, seq), '[]') from chunks "
+             f"where session_id = '{session_id}'")
+    manifest = run("exec", "-T", "db", "psql", "-U", "eyetrack", "-d", "eyetrack", "-At", "-c", query)
+    with open(os.path.join(export, "chunks.json"), "w") as f:
+        f.write(manifest.strip() + "\n")
+    print(f"exported session {session_id} to {export}")
 PY
 echo "ALL E2E CHECKS PASSED"

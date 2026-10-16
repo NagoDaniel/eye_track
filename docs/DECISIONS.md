@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-16 — Milestone 3 T2: ingest and the session fixture
+- Plan section: §7, §8.1, §13
+- Decision:
+  1. **The chunks are checked against the `chunks` table, not against the files.** `ingest()` takes the table's rows (stream, seq, size, sha256) as an argument, so the stage stays a function of its inputs and a chunk that changed on disk is found. The runner (T11) reads the rows from the database; `export-session` / `import-session` (T12) must carry them (as `chunks.json`, like the fixture).
+  2. **Per-frame pts are written to `derived/webcam_frames.parquet`** (`index`, `pts`), a file §7 does not list. The pts come from the packets of the remuxed file (cheap, no decoding); the landmark stage (T3) records the pts of the frames it actually decodes.
+  3. **Streams:** `webcam` and `events` must have chunks; `features` and `stimulus_frames` may be absent (a debug session can skip the video). A chunk that is not valid gzip, a line that is not a valid record, or an existing assembled file that differs makes ingest fail loudly (the session's job fails with the reason). The server already flags such sessions (`events_invalid` etc.) at `/complete`; ingest does not try to continue with part of a stream.
+  4. **Session fixture:** `shared/fixtures/session_e2e/` (3.0 MB: 23 chunks, the assembled JSONL files, `meta.json`, `chunks.json`) from one session of the e2e run (Chromium's fake camera playing `e2e/fixtures/face.mp4`; webcam VP9 854x480, 11.3 s, 314 feature records). `E2E_EXPORT_SESSION=<dir> make e2e` exports it and `scripts/make_session_fixture.py <dir>` writes the fixture. The gaze does not follow the dots, so it tests plumbing and the maths of each stage, not accuracy. It is 11 s long: sync's 60 s windows (T5) get the `sync_short` path on it.
+  5. Dependencies added: numpy, scipy, pandas, pyarrow, matplotlib, scikit-learn (approved), pandas-stubs (dev).
+- Reason: details the plan leaves open for the ingest stage.
+- Approved by: plan leaves open (item 4's size limit and item 5 approved by Nágó Dániel; flag the rest if you object)
+
 ## 2026-10-16 — Milestone 3 scope and open choices
 - Plan section: §4, §5.6, §7, §8.1 to §8.10, §12.2, §12.3, §14
 - Decision:

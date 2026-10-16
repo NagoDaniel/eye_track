@@ -1,6 +1,6 @@
 # Data formats
 
-What the system writes to disk and sends over the wire, as of Milestone 2. Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
+What the system writes to disk and sends over the wire, as of Milestone 3 (ingest). Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
 
 ## Files under `DATA_ROOT` (default `./data`, `/data` in the containers)
 
@@ -13,12 +13,26 @@ studies/{study_id}/sessions/{session_id}/
     events.jsonl                     assembled from the events chunks when the session completes
     browser_features.jsonl           assembled from the features chunks (only if there are some)
     stimulus_frames.jsonl            assembled from the stimulus_frames chunks (only if there are some)
+    webcam.webm                      the webcam chunks concatenated and remuxed (written by ingest)
     meta.json                        session row + config snapshot
+  derived/
+    webcam_frames.parquet            one row per webcam frame, from ingest (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
 
-Not written yet: `webcam.webm` (the concatenated and remuxed webcam chunks) and everything under `derived/` (Milestone 3).
+`webcam.webm`, `events.jsonl`, `browser_features.jsonl` and `stimulus_frames.jsonl` are pure functions of the chunks. The ingest stage (`backend/worker/pipeline/ingest.py`) checks the chunks against the `chunks` table (every seq from 0 to the highest is there, size and sha256 match), then writes the files that are missing and refuses (error, nothing overwritten) when one that exists differs from what the chunks give. `webcam.webm` is always rewritten (atomically): `ffmpeg -c copy -fflags +genpts` into a real file, so the result has a duration and a seek index (cues), which the MediaRecorder stream lacks. Everything else under `derived/` comes with the later stages of Milestone 3.
+
+### `derived/webcam_frames.parquet` (ingest)
+
+One row per video packet of `raw/webcam.webm`, which is one per shown frame. The frame rate is variable; never assume it is constant.
+
+| column | type | meaning |
+|---|---|---|
+| `index` | int64 | 0-based frame number |
+| `pts` | float64 | presentation time in seconds from the start of the recording |
+
+Snappy-compressed. The ingest summary also reports whether the pts are strictly increasing; the server-side landmark stage (`landmarks.parquet`) records the pts of the frames it decodes and is the reference for those.
 
 ## Streams and chunks
 
