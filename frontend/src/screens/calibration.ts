@@ -12,6 +12,13 @@ export function calibrationScreen(
   random: () => number = Math.random,
 ): Promise<void> {
   assertPointCounts(config);
-  const points = calibrationPoints(window.innerWidth, window.innerHeight, config.calibration.margin, random);
-  return runDotBlock(root, "calibration", points, config.calibration.dot_duration_ms, log);
+  const points = calibrationPoints(
+    window.innerWidth,
+    window.innerHeight,
+    config.calibration.margin,
+    random,
+  );
+  return runDotBlock(root, "calibration", points, config.calibration.dot_duration_ms, log, {
+    fullscreen: { required: config.playback.require_fullscreen },
+  });
 }
