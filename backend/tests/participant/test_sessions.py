@@ -7,13 +7,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session as Db
 
 from app.models import Session as SessionRow
-from app.models import SessionStatus, Video
+from app.models import SessionStatus, Study, Video
 from app.ratelimit import SlidingWindowLimiter
 from app.schemas import SessionCreateResponse, StudyConfig
+from tests.adminutil import logged_in_admin
 from tests.dbutil import make_settings
 from tests.participant.helpers import (
     PARTICIPANT,
@@ -61,6 +62,10 @@ def test_create_session_response_matches_schema_and_playlist_order(
     assert parsed.videos[0].url == f"/media/videos/{v2.id}.mp4"
     assert parsed.videos[0].sha256 == "b" * 64 and parsed.videos[0].duration == 20.0
     assert parsed.videos[1].duration == 10.5
+    assert [v.fps for v in parsed.videos] == [
+        30,
+        25,
+    ]  # the video's own frame rate, in playlist order
     assert parsed.config.playlist == [str(v2.id), str(v1.id)]
 
 
@@ -264,3 +269,76 @@ def test_limiter_window_slides_with_injected_clock() -> None:
 
 def test_default_rate_limit_is_300_per_hour() -> None:
     assert make_settings().rate_limit_per_hour == 300
+
+
+# --- debug sessions (PLAN §12.1) ----------------------------------------------------------------
+
+
+def session_count(engine: Engine) -> int:
+    with Db(engine) as db:
+        return len(db.scalars(select(SessionRow)).all())
+
+
+def allow_debug(engine: Engine, study_id: int) -> None:
+    with Db(engine) as db:
+        study = db.get(Study, study_id)
+        assert study is not None
+        study.config = {**study.config, "debug_allowed": True}
+        db.commit()
+
+
+def request_debug(client: TestClient) -> Any:
+    return client.post(
+        "/api/sessions",
+        json={"study_code": STUDY_CODE, "participant_code": PARTICIPANT, "debug": True},
+    )
+
+
+def test_normal_session_is_not_a_debug_session(
+    client: TestClient, study_id: int, migrated_engine: Engine
+) -> None:
+    created = create_session(client)
+    with Db(migrated_engine) as db:
+        row = db.get(SessionRow, uuid.UUID(created["session_id"]))
+        assert row is not None and row.is_debug is False
+
+
+def test_debug_session_is_refused_when_the_study_does_not_allow_it(
+    client: TestClient, study_id: int, migrated_engine: Engine
+) -> None:
+    r = request_debug(client)
+    assert r.status_code == 403 and "debug" in r.json()["detail"]
+    assert session_count(migrated_engine) == 0  # no row, no files
+
+
+def test_debug_session_is_created_when_the_study_allows_it(
+    client: TestClient, study_id: int, migrated_engine: Engine, data_root: Path
+) -> None:
+    allow_debug(migrated_engine, study_id)
+    r = request_debug(client)
+    assert r.status_code == 201, r.text
+    sid = r.json()["session_id"]
+    with Db(migrated_engine) as db:
+        row = db.get(SessionRow, uuid.UUID(sid))
+        assert row is not None and row.is_debug is True
+    raw = data_root / "studies" / str(study_id) / "sessions" / sid / "raw"
+    assert json.loads((raw / "meta.json").read_text())["is_debug"] is True
+
+
+def test_a_logged_in_admin_may_start_a_debug_session(
+    migrated_engine: Engine, data_root: Path, study_id: int
+) -> None:
+    with logged_in_admin(migrated_engine, data_root) as admin:
+        r = request_debug(admin.client)
+        assert r.status_code == 201, r.text
+        with Db(migrated_engine) as db:
+            row = db.get(SessionRow, uuid.UUID(r.json()["session_id"]))
+            assert row is not None and row.is_debug is True
+
+
+def test_debug_is_refused_for_a_client_with_a_forged_admin_cookie(
+    client: TestClient, study_id: int, migrated_engine: Engine
+) -> None:
+    client.cookies.set("eyetrack_admin", "forged.value")
+    assert request_debug(client).status_code == 403
+    assert session_count(migrated_engine) == 0

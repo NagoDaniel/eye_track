@@ -43,3 +43,7 @@ frontend/public/mediapipe/
 e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
+
+# Raw face test clip, converted into a fixture in M2 (T3); never commit the original
+/face_test.mov
+frontend/.vite/

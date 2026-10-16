@@ -14,7 +14,7 @@ beforeEach(() => {
 describe("preloadScreen", () => {
   it("blocks with a clear message when a video's hash does not match, and retries on request", async () => {
     const bytes = new TextEncoder().encode("the real bytes");
-    const ref: VideoRef = { id: "7", url: "/v/7.mp4", sha256: await sha256Hex(bytes), duration: 1 };
+    const ref: VideoRef = { id: "7", url: "/v/7.mp4", sha256: await sha256Hex(bytes), duration: 1, fps: 25 };
     let served: Uint8Array = new TextEncoder().encode("corrupted bytes");
     const fetchFn: FetchFn = () => Promise.resolve(new Response(served as BodyInit));
 

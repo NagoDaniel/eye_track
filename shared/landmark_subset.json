@@ -1,0 +1,18 @@
+{
+  "comment": "MediaPipe Face Landmarker (478-point mesh) indices kept in the `lm` array of a feature record (PLAN §5.4). `lm` holds the groups in this order, each group in this order. Used by frontend/src/face/features.ts and backend/worker/pipeline/features_a.py.",
+  "mesh_size": 478,
+  "groups": {
+    "right_iris": [468, 469, 470, 471, 472],
+    "left_iris": [473, 474, 475, 476, 477],
+    "right_eye_corners": [33, 133],
+    "left_eye_corners": [263, 362],
+    "right_upper_lid": [246, 161, 160, 159, 158, 157, 173],
+    "right_lower_lid": [7, 163, 144, 145, 153, 154, 155],
+    "left_upper_lid": [466, 388, 387, 386, 385, 384, 398],
+    "left_lower_lid": [249, 390, 373, 374, 380, 381, 382],
+    "nose_tip": [1],
+    "chin": [152],
+    "forehead": [10],
+    "cheeks": [234, 454, 205, 425]
+  }
+}

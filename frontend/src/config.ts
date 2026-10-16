@@ -34,7 +34,16 @@ export interface StudyConfig {
   };
   playback: { allow_pause: boolean; require_fullscreen: boolean };
   recording: { width: number; height: number; fps: number; chunk_ms: number };
-  quality: { min_face_ratio_warn: number; max_face_ratio_warn: number };
+  quality: {
+    min_face_ratio_warn: number;
+    max_face_ratio_warn: number;
+    brightness_min: number;
+    brightness_max: number;
+    face_ratio_min: number;
+    face_ratio_max: number;
+    max_yaw_deg: number;
+    max_pitch_deg: number;
+  };
   inclusion: { max_validation_error_norm: number; min_valid_fraction: number };
   retention: { raw_video_days_after_processing: number | null };
   consent_version: string;
@@ -56,12 +65,16 @@ export interface VideoRef {
   url: string;
   sha256: string;
   duration: number;
+  /** Frames per second of the stimulus video (the face model's target rate). */
+  fps: number;
 }
 
 /** POST /api/sessions. The participant code is two letters + birth month + day, e.g. AB0315. */
 export interface SessionCreateRequest {
   study_code: string;
   participant_code: string;
+  /** Asks for a debug session (default false); allowed only for `debug_allowed` studies or admins. */
+  debug?: boolean;
 }
 
 export interface SessionCreateResponse {

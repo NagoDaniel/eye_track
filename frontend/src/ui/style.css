@@ -50,3 +50,10 @@ progress { width: 100%; height: 16px; }
 .player video { width: 100%; height: 100%; object-fit: contain; display: block; }
 .player-overlay[hidden] { display: none; }
 .player-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.85); color: #fff; }
+
+/* Device check: mirrored camera preview (PLAN §5.2 step 4). */
+.camera-preview { display: block; width: 100%; max-height: 40vh; background: #000; border-radius: 4px; transform: scaleX(-1); object-fit: contain; }
+
+/* "We cannot see your face": a banner that never blocks anything (PLAN §5.2). */
+.face-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 8px 16px; text-align: center; background: rgba(163, 32, 32, 0.92); color: #fff; font-weight: 600; pointer-events: none; }
+.face-banner[hidden] { display: none; }

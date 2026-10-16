@@ -3,6 +3,8 @@
 !frontend/**
 !shared/models.json
 !shared/protocol.json
+!shared/landmark_subset.json
+!shared/fixtures/*.json
 !Caddyfile
 !proxy/entrypoint.sh
 !proxy/routes.caddy

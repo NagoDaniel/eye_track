@@ -75,3 +75,11 @@ def atomic_writer(path: Path) -> Generator[BinaryIO]:
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     with atomic_writer(path) as f:
         f.write(data)
+
+
+def browser_features_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
+    return raw_dir(root, study_id, session_id) / "browser_features.jsonl"
+
+
+def stimulus_frames_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
+    return raw_dir(root, study_id, session_id) / "stimulus_frames.jsonl"

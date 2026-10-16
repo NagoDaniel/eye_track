@@ -11,10 +11,12 @@ from app.schemas import Stream
 from app.storage import (
     atomic_write_bytes,
     atomic_writer,
+    browser_features_path,
     chunk_path,
     events_path,
     meta_path,
     session_dir,
+    stimulus_frames_path,
     video_aois_path,
     video_path,
 )
@@ -87,3 +89,9 @@ def test_concurrent_writers_never_produce_a_mixed_file(tmp_path: Path) -> None:
         t.join()
     assert target.read_bytes() in payloads
     assert [p.name for p in tmp_path.iterdir()] == ["meta.json"]
+
+
+def test_browser_features_and_stimulus_frames_paths() -> None:
+    raw = Path("/data/studies/4/sessions") / str(SESSION) / "raw"
+    assert browser_features_path(Path("/data"), 4, SESSION) == raw / "browser_features.jsonl"
+    assert stimulus_frames_path(Path("/data"), 4, SESSION) == raw / "stimulus_frames.jsonl"

@@ -57,7 +57,17 @@ export async function uploadVideo(admin: Admin, title: string): Promise<Uploaded
   return { id: String(body.id), sha256: body.sha256 };
 }
 
-export async function createStudy(admin: Admin, code: string, videoId: string): Promise<number> {
+/**
+ * The fake camera plays a still-ish clip of a face that cannot follow the calibration dots, so the
+ * browser gate fails: one attempt only (`max_attempts` 1) keeps the test short, and the session
+ * continues flagged (`continue_flagged`, the plan default).
+ */
+export async function createStudy(
+  admin: Admin,
+  code: string,
+  videoId: string,
+  extraConfig: Record<string, unknown> = {},
+): Promise<number> {
   const response = await admin.request.post("/admin/api/studies", {
     headers: admin.headers,
     data: {
@@ -65,7 +75,12 @@ export async function createStudy(admin: Admin, code: string, videoId: string): 
       code,
       mode: "remote",
       // dot_duration_ms is short so that the test is fast; everything else is the plan default.
-      config: { playlist: [videoId], calibration: { dot_duration_ms: 700 } },
+      config: {
+        playlist: [videoId],
+        calibration: { dot_duration_ms: 700 },
+        calibration_gate: { max_attempts: 1 },
+        ...extraConfig,
+      },
     },
   });
   expect(response.status(), await response.text()).toBe(201);
@@ -82,6 +97,7 @@ export interface SessionEvent {
 export interface SessionDetail {
   id: string;
   status: string;
+  is_debug: boolean;
   flags: string[];
   chunks: Record<string, number>;
   streams: Record<string, { missing: number[]; count: number }>;

@@ -32,6 +32,13 @@ FaceLandmarker.create_from_options(opts).close()
 print('FaceLandmarker loaded')
 "
 
+echo "== Pipeline A features find the shared landmark subset inside the image"
+run python -c "
+from worker.pipeline.features_a import LANDMARK_COUNT
+assert LANDMARK_COUNT == 49, LANDMARK_COUNT
+print('landmark subset:', LANDMARK_COUNT)
+"
+
 echo "== CLI and alembic available"
 run python cli.py --help >/dev/null
 run alembic --help >/dev/null
@@ -41,7 +48,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/shared"
 cp -R backend "$tmp/backend"
-cp shared/download_model.py "$tmp/shared/"
+cp shared/download_model.py shared/landmark_subset.json "$tmp/shared/"
 python3 -c "
 import json
 m = json.load(open('shared/models.json'))

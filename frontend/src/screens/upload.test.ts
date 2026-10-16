@@ -41,7 +41,7 @@ describe("uploadScreen", () => {
     });
     new EventLog(events.push).log("window_blur", {});
 
-    await uploadScreen(root, queue, { events, interrupted: false });
+    await uploadScreen(root, queue, { uploaders: [events], interrupted: false });
 
     expect(puts).toEqual([0]);
     expect(completes).toEqual([{ last_seq: { events: 0 }, interrupted: false }]);

@@ -14,6 +14,102 @@ Format:
 
 ---
 
+## 2026-10-16 — Milestone 2 review decisions and admin additions
+- Plan section: §4, §4.1, §5.4, §5.6, §6, §12.1
+- Decision:
+  1. **Admin study pages (addition, after the first real run).** The study forms pick the playlist from a table of videos (tick, type the order; unnumbered ticked videos come last, by id) instead of ids in the JSON; the text box holds every other setting, and the table always wins over a `playlist` key typed into the box. `POST /admin/studies/{id}/debug` switches `debug_allowed` on or off and the study page then shows the link with `?debug=1`. The JSON API is unchanged. Approved by Nágó Dániel ("create a button for debug toggle ... add a video selection").
+  2. **A feature record with a face may have `brightness: null`** (the pixels could not be read; the device check then skips the brightness check). The schema, the shared example `feature_record_unmeasured_brightness` and DATA_FORMATS say so; before, the server would have refused the whole features stream for one such frame.
+  3. **The face model must not give half a result:** a face without landmarks or matrix, or without a blink blendshape, is an error (fatal in the session), not a silent "no face" or "no blink". A camera that reports no frame rate is assumed to deliver the study's `recording.fps`, and the browser logs a `client_error` event saying so; a failing stop of the recording during cleanup is logged the same way.
+  4. **`quality.min_face_ratio_warn` and `max_face_ratio_warn` are reserved for the M3 quality flags** (the reading as multipliers of the device-check face ratio stays the working assumption). The browser shows the ratio relative to the device check in the debug panel only; no warning is shown to participants.
+  5. **Gate disabled** (`calibration_gate.enabled: false`): no `calib_gate_result` is logged at all, also not for later validation blocks, and the session is never flagged `calibration_gate_failed`.
+  6. Left as they are by the human: the device check preview is the mirrored camera image with a text line and a progress bar (no face box); the banner for a missing face also shows during calibration and validation; `recorder_dataavailable` is logged after the chunk was stored in the browser.
+- Reason: `/milestone-review 2` (plan-reviewer) found these; the first and the last two points are choices the plan leaves open.
+- Approved by: Nágó Dániel (2026-10-16: fix major 1 and 3, minor 1, 3, 4, 5, 7, 8; reserve the warn ratios for M3; leave the device check as it is)
+
+## 2026-10-16 — Browser model chosen by cross-validation; smoothed gaze dot (deviation from §5.6 step 3)
+- Plan section: §5.6 (step 3: degree 2, alpha fixed 1.0), §8.6, §12.1
+- Decision: the browser gate fits the quick model as §8.6 describes the server's fit: leave-one-dot-out cross-validation over a plain linear ridge and the degree-2 ridge, each with alpha on the log grid 1e-3 to 1e3, and keeps the best (ties go to the simpler model). The chosen degree, alpha and CV error are shown in the debug panel; the gate thresholds and everything else in §5.6 are unchanged. The live gaze dot (debug only) is smoothed with a one-euro filter (0.5 Hz at rest, beta 0.0005) and kept inside the viewport.
+- Reason: the human's first real run (study 3): the fixed degree-2 model on 10 correlated features and 301 frames overfitted; against the moving-dot ground truth 25 % of its predictions fell more than 15 % outside the screen and the 90th-percentile error was 1.17 screen diagonals. The cross-validated choice on the same run is a linear ridge with alpha 10 (validation error 0.079, 90th percentile 0.36); smoothing halved the frame-to-frame travel of the dot without raising its median error (0.123 to 0.114 to 0.121 depending on beta). The same data also showed that eyelid openness and face size help on the static calibration dots but hurt on moving targets (iris and head angles alone: median 0.125, 99 % on screen); one subject only, so the feature set stays as in §8.4 until more pilot data exists.
+- Approved by: Nágó Dániel ("yes. Lets try your two ideas", 2026-10-16)
+
+## 2026-10-16 — Dropped stimulus frames are counted from the media time (deviation from §5.4)
+- Plan section: §5.4 ("check `presentedFrames` gaps")
+- Decision: a dropped stimulus frame is a step of the media time of more than one frame duration between two `requestVideoFrameCallback` calls (`round(step x fps) - 1`; the video's `fps` comes with the video in the session response), not a gap in `presentedFrames`. `presentedFrames` is still logged.
+- Reason: the human's first real run (Chrome, Mac, display scale 2) showed `presentedFrames` rising by 2 for each frame of a 30 fps video (1162 of 1168 steps), which made every frame look dropped, so the rate control cut the face model to its 8 fps floor during playback (9.6 and 8 fps measured against 29 fps before). The media time of the same frames was a clean 33 ms step.
+- Approved by: Nágó Dániel asked for the cause of the jumpy gaze dot; this was found while answering (flag if you object)
+
+## 2026-10-16 — Milestone 2 implementation choices (T4 to T13)
+- Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13
+- Decision (all are the simplest reading of what the plan leaves open; flag any you object to):
+  1. **Face model in a classic worker.** MediaPipe's WASM loader needs `importScripts`, which module workers lack (checked in Chromium: "ModuleFactory not set"). `scripts/build-face-worker.mjs` (esbuild, now a dev dependency) bundles `src/face/modelWorker.ts` to `/mediapipe/face-worker.js`, a classic worker, before `vite` and `vite build`; it runs in the same way in dev and production. CPU delegate; init about 130 ms, about 10 ms per frame on a laptop (headless).
+  2. **Matrix layout.** The browser delivers the transformation matrix column-major; compared on the same clip with the Python API it matches after a transpose (landmarks agree within about 0.01 normalised units; the frames of the two decoders differ slightly). Feature records hold it row-major.
+  3. **Feature record `t`** is the time the webcam frame was presented to the page (the `requestVideoFrameCallback` time), not when the model finished (corrects the wording of T1 item 2 docstrings). Features are recorded only while the recording runs; the device check frames are not.
+  4. **Model rate** (DECISIONS item 10 of the scope entry): `AdaptiveRate` reduces to 75 % of the rate when more than 5 % of the stimulus frames of a 2 s window were dropped (at most one step per window), never below 8 fps, and returns by 25 % steps after 5 s without drops. `FrameGate` lets frames through on a fixed schedule so a 24 fps target on a 30 fps camera averages 24 fps. All are named constants in `face/adaptiveRate.ts`; starting values for real laptops. The stimulus video's fps is sent to the browser (`VideoRef.fps`, an addition to the §6 response).
+  5. **Face lost:** `face_lost` / `face_regained` are logged when confirmed (500 ms), not at the onset; `lost_ms` is exact. The banner (3 s without a face) never pauses anything. The events are only logged while recording.
+  6. **Blink rule:** `eyeBlink > 0.5` for either eye, or either eye's openness below 0.15 (starting value; the clip's blinks have 0.07 to 0.14, open eyes 0.3 to 0.39).
+  7. **Gate details:** training window 700 ms before to 100 ms after the click, also used for the validation points; the cause is chosen in the order few frames, low brightness (mean face brightness below `quality.brightness_min`), head or distance change (face-size spread above 12 % or head angle spread above 20 degrees across the dots), else high error; a point without a usable frame counts as a failure; with fewer than 2 usable frames in total there is no model and the gate reports few frames. The model of the last passed attempt (else the last attempt) is kept; later validation blocks are scored with it and logged with attempt 1.
+  8. **Session plan:** the `calibration` step now includes the pre-video validation and the gate with its retries; `validation` steps are only the blocks between and after videos. A study with `on_fail: end_session` ends after the last failed attempt: the participant sees a thank-you text and the recording is uploaded.
+  9. **Fullscreen in dots:** an interrupted dot restarts with the same `id` after fullscreen returns (two shows, the first closed by a hide).
+  10. **Debug mode:** the panel is on by default and hidden with `D` (it covers where dots appear, found by the e2e test); `S` ends the running dot block or video (video: logs `video_ended`); `F` toggles the forced failure; the sliders write into the session's own `quality` config object, so the device check and the gate use them at once; the gaze dot is the mean of the last 5 predictions of the quick model.
+  11. **Moving-dot fixture** (§12.4): `e2e/fixtures/moving_dot.mp4`, 1280x720, 25 fps, 21.8 s (545 frames, 9 waypoints with 1.5 s pauses and 0.7 s smoothstep moves, a 2 s first pause), with `moving_dot_path.json` (per-frame ground truth, computed by the code that draws the frames; dot centroid within 0.23 px). Not used by the e2e test (it plays the 3 s test clip); for the pilot checklist.
+  12. **e2e:** the fake camera plays `e2e/fixtures/face.mp4` as `.y4m`; it cannot follow the dots, so the e2e studies use `calibration_gate.max_attempts: 1` and the test asserts that the `calibration_gate_failed` flag is present exactly when the logged pre-video result failed.
+- Reason: needed to build the tasks; nothing here contradicts the plan except the points marked as additions.
+- Approved by: plan leaves open (Nágó Dániel approved starting Milestone 2 tasks without review; check-in pending)
+
+## 2026-10-15 — Milestone 2 T3: feature definition and the face fixture
+- Plan section: §5.4, §5.6 step 2, §8.4
+- Decision:
+  1. **Definitions** (§8.4 leaves details open; full text in the docstring of `backend/worker/pipeline/features_a.py` and the header of `frontend/src/face/features.ts`): landmarks are scaled to `(x * aspect, y)` first (the functions take the frame's aspect ratio); iris centre = mean of the 5 iris landmarks in the eye-local frame (origin: midpoint of the corners, x-axis corner to corner pointing image-right for both eyes, y-axis towards the image bottom, unit: eye width); openness = distance of the middle lid landmarks (right 159/145, left 386/374) over eye width; face scale `face_ratio` = distance of the two eye midpoints over the frame width; head angles in degrees from `R = Rz(roll) Ry(yaw) Rx(pitch)` (positive pitch: head down, positive yaw: face turned to the image right, positive roll: counter-clockwise), translation in cm.
+  2. **`matrix` layout in feature records: 16 numbers, row-major** (translation at indices 3, 7, 11), as MediaPipe's Python API returns it. The browser API's layout is checked against the same clip in T6 and converted if needed.
+  3. **Blink rule not in T3** (the openness threshold of §8.4 is "tuned on calibration data"; the fixture shows blinks at openness 0.07 to 0.14 against 0.3 to 0.39 with eyes open): it comes with the gate in T4/T10.
+  4. **Face clip fixture:** `e2e/fixtures/face.mp4` (first 12 s of the human's clip, 854x480, 30 fps, no audio, 229 KB; the 1280x720 original with sound stays untracked as `face_test.mov`). 854x480 keeps the 16:9 shape and meets the 640x480 camera minimum of §5.2. `shared/fixtures/face_frames.json` holds 45 real MediaPipe frames (landmark subset, matrix, blink scores) and the features the Python code computes; `scripts/make_face_fixture.py` regenerates it. Both languages are tested on it (agreement far below the 1e-4 of §5.6).
+  5. **Corrects T1 item 6:** the real clip has a face ratio of 0.070 at 44 cm from a 16:9 laptop camera, so the starting band is `face_ratio_min` 0.045 and `face_ratio_max` 0.16 (was 0.07 and 0.2, which would have rejected normal arm's-length use). Still a starting value for the pilot.
+  6. The frontend imports `shared/landmark_subset.json`: the dev server may serve `..` (`server.fs.allow`), the proxy image build context includes the file and the test fixture, and the backend image carries `/shared/landmark_subset.json` (same layout as the repository, checked in `make test-images`).
+- Reason: plan leaves the exact definitions open; the numbers come from real data.
+- Approved by: plan leaves open (flag if you object); the clip use was approved by the human
+
+## 2026-10-15 — Milestone 2 T2: backend for the new streams
+- Plan section: §5.4, §5.6, §6, §7, §12.1
+- Decision:
+  1. **Debug authorization is decided by the server alone** (refines item 6 of "Milestone 2 scope"): `POST /api/sessions` with `debug: true` is accepted when the study has `debug_allowed` or the request carries a valid admin session cookie (same origin, so the browser sends it); otherwise 403 and no session is created. The participant app does not call `/admin/api/me`.
+  2. **Validation at the PUT:** `features` and `stimulus_frames` chunks must be valid gzip within `MAX_EVENTS_CHUNK_INFLATED_MB` (the same setting as `events`; its name is kept so `.env` files stay valid), else 422 and nothing is stored. The first webcam chunk (seq 0) must start with the WebM (EBML) magic bytes `1A 45 DF A3`, else 422. Other webcam chunks are not inspected.
+  3. **At `/complete`:** `raw/browser_features.jsonl` and `raw/stimulus_frames.jsonl` are written when the stream has chunks (gunzip and concatenate, every line validated as `FeatureRecord` / `StimulusFrameRecord`; about 0.6 s for 10 minutes of features at 30 fps). A bad chunk or line writes nothing for that stream, the session still completes, and it gets the flag `features_invalid` or `stimulus_frames_invalid` (like `events_invalid`). A session without such chunks gets no flag here.
+  4. **`calibration_gate_failed`** is set when the last `before_video` `calib_gate_result` of the events has `passed: false`; skipped results and later blocks do not count. A `calib_gate_result` of the wrong shape counts as an invalid events stream (`events_invalid`).
+  5. `webcam.webm` (concatenate and remux) is not produced by the server in M2 (M3 ingest).
+- Reason: details the plan leaves open; keep the participant's upload from ever blocking on a stream problem (§1: flag the session and move on).
+- Approved by: plan leaves open
+
+## 2026-10-15 — Milestone 2 T1: stream records and event data (choices the plan leaves open)
+- Plan section: §4.1, §5.3, §5.4, §5.6, §5.9, §12.1
+- Decision:
+  1. **Landmark subset** (`shared/landmark_subset.json`): 49 MediaPipe mesh indices in named groups (both iris rings 468-477, both eyes' corners and upper/lower lids, nose tip 1, chin 152, forehead 10, cheeks 234/454/205/425). `lm` holds the groups in file order. Checked against real MediaPipe output in T3; the list may change until then.
+  2. **Feature record without a face:** `face: false` and every measurement null. The webcam-frame values of §5.3 (`captureTime?`, `presentedFrames`) are two extra fields of the feature record (`capture_time`, `presented_frames`), because the plan logs them "at every frame where the face model ran" but names no stream.
+  3. **Stimulus-frame record keys are snake_case** (`expected_display_time`, `media_time`, `presented_frames`), like the rest of our JSON, not the camelCase of the browser API. The record has no video id; the `video_*` events delimit the videos.
+  4. **Camera settings and mime type** (§5.9 puts them in `session_start`) are logged in `recorder_start` instead, because the camera starts after `session_start`.
+  5. **`calib_gate_result` data** (§5.6) adds `block` (`before_video`, `between_videos`, `after_last_video`), `skipped` (`passed` is null exactly then) and a fixed `reason` list; the participant-facing message is chosen from it. Rule for T2: `calibration_gate_failed` is set when the last `before_video` result has `passed: false`.
+  6. **Quality keys** under `quality` with starting values: `brightness_min` 0.25, `brightness_max` 0.85, `face_ratio_min` 0.07, `face_ratio_max` 0.2 (interocular distance over frame width at roughly arm's length; the plan's own example is 0.162; corrected in T3, item 5), `max_yaw_deg` 20, `max_pitch_deg` 20. Not from a published source; tune on the pilot (debug-mode sliders, T11). Lower bounds must stay below upper bounds.
+  7. Other new event data: `recorder_start {mime_type, bits_per_second, settings}`, `recorder_dataavailable {seq, size}`, `recorder_stop {chunks, bytes}`, `face_lost {}`, `face_regained {lost_ms}`, `debug_skip {target}`. The server does not validate event data (as in 1b), except `calib_gate_result` from T2 on.
+- Reason: the plan names these records and events without exact shapes; both sides need one definition (§1 single source of truth).
+- Approved by: plan leaves open (item 3 and the snake_case naming: flag if you object)
+
+## 2026-10-15 — Milestone 2 scope and open choices
+- Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13, §14
+- Decision:
+  1. **Face fixture.** Nágó Dániel records a short clip of his own face (about 6 to 10 s) for the fake-camera e2e test and the feature fixtures; a small MP4 is committed, `e2e.sh` converts it to `.y4m`.
+  2. **Python features.** The pure function `backend/worker/pipeline/features_a.py` is written in M2 (needed for the TS/Python agreement test of §5.6 step 2); M3 reuses it.
+  3. **Quality thresholds.** The plan gives numbers only for `min_face_ratio_warn` and `max_face_ratio_warn`. Brightness bounds, the face-size band for the device check and the frontal-head limits are new keys under `quality` in `StudyConfig` with starting values chosen by the implementer from common practice (not from a published algorithm; none exists for this). They are tuned on the pilot. To make tuning easy, debug mode (§12.1) gets live sliders for these thresholds next to the measured values, and a "copy as JSON" button that prints a `quality` block for the study config. Assumption to confirm in T1: `min/max_face_ratio_warn` are multipliers of the median face ratio measured in the 3 s device check.
+  4. **Face model placement.** Web Worker first; main thread if MediaPipe does not run reliably in a worker. CPU delegate only (headless CI has no GPU).
+  5. **Gate flag.** The server derives `calibration_gate_failed` from the `calib_gate_result` events at `/complete`; the client sends nothing extra.
+  6. **Debug authorization.** `POST /api/sessions` accepts `debug: true` only if the study has `debug_allowed` or an admin is logged in on that browser (`/admin/api/me`); otherwise 403. Debug sessions are listed normally in the admin pages.
+  7. **Webcam assembly.** `/complete` also writes `raw/browser_features.jsonl` and `raw/stimulus_frames.jsonl`. Concatenating and remuxing `webcam.webm` stays in the M3 ingest; the e2e test checks the chunk concatenation with ffprobe.
+  8. **Gate without validation.** A study with `calibration_gate.enabled` and `validation.before_video: false` is not refused. The gate cannot be scored, so it is skipped and logged as a `calib_gate_result` with `skipped: true` and the reason.
+  9. **Fullscreen exit during calibration/validation.** The same "Return to fullscreen to continue" gate as during playback blocks the dots until re-entry; the exit is logged.
+  10. **Face model rate (deviation from "about 15 fps", §5.4).** The target face model rate is the stimulus video's fps (capped at the camera's actual fps) during playback, and the camera's fps during calibration and validation, instead of a fixed 15. The playback-smoothness rule stays: if the stimulus drops frames, the rate is reduced (named constants for the window, the dropped share, the minimum rate and the recovery, tuned on real laptops).
+  11. **IndexedDB growth.** No cap on pending webcam bytes; the debug panel shows them and a storage error fails loudly (existing behaviour).
+  12. **No split.** Milestone 2 stays one milestone with the 14 tasks.
+- Reason: answers to the planning questions of `/milestone-start 2`.
+- Approved by: Nágó Dániel (item 10 was his suggestion; item 3 assumption still open)
+
 ## 2026-10-14 — Milestone 1b review decisions
 - Plan section: §1, §5.8, §6, §10
 - Decision: results of `/milestone-review 1b`.

@@ -51,7 +51,12 @@ class StubApi {
   }
 }
 
-const SESSION: StoredSession = { sessionId: "sid", uploadToken: "tok", studyCode: "phys1", nextSeq: {} };
+const SESSION: StoredSession = {
+  sessionId: "sid",
+  uploadToken: "tok",
+  studyCode: "phys1",
+  nextSeq: {},
+};
 const bytes = (...values: number[]): Uint8Array => new Uint8Array(values);
 
 let factory: IDBFactory;
@@ -180,7 +185,11 @@ describe("UploadQueue", () => {
     const api = new StubApi();
     const queue = await UploadQueue.open(db, api, stored[0] as StoredSession);
     await queue.finish(true);
-    expect(api.puts.map((p) => `${p.stream}/${p.seq}`).sort()).toEqual(["events/0", "events/1", "webcam/0"]);
+    expect(api.puts.map((p) => `${p.stream}/${p.seq}`).sort()).toEqual([
+      "events/0",
+      "events/1",
+      "webcam/0",
+    ]);
     expect(api.completes).toEqual([{ last_seq: { events: 1, webcam: 0 }, interrupted: true }]);
     expect(await db.listSessions()).toEqual([]);
     expect(await db.chunksOf("sid")).toEqual([]);
@@ -198,7 +207,9 @@ describe("UploadQueue", () => {
 
   it("re-sends the missing seqs the server reports and completes again", async () => {
     const api = new StubApi(undefined, (_req, call) =>
-      call === 0 ? { status: "incomplete", missing: { events: [1] } } : { status: "uploaded", missing: {} },
+      call === 0
+        ? { status: "incomplete", missing: { events: [1] } }
+        : { status: "uploaded", missing: {} },
     );
     const queue = await open(api);
     await queue.enqueue("events", bytes(1));
@@ -206,10 +217,19 @@ describe("UploadQueue", () => {
     await queue.enqueue("events", second);
     await queue.idle();
     // Simulate a chunk that is still stored although the server lacks it (e.g. its delete failed).
-    await db.putChunk({ sessionId: "sid", stream: "events", seq: 1, sha256: await sha256Hex(second), bytes: second }, {
-      ...SESSION,
-      nextSeq: { events: 2 },
-    });
+    await db.putChunk(
+      {
+        sessionId: "sid",
+        stream: "events",
+        seq: 1,
+        sha256: await sha256Hex(second),
+        bytes: second,
+      },
+      {
+        ...SESSION,
+        nextSeq: { events: 2 },
+      },
+    );
     api.puts.length = 0;
 
     await queue.finish(false);
@@ -325,3 +345,54 @@ describe("a failed IndexedDB write", () => {
   });
 });
 
+describe("webcam-sized chunks (PLAN §5.4, §5.8)", () => {
+  const CHUNK_BYTES = 600 * 1024; // about one 2 s chunk at 2.5 Mbit/s
+  const WEBM_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
+  const webcamChunk = (seq: number): Uint8Array => {
+    const chunk = new Uint8Array(CHUNK_BYTES).fill(seq + 1);
+    if (seq === 0) chunk.set(WEBM_MAGIC); // only the first chunk of a recording has the header
+    return chunk;
+  };
+
+  it("a reload with 20 pending webcam chunks uploads every byte, in order, flagged interrupted", async () => {
+    const stuck = new StubApi(() => new Promise<ChunkAck>(() => undefined));
+    const before = await open(stuck);
+    for (let seq = 0; seq < 20; seq++) await before.enqueue("webcam", webcamChunk(seq));
+    await before.enqueue("events", bytes(1));
+    expect(before.stats().pendingBytes).toBe(20 * CHUNK_BYTES + 1);
+    db.close();
+
+    db = await UploadDb.open(factory);
+    const stored = (await db.listSessions())[0] as StoredSession;
+    expect(stored.nextSeq).toEqual({ webcam: 20, events: 1 });
+
+    const api = new StubApi();
+    const queue = await UploadQueue.open(db, api, stored);
+    expect(queue.stats().pendingBytes).toBe(20 * CHUNK_BYTES + 1);
+    await queue.finish(true);
+
+    const webcam = api.puts.filter((p) => p.stream === "webcam");
+    expect(webcam.map((p) => p.seq)).toEqual(Array.from({ length: 20 }, (_, i) => i)); // in order
+    expect([...(webcam[0]?.bytes.slice(0, 4) ?? [])]).toEqual(WEBM_MAGIC);
+    for (const put of webcam) {
+      expect(put.bytes).toHaveLength(CHUNK_BYTES);
+      expect(put.sha256).toBe(await sha256Hex(put.bytes));
+    }
+    expect(api.completes).toEqual([{ last_seq: { webcam: 19, events: 0 }, interrupted: true }]);
+    expect(await db.chunksOf("sid")).toEqual([]);
+  });
+
+  it("a storage error on a webcam chunk is fatal and loud, and stops the recording's chunks", async () => {
+    const errors: Error[] = [];
+    const queue = await open(new StubApi(), (e) => errors.push(e));
+    await queue.enqueue("webcam", webcamChunk(0));
+    vi.spyOn(db, "putChunk").mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+    await expect(queue.enqueue("webcam", webcamChunk(1))).rejects.toMatchObject({
+      name: "QuotaExceededError",
+    });
+    expect(errors).toHaveLength(1);
+    await expect(queue.enqueue("webcam", webcamChunk(2))).rejects.toMatchObject({
+      name: "QuotaExceededError",
+    });
+  });
+});

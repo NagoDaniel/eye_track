@@ -22,6 +22,13 @@ from tests.dbutil import make_settings
 from tests.participant.helpers import MakeClient, auth, consent, create_session
 
 CLIENT_INFO = {"user_agent": "TestBrowser/1.0", "screen": {"w": 1920, "h": 1080}}
+EXAMPLES: dict[str, Any] = json.loads(
+    (Path(__file__).resolve().parents[3] / "shared" / "protocol.json").read_text()
+)["examples"]
+FEATURE = EXAMPLES["feature_record"]
+NO_FACE = EXAMPLES["feature_record_no_face"]
+FRAME = EXAMPLES["stimulus_frame_record"]
+WEBM = b"\x1a\x45\xdf\xa3"  # the EBML magic every WebM file starts with
 
 
 def sha(data: bytes) -> str:
@@ -112,7 +119,7 @@ def test_put_stores_file_row_and_acks(
     study_id: int,
     migrated_engine: Engine,
 ) -> None:
-    body = b"webm bytes" * 100
+    body = WEBM + b"webm bytes" * 100
     r = put(client, created, "webcam", 0, body)
     assert r.status_code == 200
     assert r.json() == {"stream": "webcam", "seq": 0, "size": len(body)}
@@ -126,10 +133,9 @@ def test_first_chunk_flips_status_to_recording(
     client: TestClient, created: dict[str, Any], migrated_engine: Engine
 ) -> None:
     assert status_of(migrated_engine, created) == SessionStatus.CONSENTED
-    # Any stream will do; the events stream itself must be gzip, so use another one here.
-    assert put(client, created, "features", 0, b"a").status_code == 200
+    assert put(client, created, "features", 0, events_chunk(FEATURE)).status_code == 200
     assert status_of(migrated_engine, created) == SessionStatus.RECORDING
-    assert put(client, created, "features", 1, b"b").status_code == 200
+    assert put(client, created, "features", 1, events_chunk(NO_FACE)).status_code == 200
     assert status_of(migrated_engine, created) == SessionStatus.RECORDING
 
 
@@ -140,7 +146,7 @@ def test_repeat_put_is_idempotent_and_does_not_rewrite(
     study_id: int,
     migrated_engine: Engine,
 ) -> None:
-    body = b"x" * 1000
+    body = gzip.compress(b"x" * 1000)
     first = put(client, created, "features", 3, body)
     path = chunk_file(data_root, study_id, created, "features", 3)
     stamp = path.stat().st_mtime_ns
@@ -154,10 +160,10 @@ def test_repeat_put_is_idempotent_and_does_not_rewrite(
 def test_same_seq_different_bytes_is_409_and_keeps_original(
     client: TestClient, created: dict[str, Any], data_root: Path, study_id: int
 ) -> None:
-    assert put(client, created, "webcam", 0, b"original").status_code == 200
-    r = put(client, created, "webcam", 0, b"different")
+    assert put(client, created, "webcam", 0, WEBM + b"original").status_code == 200
+    r = put(client, created, "webcam", 0, WEBM + b"different")
     assert r.status_code == 409
-    assert chunk_file(data_root, study_id, created, "webcam", 0).read_bytes() == b"original"
+    assert chunk_file(data_root, study_id, created, "webcam", 0).read_bytes() == WEBM + b"original"
 
 
 def test_hash_mismatch_and_missing_header(
@@ -199,7 +205,7 @@ def test_oversize_chunk_is_413(
     limit = 1024 * 1024
     assert put(client, c, "webcam", 0, b"x" * (limit + 1)).status_code == 413
     assert chunk_count(migrated_engine, c) == 0
-    assert put(client, c, "webcam", 0, b"x" * limit).status_code == 200
+    assert put(client, c, "webcam", 0, WEBM + b"x" * (limit - 4)).status_code == 200
 
 
 def test_session_total_limit_is_413_but_repeats_still_ack(
@@ -208,11 +214,11 @@ def test_session_total_limit_is_413_but_repeats_still_ack(
     client = make_client(max_upload_chunk_mb=1, max_session_total_mb=1)
     c = create_session(client)
     consent(client, c)
-    part = b"y" * 600_000
+    part = WEBM + b"y" * 600_000
     assert put(client, c, "webcam", 0, part).status_code == 200
     assert put(client, c, "webcam", 1, part).status_code == 413
     assert put(client, c, "webcam", 0, part).status_code == 200  # a repeat adds nothing
-    assert put(client, c, "features", 0, b"small").status_code == 200  # fits
+    assert put(client, c, "features", 0, events_chunk(FEATURE)).status_code == 200  # fits
 
 
 def test_put_before_consent_and_after_complete_is_409(
@@ -340,17 +346,18 @@ def upload_all(client: TestClient, created: dict[str, Any]) -> dict[str, list[by
             events_chunk(ev(1.0, "video_play", id="1")),
             events_chunk(ev(2.0, "video_pause", id="1"), ev(2.5, "video_ended", id="1")),
         ],
-        "webcam": [b"w0" * 50, b"w1" * 50],
-        "features": [gzip.compress(b"f0"), gzip.compress(b"f1")],
+        "webcam": [WEBM + b"w0" * 50, b"w1" * 50],
+        "features": [events_chunk(FEATURE, NO_FACE), events_chunk(FEATURE)],
+        "stimulus_frames": [events_chunk(FRAME, FRAME), events_chunk(FRAME)],
     }
     order = [("events", 2), ("webcam", 1), ("events", 0), ("features", 0), ("webcam", 0)]
-    order += [("events", 1), ("features", 1)]
+    order += [("events", 1), ("features", 1), ("stimulus_frames", 1), ("stimulus_frames", 0)]
     for stream, seq in order:
         assert put(client, created, stream, seq, chunks[stream][seq]).status_code == 200
     return chunks
 
 
-LAST = {"events": 2, "webcam": 1, "features": 1}
+LAST = {"events": 2, "webcam": 1, "features": 1, "stimulus_frames": 1}
 
 
 def test_complete_detects_missing_then_succeeds_after_resend(
@@ -371,7 +378,7 @@ def test_complete_detects_missing_then_succeeds_after_resend(
     assert status_of(migrated_engine, created) == SessionStatus.RECORDING
     assert not (session_dir(data_root, study_id, created) / "raw" / "events.jsonl").exists()
     put(client, created, "events", 1, ev_chunks[1])
-    put(client, created, "webcam", 0, b"w0")
+    put(client, created, "webcam", 0, WEBM + b"w0")
     r = complete(client, created, {"events": 2, "webcam": 1})
     assert r.json() == {"status": "uploaded", "missing": {}}
     assert status_of(migrated_engine, created) == SessionStatus.UPLOADED
@@ -586,3 +593,211 @@ def test_complete_refuses_an_absurd_last_seq(make_client: MakeClient, study_id: 
     assert r.status_code == 422 and "exceeds 5" in r.json()["detail"]
     r = complete(client, c, {"events": 4})  # within the limit: reports the 4 missing chunks
     assert r.status_code == 200 and r.json()["missing"] == {"events": [1, 2, 3, 4]}
+
+
+# --- webcam, features and stimulus frames (milestone 2) ----------------------------------------
+
+
+def flags_of(engine: Engine, created: dict[str, Any]) -> list[str]:
+    with Db(engine) as db:
+        row = db.get(SessionRow, uuid.UUID(created["session_id"]))
+        assert row is not None
+        return list(row.flags)
+
+
+def test_complete_assembles_features_and_stimulus_frames_files(
+    client: TestClient, created: dict[str, Any], data_root: Path, study_id: int
+) -> None:
+    chunks = upload_all(client, created)
+    assert complete(client, created, LAST).json() == {"status": "uploaded", "missing": {}}
+    raw = session_dir(data_root, study_id, created) / "raw"
+    features = (raw / "browser_features.jsonl").read_bytes()
+    frames = (raw / "stimulus_frames.jsonl").read_bytes()
+    assert features == b"".join(gzip.decompress(c) for c in chunks["features"])
+    assert frames == b"".join(gzip.decompress(c) for c in chunks["stimulus_frames"])
+    assert [json.loads(line)["face"] for line in features.splitlines()] == [True, False, True]
+    assert len(frames.splitlines()) == 3
+    assert not (raw / "webcam.webm").exists()  # the remux belongs to the M3 ingest
+    assert list(raw.rglob("*.tmp")) == []
+
+
+def test_a_face_frame_with_an_unknown_brightness_is_accepted_at_complete(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    unmeasured = EXAMPLES["feature_record_unmeasured_brightness"]
+    put(client, created, "features", 0, events_chunk(FEATURE, unmeasured))
+    assert complete(client, created, {"features": 0}).json()["status"] == "uploaded"
+    raw = session_dir(data_root, study_id, created) / "raw"
+    lines = (raw / "browser_features.jsonl").read_text().splitlines()
+    assert [json.loads(line)["brightness"] for line in lines] == [FEATURE["brightness"], None]
+    assert flags_of(migrated_engine, created) == []
+
+
+def test_session_without_features_or_frames_writes_no_such_files(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    put(client, created, "events", 0, events_chunk(ev(0.0, "session_start")))
+    assert complete(client, created, {"events": 0}).json()["status"] == "uploaded"
+    raw = session_dir(data_root, study_id, created) / "raw"
+    assert not (raw / "browser_features.jsonl").exists()
+    assert not (raw / "stimulus_frames.jsonl").exists()
+    assert flags_of(migrated_engine, created) == []
+
+
+def test_first_webcam_chunk_must_be_webm(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    for bad in (b"not a webm file", b"\x1a\x45\xdf", gzip.compress(WEBM)):
+        r = put(client, created, "webcam", 0, bad)
+        assert r.status_code == 422 and "WebM" in r.json()["detail"]
+    assert chunk_count(migrated_engine, created) == 0
+    assert not chunk_file(data_root, study_id, created, "webcam", 0).exists()
+    # later chunks are plain continuation bytes, and chunk 0 may arrive after them
+    assert put(client, created, "webcam", 1, b"continuation bytes").status_code == 200
+    assert put(client, created, "webcam", 0, WEBM + b"header").status_code == 200
+
+
+@pytest.mark.parametrize("stream", ["features", "stimulus_frames"])
+def test_bad_gzip_in_features_and_frames_is_refused_at_the_put(
+    client: TestClient, created: dict[str, Any], migrated_engine: Engine, stream: str
+) -> None:
+    good = events_chunk(FEATURE)
+    corrupt_body = good[:12] + bytes([good[12] ^ 0xFF]) + good[13:]
+    for bad in (b"this is not gzip", corrupt_body, good[:-6], good + b"junk", WEBM + b"webm"):
+        r = put(client, created, stream, 0, bad)
+        assert r.status_code == 422 and stream in r.json()["detail"], bad
+    assert chunk_count(migrated_engine, created) == 0
+
+
+@pytest.mark.parametrize("stream", ["features", "stimulus_frames"])
+def test_gzip_bomb_in_features_and_frames_is_refused_at_the_put(
+    make_client: MakeClient, study_id: int, migrated_engine: Engine, stream: str
+) -> None:
+    client = make_client(max_events_chunk_inflated_mb=1)
+    c = create_session(client)
+    consent(client, c)
+    bomb = gzip.compress(b"0" * (20 * 1024 * 1024))
+    assert len(bomb) < 100_000
+    assert put(client, c, stream, 0, bomb).status_code == 422
+    assert chunk_count(migrated_engine, c) == 0
+
+
+def test_invalid_feature_line_finishes_the_session_and_flags_it(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    put(client, created, "events", 0, events_chunk(ev(0.0, "session_start")))
+    wrong_size = {**FEATURE, "lm": FEATURE["lm"][:10]}
+    put(client, created, "features", 0, events_chunk(FEATURE, wrong_size))
+    put(client, created, "stimulus_frames", 0, events_chunk(FRAME))
+    r = complete(client, created, {"events": 0, "features": 0, "stimulus_frames": 0})
+    assert r.json()["status"] == "uploaded"
+    raw = session_dir(data_root, study_id, created) / "raw"
+    assert not (raw / "browser_features.jsonl").exists()  # nothing half-valid is written
+    assert (raw / "stimulus_frames.jsonl").exists() and (raw / "events.jsonl").exists()
+    assert flags_of(migrated_engine, created) == ["features_invalid"]
+
+
+def test_invalid_stimulus_frame_line_flags_only_that_stream(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    put(client, created, "features", 0, events_chunk(FEATURE))
+    put(client, created, "stimulus_frames", 0, events_chunk(FRAME, {"t": 1.0}))
+    complete(client, created, {"features": 0, "stimulus_frames": 0})
+    raw = session_dir(data_root, study_id, created) / "raw"
+    assert (raw / "browser_features.jsonl").exists()
+    assert not (raw / "stimulus_frames.jsonl").exists()
+    assert flags_of(migrated_engine, created) == ["stimulus_frames_invalid"]
+
+
+def gate(
+    t: float,
+    *,
+    block: str = "before_video",
+    attempt: int = 1,
+    passed: bool | None = False,
+    **change: Any,
+) -> dict[str, Any]:
+    data = {
+        **EXAMPLES["event_data"]["calib_gate_result"],
+        "block": block,
+        "attempt": attempt,
+        "passed": passed,
+        "skipped": passed is None,
+        **change,
+    }
+    return {"t": t, "type": "calib_gate_result", "data": data}
+
+
+@pytest.mark.parametrize(
+    ("results", "flagged"),
+    [
+        pytest.param([gate(1, passed=False)], True, id="one failed attempt"),
+        pytest.param(
+            [gate(1, passed=False), gate(2, attempt=2, passed=False)], True, id="all failed"
+        ),
+        pytest.param(
+            [gate(1, passed=False), gate(2, attempt=2, passed=True)], False, id="retry passed"
+        ),
+        pytest.param([gate(1, passed=True)], False, id="passed"),
+        pytest.param([gate(1, passed=None, reason="no_validation")], False, id="skipped"),
+        pytest.param(
+            [gate(1, passed=True), gate(2, block="between_videos", passed=False)],
+            False,
+            id="a later block never counts",
+        ),
+        pytest.param([], False, id="no gate events"),
+    ],
+)
+def test_calibration_gate_failed_flag_comes_from_the_events(
+    client: TestClient,
+    created: dict[str, Any],
+    migrated_engine: Engine,
+    results: list[dict[str, Any]],
+    flagged: bool,
+) -> None:
+    put(client, created, "events", 0, events_chunk(ev(0.0, "session_start"), *results))
+    assert complete(client, created, {"events": 0}).json()["status"] == "uploaded"
+    assert flags_of(migrated_engine, created) == (["calibration_gate_failed"] if flagged else [])
+
+
+def test_gate_flag_is_not_added_twice(
+    client: TestClient, created: dict[str, Any], migrated_engine: Engine
+) -> None:
+    put(client, created, "events", 0, events_chunk(gate(1.0, passed=False)))
+    complete(client, created, {"events": 0})
+    complete(client, created, {"events": 0})
+    assert flags_of(migrated_engine, created) == ["calibration_gate_failed"]
+
+
+def test_malformed_gate_result_flags_events_invalid(
+    client: TestClient,
+    created: dict[str, Any],
+    data_root: Path,
+    study_id: int,
+    migrated_engine: Engine,
+) -> None:
+    broken = gate(1.0, passed=False, reason="because")
+    put(client, created, "events", 0, events_chunk(ev(0.0, "session_start"), broken))
+    assert complete(client, created, {"events": 0}).json()["status"] == "uploaded"
+    assert not (session_dir(data_root, study_id, created) / "raw" / "events.jsonl").exists()
+    assert flags_of(migrated_engine, created) == ["events_invalid"]

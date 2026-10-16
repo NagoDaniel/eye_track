@@ -18,8 +18,9 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as Db
 
-from app.auth import get_db, release_connection
+from app.auth import get_db, optional_admin, release_connection
 from app.chunks import (
+    EBML_MAGIC,
     MIB,
     ChunkConflict,
     SessionTotalExceeded,
@@ -27,10 +28,12 @@ from app.chunks import (
     sha256_hex,
     store_chunk,
     write_events_file,
+    write_features_file,
+    write_stimulus_frames_file,
 )
 from app.consent import UnknownConsentVersion, consent_text
 from app.events import gunzip_limited
-from app.models import Chunk, SessionStatus, Study, Video
+from app.models import AdminUser, Chunk, SessionStatus, Study, Video
 from app.models import Session as SessionRow
 from app.schemas import (
     BROWSER_REQUIREMENTS,
@@ -54,6 +57,9 @@ from app.storage import raw_dir
 log = logging.getLogger("app.participant")
 
 router = APIRouter(prefix="/api")
+
+# Streams whose chunks are gzip-compressed JSON lines.
+JSONL_STREAMS: tuple[Stream, ...] = ("events", "features", "stimulus_frames")
 
 # `chunks.seq` is a 32-bit integer column.
 MAX_SEQ = 2**31 - 1
@@ -135,7 +141,10 @@ def study_info(code: str, db: Db = Depends(get_db)) -> StudyInfo:
 
 @router.post("/sessions", status_code=201)
 def create_session(
-    body: SessionCreateRequest, request: Request, db: Db = Depends(get_db)
+    body: SessionCreateRequest,
+    request: Request,
+    db: Db = Depends(get_db),
+    admin: AdminUser | None = Depends(optional_admin),
 ) -> SessionCreateResponse:
     enforce_rate_limit(request)
     settings: Settings = request.app.state.settings
@@ -143,6 +152,9 @@ def create_session(
     if study is None:
         raise HTTPException(status_code=404, detail="unknown study")
     config = study_config(study)
+    # PLAN §12.1: debug mode needs `debug_allowed` or an admin logged in on this browser.
+    if body.debug and not (config.debug_allowed or admin is not None):
+        raise HTTPException(status_code=403, detail="debug mode is not allowed for this study")
 
     videos: list[VideoRef] = []
     for video_id in config.playlist:
@@ -161,6 +173,7 @@ def create_session(
                 url=f"/media/videos/{video.id}.mp4",
                 sha256=video.sha256,
                 duration=video.duration,
+                fps=video.fps,
             )
         )
 
@@ -170,7 +183,7 @@ def create_session(
         participant_code=body.participant_code,
         upload_token_hash=hash_token(token),
         status=SessionStatus.CREATED,
-        is_debug=False,
+        is_debug=body.debug,
         flags=[],
     )
     db.add(session)
@@ -244,17 +257,20 @@ async def put_chunk(
         raise HTTPException(status_code=400, detail="empty chunk")
     if sha256_hex(body) != x_chunk_sha256:
         raise HTTPException(status_code=400, detail="X-Chunk-SHA256 does not match the body")
-    if stream == "events":
+    if stream in JSONL_STREAMS:
         # Only gzip validity and size are checked here, so a corrupt or bomb chunk is never
-        # stored; event types are not (an unknown type must not block the upload, see /complete).
+        # stored; the lines are not (an unknown event type must not block the upload, see
+        # /complete).
         try:
             await run_in_threadpool(
                 gunzip_limited, body, settings.max_events_chunk_inflated_mb * MIB
             )
         except ValueError as exc:
             raise HTTPException(
-                status_code=422, detail=f"events chunk is not valid gzip: {exc}"
+                status_code=422, detail=f"{stream} chunk is not valid gzip: {exc}"
             ) from exc
+    elif stream == "webcam" and seq == 0 and not body.startswith(EBML_MAGIC):
+        raise HTTPException(status_code=422, detail="the first webcam chunk is not a WebM file")
     try:
         return await run_in_threadpool(
             store_chunk,
@@ -298,16 +314,21 @@ def complete(
         return CompleteResponse(status="incomplete", missing=missing)
 
     root = settings.data_root
-    client_info, events_error = write_events_file(
-        db, root, session, settings.max_events_chunk_inflated_mb * MIB
-    )
-    if events_error is not None:
-        # Stored chunks never change, so the participant could never fix this: finish the session,
-        # flag it and let the researcher decide (PLAN §1: flag the session and move on).
-        log.error(
-            "events stream cannot be assembled",
-            extra={"session_id": str(session.id), "error": events_error},
-        )
+    max_inflated = settings.max_events_chunk_inflated_mb * MIB
+    events = write_events_file(db, root, session, max_inflated)
+    problems = {
+        "events_invalid": events.error,
+        "features_invalid": write_features_file(db, root, session, max_inflated),
+        "stimulus_frames_invalid": write_stimulus_frames_file(db, root, session, max_inflated),
+    }
+    for flag, error in problems.items():
+        if error is not None:
+            # Stored chunks never change, so the participant could never fix this: finish the
+            # session, flag it and let the researcher decide (PLAN §1: flag the session, move on).
+            log.error(
+                "stream cannot be assembled",
+                extra={"session_id": str(session.id), "flag": flag, "error": error},
+            )
     try:
         config = read_config(root, session)
     except (OSError, ValueError, KeyError) as exc:
@@ -316,14 +337,15 @@ def complete(
             extra={"session_id": str(session.id), "error": str(exc)},
         )
         raise HTTPException(status_code=500, detail="session metadata is unreadable") from exc
-    if client_info is not None:
-        session.client_info = client_info
+    if events.client_info is not None:
+        session.client_info = events.client_info
     no_chunks = not db.scalar(
         select(func.count()).select_from(Chunk).where(Chunk.session_id == session.id)
     )
     for flag, wanted in (
         ("interrupted", body.interrupted),
-        ("events_invalid", events_error is not None),
+        *((flag, error is not None) for flag, error in problems.items()),
+        ("calibration_gate_failed", events.gate_failed),
         ("empty", no_chunks),
     ):
         if wanted and flag not in session.flags:

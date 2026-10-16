@@ -2,7 +2,7 @@
 
 Webcam eye tracking for educational video studies. Students watch videos in the browser, their webcam is recorded, and a Python backend estimates where they looked and produces heatmaps and area-of-interest metrics.
 
-**Status:** Milestone 1a (infrastructure) is implemented: the Docker stack, HTTPS, database, job queue, admin login and operations scripts. The participant app, the admin pages for studies and videos, recording and gaze estimation come in later milestones; see [`docs/PROGRESS.md`](docs/PROGRESS.md).
+**Status:** Milestones 1a and 1b (infrastructure and the skeleton app) are done, Milestone 2 (webcam recording, face features, stimulus-frame logging, calibration quality gate, debug mode) is implemented and awaits the real-webcam acceptance test. Gaze estimation, heatmaps and the analysis come in later milestones; see [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
 - Specification: [`docs/PLAN.md`](docs/PLAN.md)
 - Progress and open questions: [`docs/PROGRESS.md`](docs/PROGRESS.md)
@@ -102,9 +102,22 @@ Containers restart automatically (`restart: unless-stopped`) and Docker starts a
 Log in at `https://<your domain>/admin/login`.
 
 1. **Videos**: upload the stimulus MP4 (title + file). H.264 with a constant frame rate is best; other files are accepted with a warning. A video that a study or an existing session uses cannot be deleted.
-2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, and the config JSON (every key is optional, defaults are in PLAN §4.1; `playlist` lists the video ids as strings, for example `{"playlist": ["1"]}`). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
-3. **Participants** open the link, enter their code (first two letters of the name, birth month, birth day), accept the consent text, and follow the screens. Without a camera in this version the session shows the dots and the video and uploads the events.
+2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, the videos (tick them in the table and number them in the order they play) and, if you want, other settings as JSON (every key is optional, defaults are in PLAN §4.1). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
+3. **Participants** open the link, enter their code (first two letters of the name, birth month, birth day), accept the consent text, and follow the screens: a camera check (the face must be found, alone, lit and at a sensible distance for 3 seconds), instructions, fullscreen, 13 calibration dots, 5 validation dots, the videos with a validation between and after, and the upload. The webcam is recorded from the fullscreen step to the end of the last validation. A calibration that is clearly off is repeated (up to `calibration_gate.max_attempts`), then the session continues flagged `calibration_gate_failed` or ends, depending on `calibration_gate.on_fail`.
 4. **Sessions**: lists every session with its status, flags and chunk counts per stream; the detail page shows gaps in the uploaded chunks and the events received.
+
+### Debug mode (researchers)
+
+On the study's page in the admin, press **Turn debug mode on and show the debug link**. This sets `debug_allowed` for the study and shows a link ending in `?debug=1`; open that link (add `&p=AB0315` to prefill a participant code). Without the setting, or without `debug=1` in the link, there is no panel (a logged-in admin in the same browser may use `debug=1` without the setting). **Turn it off again before collecting real data.** Debug sessions are stored with `is_debug` set and listed like the others.
+
+| Key | Does |
+|---|---|
+| `D` | show or hide the debug panel (it covers the right part of the screen, where dots appear: hide it while you calibrate) |
+| `G` | show or hide the live gaze dot (after the first calibration; the quick in-browser model, not the final estimate) |
+| `S` | skip the running calibration, validation or video (logged as `debug_skip`) |
+| `F` | force the calibration gate to fail, to test the retry flow |
+
+The panel shows the webcam with the landmarks, counters (webcam fps, face model fps, inference time per frame, dropped stimulus frames, upload queue), the quality signals (brightness, face ratio, head pose, blink), the last 20 events, the gate numbers of the last validation (per point errors; the targets and the median predictions are drawn on the validation screen), and **sliders for the quality thresholds** with the measured value next to each. They take effect at once for the camera check and the gate. "Copy as JSON" prints a `"quality": {...}` block with only the values that differ from the defaults; paste it into the study config in the admin. The starting values are rough (DECISIONS, Milestone 2): tune them with a few people on their own laptops.
 
 The consent text is a plain-text file per version: `backend/app/consent/<consent_version>.txt` (`v1` is a placeholder, to be replaced by the text the ethics committee approves). A new version needs a rebuild: `docker compose up -d --build`. Formats of everything stored are in [`docs/DATA_FORMATS.md`](docs/DATA_FORMATS.md).
 
@@ -175,7 +188,7 @@ Slower suites that build and start real containers (they use temporary directori
 | `make test-backup` | backup, destroy everything, restore, compare every row and file |
 | `make test-fetch-models` | verified model download |
 | `make test-install-docker` | `scripts/install-docker.sh` in fresh Ubuntu and Debian containers |
-| `make e2e` | Playwright end-to-end test: real Chromium against the real stack, a full dummy session |
+| `make e2e` | Playwright end-to-end test: real Chromium with a fake camera that plays the recorded face `e2e/fixtures/face.mp4`, against the real stack: complete raw data per session (webcam WebM, face features, stimulus frames, events), resume after a reload, debug mode |
 
 CI (`.github/workflows/ci.yml`) runs the same targets.
 
@@ -185,7 +198,7 @@ CI (`.github/workflows/ci.yml`) runs the same targets.
 frontend/   TypeScript + Vite (no framework)
 backend/    app/ (FastAPI), worker/ (job loop), alembic/ (migrations), cli.py
 shared/     definitions used by both sides (protocol.json: streams, event types, config defaults, example payloads; models.json)
-e2e/        Playwright end-to-end test
+e2e/        Playwright end-to-end test and its fixtures (face clip, moving-dot stimulus video with its ground-truth path)
 proxy/      Caddy image, entrypoint and shared routes
 scripts/    setup, backup, restore, fetch_models and their tests
 docs/       plan, progress, decisions

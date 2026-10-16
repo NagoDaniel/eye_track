@@ -51,6 +51,22 @@ export interface Rect extends Size {
 }
 export type DotPhase = "calibration" | "validation";
 
+/** Enum-like values in event data (PLAN §5.6, §12.1); the lists are in shared/protocol.json. */
+export const GATE_BLOCKS = ["before_video", "between_videos", "after_last_video"] as const;
+export type GateBlock = (typeof GATE_BLOCKS)[number];
+export const GATE_REASONS = [
+  "ok",
+  "few_face_frames",
+  "low_brightness",
+  "head_or_distance_change",
+  "high_error",
+  "no_validation",
+  "forced_debug",
+] as const;
+export type GateReason = (typeof GATE_REASONS)[number];
+export const SKIP_TARGETS = ["calibration", "validation", "video"] as const;
+export type SkipTarget = (typeof SKIP_TARGETS)[number];
+
 /** `data` payload per event type. Types without an entry yet take a free-form record. */
 interface KnownEventData {
   session_start: {
@@ -82,6 +98,25 @@ interface KnownEventData {
   video_pause: { video_id: string; media_time: number };
   video_stall: { video_id: string; media_time: number };
   video_ended: { video_id: string };
+  recorder_start: { mime_type: string; bits_per_second: number; settings: Record<string, unknown> };
+  recorder_dataavailable: { seq: number; size: number };
+  recorder_stop: { chunks: number; bytes: number };
+  face_lost: Record<string, never>;
+  face_regained: { lost_ms: number };
+  calib_gate_result: {
+    block: GateBlock;
+    attempt: number;
+    /** null when the gate was skipped. */
+    passed: boolean | null;
+    skipped: boolean;
+    mean_error_norm: number | null;
+    /** Per validation point; null when it had no usable frame. */
+    point_errors: Array<number | null>;
+    /** Per calibration dot, in dot order. */
+    valid_frames_per_dot: number[];
+    reason: GateReason;
+  };
+  debug_skip: { target: SkipTarget };
   client_error: { message: string; stack: string | null; url: string };
 }
 

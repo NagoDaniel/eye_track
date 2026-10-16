@@ -7,7 +7,26 @@
 <p>Participant link: <a href="{{ participant_link }}">{{ participant_link }}</a></p>
 <p>{{ study.session_count }} session(s): <a href="/admin/sessions?study_id={{ study.id }}">view</a></p>
 {% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
+<h2>Debug mode</h2>
+{% if study.config.debug_allowed %}
+<p class="warning">Debug mode is <strong>on</strong> for this study: anyone who adds <code>debug=1</code> to the link can start a debug session. Turn it off before collecting real data.</p>
+<p>Debug link: <a href="{{ debug_link }}">{{ debug_link }}</a></p>
+<p>The panel shows the camera, counters, quality values and the last events. Keys: <code>D</code> panel, <code>G</code> gaze dot, <code>S</code> skip, <code>F</code> force a gate failure. Debug sessions are marked and left out of the analysis.</p>
+<form method="post" action="/admin/studies/{{ study.id }}/debug">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="enabled" value="false">
+  <button type="submit">Turn debug mode off</button>
+</form>
+{% else %}
+<p>Debug mode is off. Turning it on lets you open the study with the debug panel, so you can test the camera and the calibration.</p>
+<form method="post" action="/admin/studies/{{ study.id }}/debug">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="enabled" value="true">
+  <button type="submit">Turn debug mode on and show the debug link</button>
+</form>
+{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<h2>Settings</h2>
 <form method="post" action="/admin/studies/{{ study.id }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Name <input name="name" value="{{ form.name }}" required></label>
@@ -18,7 +37,8 @@
       <option value="lab"{% if form.mode == "lab" %} selected{% endif %}>lab</option>
     </select>
   </label>
-  <label>Config (JSON)
+  {% include "_playlist.html" %}
+  <label>Other settings (JSON; the playlist is set in the table above)
     <textarea name="config" rows="24" spellcheck="false" required>{{ form.config }}</textarea>
   </label>
   <button type="submit">Save</button>

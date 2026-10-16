@@ -1,0 +1,26 @@
+<fieldset>
+  <legend>Videos (the playlist)</legend>
+  {% if videos %}
+  <p class="muted">Tick the videos this study shows and number them in the order they play. Unnumbered ticked videos come last.</p>
+  <table>
+    <thead><tr><th>Show</th><th>Order</th><th>Id</th><th>Title</th><th class="num">Duration (s)</th><th class="num">fps</th></tr></thead>
+    <tbody>
+    {% for v in videos %}
+      <tr>
+        <td><input type="checkbox" name="video_ids" value="{{ v.id }}" aria-label="Show video {{ v.id }}"{% if v.checked %} checked{% endif %} style="width:auto"></td>
+        <td>
+          <input type="hidden" name="all_video_ids" value="{{ v.id }}">
+          <input type="number" name="positions" min="1" value="{{ v.position }}" aria-label="Order of video {{ v.id }}" style="width:5rem">
+        </td>
+        <td>{{ v.id }}</td>
+        <td><a href="/admin/videos/{{ v.id }}">{{ v.title }}</a></td>
+        <td class="num">{{ "%.1f"|format(v.duration) }}</td>
+        <td class="num">{{ "%.2f"|format(v.fps) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>There are no videos yet. <a href="/admin/videos">Upload one</a> first.</p>
+  {% endif %}
+</fieldset>

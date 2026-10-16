@@ -1,14 +1,19 @@
-"""The `events` stream on the server side (PLAN §5.9, §8.1).
+"""The JSONL streams on the server side (PLAN §5.4, §5.9, §8.1).
 
-Each chunk of the stream is a gzip-compressed block of JSON lines `{t, type, data}` (DECISIONS 1b
-item 5). The server stores chunks untouched; these functions decode them.
+Each chunk of the `events`, `features` and `stimulus_frames` streams is a gzip-compressed block of
+JSON lines (DECISIONS 1b item 5). The server stores chunks untouched; these functions decode them.
 """
 
 import json
 import zlib
 from collections.abc import Iterable
+from typing import TypeVar
 
-from app.schemas import EventRecord
+from pydantic import BaseModel
+
+from app.schemas import CalibGateResultData, EventRecord
+
+M = TypeVar("M", bound=BaseModel)
 
 
 def gunzip_limited(chunk: bytes, max_bytes: int) -> bytes:
@@ -31,32 +36,58 @@ def gunzip_limited(chunk: bytes, max_bytes: int) -> bytes:
     return out
 
 
-def assemble_events(chunks: Iterable[bytes], *, max_inflated_bytes: int) -> bytes:
+def assemble_events(
+    chunks: Iterable[bytes], *, max_inflated_bytes: int, name: str = "events"
+) -> bytes:
     """Gunzip the chunks in order and concatenate them into one JSONL file (`raw/events.jsonl`).
 
-    Each chunk may inflate to at most `max_inflated_bytes`. Raises ValueError naming the chunk
-    position if one is not valid gzip or too large.
+    Each chunk may inflate to at most `max_inflated_bytes`. Raises ValueError naming the stream
+    (`name`) and the chunk position if one is not valid gzip or too large.
     """
     out: list[bytes] = []
     for i, chunk in enumerate(chunks):
         try:
             text = gunzip_limited(chunk, max_inflated_bytes)
         except ValueError as exc:
-            raise ValueError(f"events chunk {i} is not valid gzip: {exc}") from exc
+            raise ValueError(f"{name} chunk {i} is not valid gzip: {exc}") from exc
         if text and not text.endswith(b"\n"):
             text += b"\n"
         out.append(text)
     return b"".join(out)
 
 
-def parse_events(jsonl: bytes) -> list[EventRecord]:
-    """Parse and validate every line. Raises ValueError (with the line number) on a bad line."""
-    events: list[EventRecord] = []
+def parse_records(jsonl: bytes, model: type[M], name: str) -> list[M]:
+    """Parse and validate every line as `model`. Raises ValueError naming `name` and the line."""
+    records: list[M] = []
     for n, line in enumerate(jsonl.splitlines(), start=1):
         if not line.strip():
             continue
         try:
-            events.append(EventRecord.model_validate(json.loads(line)))
+            records.append(model.model_validate(json.loads(line)))
         except ValueError as exc:  # json errors and pydantic ValidationError are ValueErrors
-            raise ValueError(f"events line {n} is invalid: {exc}") from exc
-    return events
+            raise ValueError(f"{name} line {n} is invalid: {exc}") from exc
+    return records
+
+
+def parse_events(jsonl: bytes) -> list[EventRecord]:
+    """Parse and validate every line. Raises ValueError (with the line number) on a bad line."""
+    return parse_records(jsonl, EventRecord, "events")
+
+
+def calibration_gate_failed(events: Iterable[EventRecord]) -> bool:
+    """True when the last pre-video gate result is a failure (PLAN §5.6, DECISIONS milestone 2).
+
+    A skipped gate (`passed` null) and results of later validation blocks do not count. Raises
+    ValueError if a `calib_gate_result` event has data of the wrong shape.
+    """
+    failed = False
+    for event in events:
+        if event.type != "calib_gate_result":
+            continue
+        try:
+            result = CalibGateResultData.model_validate(event.data)
+        except ValueError as exc:
+            raise ValueError(f"calib_gate_result at t={event.t} is invalid: {exc}") from exc
+        if result.block == "before_video" and not result.skipped:
+            failed = result.passed is False
+    return failed

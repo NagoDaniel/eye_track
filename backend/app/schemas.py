@@ -8,7 +8,7 @@ test that compares against it (PLAN §1: single source of truth, PLAN §5.9).
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Stream = Literal["webcam", "features", "events", "stimulus_frames"]
 
@@ -53,6 +53,25 @@ BROWSER_REQUIREMENTS: tuple[str, ...] = (
 CALIBRATION_POINT_COUNT = 13
 VALIDATION_POINT_COUNT = 5
 INNER_POINT_LOW = 0.25
+
+# Size of the landmark subset in a feature record and of the transformation matrix (PLAN §5.4);
+# mirrored in frontend/src/constants.ts and checked against shared/landmark_subset.json.
+LANDMARK_COUNT = 49
+FEATURE_MATRIX_SIZE = 16
+
+# Values of the enum-like fields in event data (PLAN §5.6, §12.1); the lists are in
+# shared/protocol.json under `event_data_values`.
+GateBlock = Literal["before_video", "between_videos", "after_last_video"]
+GateReason = Literal[
+    "ok",
+    "few_face_frames",
+    "low_brightness",
+    "head_or_distance_change",
+    "high_error",
+    "no_validation",
+    "forced_debug",
+]
+SkipTarget = Literal["calibration", "validation", "video"]
 
 # First two letters of the name + birth month + birth day (DECISIONS, milestone 1b item 11).
 PARTICIPANT_CODE_PATTERN = r"^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$"
@@ -121,8 +140,35 @@ class RecordingConfig(Strict):
 
 
 class QualityConfig(Strict):
+    """Live quality limits.
+
+    The two `*_warn` values are the plan's (§4.1), read as multipliers of the median face ratio of
+    the device check; the rest are starting values, tuned on the pilot with the debug-mode sliders
+    (DECISIONS, milestone 2 item 3).
+    """
+
     min_face_ratio_warn: float = Field(default=0.8, gt=0)
     max_face_ratio_warn: float = Field(default=1.25, gt=0)
+    # Mean luminance of the face region, 0 (black) to 1 (white).
+    brightness_min: float = Field(default=0.25, ge=0, le=1)
+    brightness_max: float = Field(default=0.85, ge=0, le=1)
+    # Interocular distance as a fraction of the frame width; the band for roughly arm's length.
+    face_ratio_min: float = Field(default=0.045, gt=0)
+    face_ratio_max: float = Field(default=0.16, gt=0)
+    # "Roughly frontal": head yaw and pitch from the transformation matrix, in degrees.
+    max_yaw_deg: float = Field(default=20, gt=0, le=90)
+    max_pitch_deg: float = Field(default=20, gt=0, le=90)
+
+    @model_validator(mode="after")
+    def bounds_are_ordered(self) -> "QualityConfig":
+        for low, high in (
+            ("min_face_ratio_warn", "max_face_ratio_warn"),
+            ("brightness_min", "brightness_max"),
+            ("face_ratio_min", "face_ratio_max"),
+        ):
+            if getattr(self, low) >= getattr(self, high):
+                raise ValueError(f"{low} must be below {high}")
+        return self
 
 
 class InclusionConfig(Strict):
@@ -168,6 +214,9 @@ class VideoRef(Strict):
     url: str
     sha256: str
     duration: float
+    # Frames per second of the stimulus video: the face model runs at this rate (DECISIONS,
+    # milestone 2 item 10).
+    fps: float = Field(gt=0)
 
 
 class SessionCreateRequest(Strict):
@@ -175,6 +224,9 @@ class SessionCreateRequest(Strict):
 
     study_code: str
     participant_code: str
+    # Asks for a debug session (PLAN §12.1); the server allows it only for studies with
+    # `debug_allowed` or when an admin is logged in on that browser.
+    debug: bool = False
 
     @field_validator("participant_code", mode="before")
     @classmethod
@@ -239,3 +291,121 @@ class EventRecord(Strict):
     t: float
     type: EventType
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+# --- Data streams (PLAN §5.3, §5.4) ------------------------------------------------------------
+
+Landmark = Annotated[list[float], Field(min_length=3, max_length=3)]
+
+
+class FeatureRecord(Strict):
+    """One line of the `features` stream: a frame the live face model processed (PLAN §5.4).
+
+    `t` is the client clock when the webcam frame was presented to the page; `webcam_media_time`,
+    `capture_time` and `presented_frames` are the metadata of that `requestVideoFrameCallback`
+    on the hidden webcam preview (§5.3). Without a face, every measurement is null.
+    """
+
+    t: float
+    webcam_media_time: float
+    capture_time: float | None
+    presented_frames: int | None = Field(ge=0)
+    face: bool
+    lm: list[Landmark] | None
+    matrix: list[float] | None
+    blink_l: float | None
+    blink_r: float | None
+    face_ratio: float | None
+    brightness: float | None
+
+    @model_validator(mode="after")
+    def measurements_match_face(self) -> "FeatureRecord":
+        # `brightness` is the one measurement that can be unknown for a frame with a face (the
+        # pixels could not be read); everything else comes from the face model.
+        values = (self.lm, self.matrix, self.blink_l, self.blink_r, self.face_ratio)
+        if not self.face:
+            if any(v is not None for v in (*values, self.brightness)):
+                raise ValueError("a frame without a face has no measurements")
+            return self
+        if any(v is None for v in values):
+            raise ValueError("a frame with a face needs every measurement except brightness")
+        if self.lm is not None and len(self.lm) != LANDMARK_COUNT:
+            raise ValueError(f"lm must hold {LANDMARK_COUNT} landmarks")
+        if self.matrix is not None and len(self.matrix) != FEATURE_MATRIX_SIZE:
+            raise ValueError(f"matrix must hold {FEATURE_MATRIX_SIZE} numbers")
+        return self
+
+
+class StimulusFrameRecord(Strict):
+    """One line of the `stimulus_frames` stream: a presented frame of the stimulus video (§5.3).
+
+    The names are the snake_case form of the `requestVideoFrameCallback` metadata. The video is
+    identified by the `video_*` events around it.
+    """
+
+    t: float
+    expected_display_time: float
+    media_time: float
+    presented_frames: int = Field(ge=0)
+
+
+# --- Event data (PLAN §5.4, §5.6, §12.1). Only the types listed in EVENT_DATA_MODELS are typed;
+# the others keep a free-form `data` (see the frontend's KnownEventData). -------------------------
+
+
+class RecorderStartData(Strict):
+    mime_type: str
+    bits_per_second: int = Field(gt=0)
+    settings: dict[str, Any]  # `track.getSettings()` as the browser reports it
+
+
+class RecorderDataAvailableData(Strict):
+    seq: int = Field(ge=0)
+    size: int = Field(ge=0)
+
+
+class RecorderStopData(Strict):
+    chunks: int = Field(ge=0)
+    bytes: int = Field(ge=0)
+
+
+class FaceLostData(Strict):
+    pass
+
+
+class FaceRegainedData(Strict):
+    lost_ms: float = Field(ge=0)
+
+
+class CalibGateResultData(Strict):
+    """A scored validation block. Only `before_video` blocks can block the participant (§5.6)."""
+
+    block: GateBlock
+    attempt: int = Field(ge=1)
+    passed: bool | None  # null when the gate was skipped
+    skipped: bool  # true when it could not be scored (no validation block to score)
+    mean_error_norm: float | None
+    point_errors: list[float | None]  # per validation point; null when it had no usable frame
+    valid_frames_per_dot: list[int]  # per calibration dot, in dot order
+    reason: GateReason
+
+    @model_validator(mode="after")
+    def skipped_has_no_verdict(self) -> "CalibGateResultData":
+        if self.skipped != (self.passed is None):
+            raise ValueError("passed is null exactly when the gate was skipped")
+        return self
+
+
+class DebugSkipData(Strict):
+    target: SkipTarget
+
+
+EVENT_DATA_MODELS: dict[str, type[Strict]] = {
+    "recorder_start": RecorderStartData,
+    "recorder_dataavailable": RecorderDataAvailableData,
+    "recorder_stop": RecorderStopData,
+    "face_lost": FaceLostData,
+    "face_regained": FaceRegainedData,
+    "calib_gate_result": CalibGateResultData,
+    "debug_skip": DebugSkipData,
+}
