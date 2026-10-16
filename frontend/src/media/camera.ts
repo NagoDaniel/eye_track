@@ -61,8 +61,17 @@ const KIND_BY_ERROR_NAME: Record<string, CameraErrorKind> = {
 
 export function mapCameraError(error: unknown): CameraError {
   if (error instanceof CameraError) return error;
-  const name = error instanceof Error ? error.name : "";
-  const detail = error instanceof Error ? `${name}: ${error.message}` : String(error);
+  // Read `name` and `message` from any object: a DOMException is not always an `Error` (it is not in
+  // every realm, e.g. jsdom).
+  const named = (typeof error === "object" && error !== null ? error : {}) as {
+    name?: unknown;
+    message?: unknown;
+  };
+  const name = typeof named.name === "string" ? named.name : "";
+  const detail =
+    name === ""
+      ? String(error)
+      : `${name}: ${typeof named.message === "string" ? named.message : ""}`;
   return new CameraError(KIND_BY_ERROR_NAME[name] ?? "other", detail);
 }
 
