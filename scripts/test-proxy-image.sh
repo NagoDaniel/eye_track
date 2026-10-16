@@ -237,7 +237,8 @@ echo "ok  face_landmarker.task sha256 matches shared/models.json"
 expect "face model worker (classic script)" 200 "$base/mediapipe/face-worker.js"
 curl -skI "$base/mediapipe/face-worker.js" | grep -qiE '^content-type: (text|application)/javascript' \
   || fail "face-worker.js is not served as JavaScript"
-curl -sk "$base/mediapipe/face-worker.js" | grep -q "importScripts" \
+curl -sk "$base/mediapipe/face-worker.js" -o "$work/face-worker.js"
+grep -q "importScripts" "$work/face-worker.js" \
   || fail "face-worker.js does not look like the bundled MediaPipe worker (no importScripts)"
 echo "ok  face-worker.js is served as JavaScript and loads MediaPipe through importScripts"
 
