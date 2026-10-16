@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/fetch-mediapipe.mjs",
+    "predev": "node scripts/fetch-mediapipe.mjs && node scripts/build-face-worker.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/fetch-mediapipe.mjs",
+    "prebuild": "node scripts/fetch-mediapipe.mjs && node scripts/build-face-worker.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "esbuild": "^0.25.12",
     "eslint": "^9.0.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
