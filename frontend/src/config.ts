@@ -65,6 +65,8 @@ export interface VideoRef {
   url: string;
   sha256: string;
   duration: number;
+  /** Frames per second of the stimulus video (the face model's target rate). */
+  fps: number;
 }
 
 /** POST /api/sessions. The participant code is two letters + birth month + day, e.g. AB0315. */

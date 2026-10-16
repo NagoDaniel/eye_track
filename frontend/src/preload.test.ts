@@ -8,7 +8,7 @@ const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 async function video(id: string, content: string): Promise<{ ref: VideoRef; body: Uint8Array }> {
   const body = enc(content);
-  return { ref: { id, url: `/media/videos/${id}.mp4`, sha256: await sha256Hex(body), duration: 1 }, body };
+  return { ref: { id, url: `/media/videos/${id}.mp4`, sha256: await sha256Hex(body), duration: 1, fps: 25 }, body };
 }
 
 function serve(files: Record<string, Uint8Array>, status = 200): FetchFn {

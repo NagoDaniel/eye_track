@@ -173,6 +173,7 @@ def create_session(
                 url=f"/media/videos/{video.id}.mp4",
                 sha256=video.sha256,
                 duration=video.duration,
+                fps=video.fps,
             )
         )
 

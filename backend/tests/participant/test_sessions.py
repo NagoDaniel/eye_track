@@ -62,6 +62,7 @@ def test_create_session_response_matches_schema_and_playlist_order(
     assert parsed.videos[0].url == f"/media/videos/{v2.id}.mp4"
     assert parsed.videos[0].sha256 == "b" * 64 and parsed.videos[0].duration == 20.0
     assert parsed.videos[1].duration == 10.5
+    assert [v.fps for v in parsed.videos] == [30, 25]  # the video's own frame rate, in playlist order
     assert parsed.config.playlist == [str(v2.id), str(v1.id)]
 
 

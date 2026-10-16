@@ -214,6 +214,9 @@ class VideoRef(Strict):
     url: str
     sha256: str
     duration: float
+    # Frames per second of the stimulus video: the face model runs at this rate (DECISIONS,
+    # milestone 2 item 10).
+    fps: float = Field(gt=0)
 
 
 class SessionCreateRequest(Strict):

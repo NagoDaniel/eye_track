@@ -7,7 +7,7 @@ import { playbackScreen } from "./playback";
 
 // jsdom has no media pipeline: play/pause are stubbed and the media events are dispatched by hand.
 // Each test gets its own document-like event target so that listeners never leak between tests.
-const VIDEO: VideoRef = { id: "7", url: "/v/7.mp4", sha256: "x", duration: 10 };
+const VIDEO: VideoRef = { id: "7", url: "/v/7.mp4", sha256: "x", duration: 10, fps: 25 };
 
 let root: HTMLElement;
 let records: EventRecord[];
