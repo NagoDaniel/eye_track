@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import make_engine, make_session_factory
-from app.jobs import claim_next, mark_done, mark_failed
+from app.jobs import claim_next, mark_done, mark_failed, recover_stale_running
 from app.logging import bind_context, configure_logging
 from app.models import Job, JobKind, WorkerHeartbeat
 from app.settings import Settings
@@ -82,6 +82,17 @@ def process_one(factory: sessionmaker[Session], handlers: Mapping[JobKind, Handl
         return True
 
 
+def recover_stale_jobs(factory: sessionmaker[Session], max_attempts: int) -> None:
+    with factory() as db:
+        recovery = recover_stale_running(db, max_attempts)
+        db.commit()
+    if recovery.requeued or recovery.failed:
+        log.warning(
+            "stale jobs recovered",
+            extra={"requeued": recovery.requeued, "failed": recovery.failed},
+        )
+
+
 def main() -> None:
     settings = Settings()  # type: ignore[call-arg]
     configure_logging(settings.log_level)
@@ -97,6 +108,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
+    # Concurrency is 1, so any job still `running` belongs to a worker that died.
+    recover_stale_jobs(factory, settings.job_max_attempts)
     heartbeat = Heartbeat(factory, worker_id, settings.worker_heartbeat_interval_s)
     heartbeat.start()
     log.info("worker started", extra={"worker_id": worker_id})

@@ -1,10 +1,12 @@
 import threading
+from datetime import UTC, datetime
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as DbSession
 
-from app.jobs import claim_next, enqueue, mark_done, mark_failed
-from app.models import Job, JobKind, JobStatus
+from app.jobs import claim_next, enqueue, mark_done, mark_failed, recover_stale_running
+from app.models import Job, JobKind, JobStatus, SessionStatus, Study, StudyMode
+from app.models import Session as SessionRow
 
 
 def test_enqueue_creates_queued_job(migrated_engine: Engine) -> None:
@@ -103,3 +105,95 @@ def test_concurrent_claimers_never_share_a_job(migrated_engine: Engine) -> None:
     with DbSession(migrated_engine) as db:
         rows = db.scalars(select(Job)).all()
         assert all(j.status is JobStatus.RUNNING and j.attempts == 1 for j in rows)
+
+
+def _running_job(db: DbSession, attempts: int, args: dict[str, object] | None = None) -> Job:
+    job = enqueue(db, JobKind.PROCESS_SESSION, args or {})
+    job.status = JobStatus.RUNNING
+    job.attempts = attempts
+    job.started_at = datetime.now(UTC)
+    db.flush()
+    return job
+
+
+def test_recover_requeues_below_max_attempts_and_fails_the_rest(migrated_engine: Engine) -> None:
+    with DbSession(migrated_engine) as db:
+        again = _running_job(db, attempts=1)
+        last = _running_job(db, attempts=3)
+        queued = enqueue(db, JobKind.PROCESS_SESSION, {})
+        done = enqueue(db, JobKind.PROCESS_SESSION, {})
+        mark_done(db, done, "ok")
+        db.commit()
+
+        result = recover_stale_running(db, max_attempts=3)
+        db.commit()
+
+        assert (result.requeued, result.failed) == ([again.id], [last.id])
+        assert again.status is JobStatus.QUEUED
+        assert again.started_at is None and again.attempts == 1
+        assert "worker died" in again.log and "requeued" in again.log
+        assert last.status is JobStatus.FAILED and last.finished_at is not None
+        assert "worker died" in last.log and "3 of 3" in last.log
+        assert queued.status is JobStatus.QUEUED
+        assert done.status is JobStatus.DONE and done.log == "ok"
+
+
+def test_recover_does_nothing_without_running_jobs(migrated_engine: Engine) -> None:
+    with DbSession(migrated_engine) as db:
+        enqueue(db, JobKind.PROCESS_SESSION, {})
+        db.commit()
+        result = recover_stale_running(db, max_attempts=3)
+        assert (result.requeued, result.failed) == ([], [])
+
+
+def test_requeued_job_is_claimed_again_and_counts_the_attempt(migrated_engine: Engine) -> None:
+    with DbSession(migrated_engine) as db:
+        job = _running_job(db, attempts=1)
+        db.commit()
+        recover_stale_running(db, max_attempts=3)
+        db.commit()
+        claimed = claim_next(db)
+        assert claimed is not None and claimed.id == job.id and claimed.attempts == 2
+
+
+def _session_in(db: DbSession, status: SessionStatus) -> SessionRow:
+    study = Study(name="S", code="abc", mode=StudyMode.REMOTE, config={"playlist": []})
+    db.add(study)
+    db.flush()
+    session = SessionRow(
+        study_id=study.id, participant_code="AB0315", upload_token_hash="h", status=status
+    )
+    db.add(session)
+    db.flush()
+    return session
+
+
+def test_recover_resets_the_session_of_a_requeued_job(migrated_engine: Engine) -> None:
+    with DbSession(migrated_engine) as db:
+        session = _session_in(db, SessionStatus.PROCESSING)
+        _running_job(db, attempts=1, args={"session_id": str(session.id)})
+        db.commit()
+        recover_stale_running(db, max_attempts=3)
+        db.commit()
+        assert session.status is SessionStatus.UPLOADED
+
+
+def test_recover_fails_the_session_of_an_exhausted_job(migrated_engine: Engine) -> None:
+    with DbSession(migrated_engine) as db:
+        session = _session_in(db, SessionStatus.PROCESSING)
+        _running_job(db, attempts=3, args={"session_id": str(session.id)})
+        db.commit()
+        recover_stale_running(db, max_attempts=3)
+        db.commit()
+        assert session.status is SessionStatus.FAILED
+
+
+def test_recover_leaves_other_session_states_alone(migrated_engine: Engine) -> None:
+    # A session that is already `processed` (or withdrawn) must not be pulled back by a stale job.
+    with DbSession(migrated_engine) as db:
+        session = _session_in(db, SessionStatus.WITHDRAWN)
+        _running_job(db, attempts=1, args={"session_id": str(session.id)})
+        db.commit()
+        recover_stale_running(db, max_attempts=3)
+        db.commit()
+        assert session.status is SessionStatus.WITHDRAWN
