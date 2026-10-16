@@ -15,12 +15,11 @@ import { EventTail } from "./eventTail";
 import { createGazeDot } from "./gazeDot";
 import { type DebugOverlay, type DebugView, createDebugOverlay } from "./overlay";
 import type { QualityThresholds } from "./qualityExport";
+import { OneEuroFilter2D } from "./oneEuro";
 import { SkipBus } from "./skip";
 
 /** How often the panel is redrawn. */
 export const OVERLAY_UPDATE_MS = 250;
-/** The live gaze dot is the mean of this many latest predictions (a steadier dot). */
-export const GAZE_SMOOTHING_FRAMES = 5;
 const RIGHT_IRIS = [468, 469, 470, 471, 472] as const;
 const LEFT_IRIS = [473, 474, 475, 476, 477] as const;
 
@@ -78,7 +77,7 @@ export class DebugSession {
   private preview: HTMLVideoElement | null = null;
   private referenceFaceRatio: number | null = null;
   private target: SkipTarget | null = null;
-  private recent: Array<[number, number]> = [];
+  private readonly smoother = new OneEuroFilter2D();
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly onFrame = (frame: TrackedFrame): void => this.moveGazeDot(frame);
   private readonly onKey = (event: KeyboardEvent): void => {
@@ -159,20 +158,22 @@ export class DebugSession {
     this.gazeDot.destroy();
   }
 
-  /** The live in-browser gaze (PLAN §12.1): the quick model on the latest frame. */
+  /**
+   * The live in-browser gaze (PLAN §12.1): the quick model on the latest frame, smoothed (one-euro
+   * filter) and kept on the screen, so a wild prediction cannot leave the viewport.
+   */
   private moveGazeDot(frame: TrackedFrame): void {
     const model = this.gate?.model ?? null;
     if (!this.state.gazeDotVisible || model === null || frame.features === null) {
-      this.recent = [];
+      this.smoother.reset();
       this.gazeDot.hide();
       return;
     }
-    this.recent.push(predict(model, featureVector(frame.features)));
-    if (this.recent.length > GAZE_SMOOTHING_FRAMES) this.recent.shift();
-    const n = this.recent.length;
+    const [x, y] = predict(model, featureVector(frame.features));
+    const [sx, sy] = this.smoother.filter(frame.t, x, y);
     this.gazeDot.show(
-      this.recent.reduce((s, p) => s + p[0], 0) / n,
-      this.recent.reduce((s, p) => s + p[1], 0) / n,
+      Math.min(Math.max(sx, 0), this.win.innerWidth),
+      Math.min(Math.max(sy, 0), this.win.innerHeight),
     );
   }
 
@@ -229,6 +230,13 @@ export class DebugSession {
               pointErrors: report.measured.pointErrors.map((e) => e ?? Number.NaN),
               validFramesPerDot: report.measured.validFramesPerDot,
               reason: report.decision.reason,
+              model:
+                report.choice === null
+                  ? null
+                  : `${report.choice.degree === 1 ? "linear" : "degree 2"}, alpha ${report.choice.alpha}` +
+                    (report.choice.cvErrorPx === null
+                      ? ""
+                      : `, CV error ${Math.round(report.choice.cvErrorPx)} px`),
             },
       gateErrors:
         report === null

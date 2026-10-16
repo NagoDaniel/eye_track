@@ -9,15 +9,9 @@ import { type GateReport } from "../face/calibrationGate";
 import type { TrackedFrame } from "../face/faceTracker";
 import { frameFeatures } from "../face/features";
 import { featureVector } from "../face/quickCalib";
-import { fitRidge } from "../face/ridge";
+import { fitRidge, predict } from "../face/ridge";
 import type { Landmark } from "../records";
-import {
-  type DebugCapture,
-  type DebugGate,
-  DebugSession,
-  GAZE_SMOOTHING_FRAMES,
-  OVERLAY_UPDATE_MS,
-} from "./debugSession";
+import { type DebugCapture, type DebugGate, DebugSession, OVERLAY_UPDATE_MS } from "./debugSession";
 
 const DEFAULT_CONFIG = protocol.study_config_default as unknown as StudyConfig;
 
@@ -144,32 +138,82 @@ describe("DebugSession keyboard", () => {
 });
 
 describe("DebugSession live gaze dot", () => {
-  const frame = (i: number): void => capture.listeners.forEach((l) => l(trackedFrame(i)));
+  let t = 0;
+  const frame = (i: number): void => {
+    t += 33;
+    capture.listeners.forEach((l) => l(trackedFrame(i, t)));
+  };
+  const position = (): [number, number] => {
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(gazeDot().style.transform);
+    return [Number(m?.[1]), Number(m?.[2])];
+  };
+  beforeEach(() => {
+    t = 0;
+  });
 
   it("stays hidden until the gate has a model", () => {
     frame(0);
     expect(gazeDot().style.display).toBe("none");
   });
 
-  it("follows the quick model's prediction, smoothed over the last frames, and G hides it", () => {
-    const gate: DebugGate = { model: realModel(), lastReport: null };
-    debug.setGate(gate);
+  it("follows the quick model's prediction and G hides it", () => {
+    debug.setGate({ model: realModel(), lastReport: null });
     frame(3);
     expect(gazeDot().style.display).toBe("block");
     expect(gazeDot().style.transform).toMatch(/^translate\(-?[\d.]+px, -?[\d.]+px\)$/);
-    for (let i = 0; i < GAZE_SMOOTHING_FRAMES + 2; i++) frame(i);
-    expect(gazeDot().style.display).toBe("block");
     press("g");
     expect(gazeDot().style.display).toBe("none");
     frame(5);
     expect(gazeDot().style.display).toBe("none");
   });
 
-  it("hides the dot when the face is lost", () => {
+  it("is smoothed: it moves less than the raw predictions between real frames", () => {
+    const model = realModel();
+    debug.setGate({ model, lastReport: null });
+    const raw: Array<[number, number]> = [];
+    const shown: Array<[number, number]> = [];
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < faceFrames.frames.length; i++) {
+        frame(i);
+        shown.push(position());
+        const f = trackedFrame(i).features;
+        if (f !== null && model !== null) raw.push(predict(model, featureVector(f)));
+      }
+    }
+    const travel = (points: Array<[number, number]>): number =>
+      points
+        .slice(1)
+        .reduce(
+          (sum, p, k) =>
+            sum + Math.hypot(p[0] - (points[k]?.[0] ?? 0), p[1] - (points[k]?.[1] ?? 0)),
+          0,
+        );
+    expect(travel(shown)).toBeLessThan(0.7 * travel(raw));
+  });
+
+  it("never leaves the screen, whatever the model predicts", () => {
+    const vectors = faceFrames.frames.map((f) =>
+      featureVector(frameFeatures(f.lm as Landmark[], f.matrix, faceFrames.aspect)),
+    );
+    const wild = fitRidge(
+      vectors,
+      vectors.map(() => [10_000, -500] as [number, number]),
+    );
+    debug.setGate({ model: wild, lastReport: null });
+    frame(2);
+    const [x, y] = position();
+    expect(x).toBe(window.innerWidth);
+    expect(y).toBe(0);
+  });
+
+  it("hides the dot when the face is lost and starts the smoothing again afterwards", () => {
     debug.setGate({ model: realModel(), lastReport: null });
     frame(1);
-    capture.listeners.forEach((l) => l({ ...trackedFrame(1), features: null }));
+    t += 33;
+    capture.listeners.forEach((l) => l({ ...trackedFrame(1, t), features: null }));
     expect(gazeDot().style.display).toBe("none");
+    frame(1);
+    expect(gazeDot().style.display).toBe("block");
   });
 });
 
@@ -181,6 +225,7 @@ describe("DebugSession panel", () => {
       block: "before_video",
       attempt: 2,
       decision: { passed: false, reason: "high_error" },
+      choice: { degree: 1, alpha: 10, cvErrorPx: 123.4 },
       measured: { meanErrorNorm: 0.123, pointErrors: [0.1, null], validFramesPerDot: [9, 8] },
       points: [
         { target: { x: 100, y: 100 }, prediction: { x: 200, y: 150 } },
@@ -199,6 +244,7 @@ describe("DebugSession panel", () => {
     expect(text).toContain("video_play");
     expect(text).toContain("attempt 2: FAILED");
     expect(text).toContain("0.123");
+    expect(text).toContain("model linear, alpha 10, CV error 123 px");
   });
 
   it("a threshold slider changes the config's own quality block, so the gate and the check see it", async () => {

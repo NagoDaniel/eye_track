@@ -21,6 +21,7 @@ import {
   skippedGateEventData,
   usableVectors,
   type GateMeasurements,
+  type ModelChoice,
 } from "./quickCalib";
 import { type RidgeModel, predict } from "./ridge";
 
@@ -128,6 +129,8 @@ export interface GateReport {
   attempt: number;
   decision: GateDecision;
   measured: GateMeasurements;
+  /** The model the calibration chose by cross-validation (null without a model). */
+  choice: ModelChoice | null;
   /** Per validation point: the target and the median prediction, in viewport pixels. */
   points: Array<{ target: { x: number; y: number }; prediction: { x: number; y: number } | null }>;
 }
@@ -137,6 +140,8 @@ export class CalibrationGate {
   lastReport: GateReport | null = null;
   /** The model of the last passed attempt, or of the last attempt if none passed. */
   model: RidgeModel | null = null;
+  /** The choice that belongs to `model`. */
+  private choice: ModelChoice | null = null;
   private passedOnce = false;
 
   constructor(private readonly deps: GateDeps) {}
@@ -158,6 +163,7 @@ export class CalibrationGate {
     decision: GateDecision,
     measured: GateMeasurements,
     model: RidgeModel | null,
+    choice: ModelChoice | null,
     validation: DotSamples[],
   ): void {
     this.lastReport = {
@@ -165,6 +171,7 @@ export class CalibrationGate {
       attempt,
       decision,
       measured,
+      choice,
       points: validation.map((dot) => {
         const vectors = usableVectors(dot);
         if (model === null || vectors.length === 0) {
@@ -217,9 +224,20 @@ export class CalibrationGate {
       calibrationSignals(calibration.dots, meanBrightness),
     );
     if (this.deps.forceFailure?.() === true) decision = { passed: false, reason: "forced_debug" };
-    if (decision.passed || !this.passedOnce) this.model = fit.model;
+    if (decision.passed || !this.passedOnce) {
+      this.model = fit.model;
+      this.choice = fit.choice;
+    }
     if (decision.passed) this.passedOnce = true;
-    this.report("before_video", attempt, decision, measured, fit.model, validation.dots);
+    this.report(
+      "before_video",
+      attempt,
+      decision,
+      measured,
+      fit.model,
+      fit.choice,
+      validation.dots,
+    );
     if (!this.enabled) return { passed: true, reason: "ok" };
     this.deps.log.log(
       "calib_gate_result",
@@ -233,6 +251,7 @@ export class CalibrationGate {
     const calibration = this.samples("calibration");
     const fit = fitCalibration(calibration.dots);
     this.model = fit.model;
+    this.choice = fit.choice;
     if (this.enabled) {
       this.deps.log.log(
         "calib_gate_result",
@@ -257,7 +276,7 @@ export class CalibrationGate {
       },
       { meanBrightness: null, faceRatioSpread: 0, headAngleSpreadDeg: 0 },
     );
-    this.report(block, 1, decision, measured, this.model, validation.dots);
+    this.report(block, 1, decision, measured, this.model, this.choice, validation.dots);
     this.deps.log.log("calib_gate_result", calibGateEventData(block, 1, measured, decision));
   }
 }

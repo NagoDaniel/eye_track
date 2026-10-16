@@ -53,6 +53,8 @@ export interface GateView {
   pointErrors: readonly number[];
   validFramesPerDot: readonly number[];
   reason: string;
+  /** The model the calibration chose, e.g. "linear, alpha 10, cross-validated error 123 px". */
+  model: string | null;
 }
 
 export interface DebugView {
@@ -138,6 +140,7 @@ export function formatGate(g: GateView | null): string {
     `mean error ${num(g.meanErrorNorm, 3)}`,
     `point errors ${g.pointErrors.map((e) => e.toFixed(3)).join(" ") || MISSING}`,
     `valid frames ${g.validFramesPerDot.join(" ") || MISSING}`,
+    ...(g.model === null ? [] : [`model ${g.model}`]),
     `reason: ${g.reason || MISSING}`,
   ].join("\n");
 }

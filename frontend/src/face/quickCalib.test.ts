@@ -18,6 +18,10 @@ import {
   decideGate,
   featureVector,
   fitCalibration,
+  selectModel,
+  CV_ALPHAS,
+  CV_DEGREES,
+  MIN_CV_DOTS,
   isBlink,
   median,
   scoreValidation,
@@ -243,8 +247,117 @@ describe("fitCalibration without enough data", () => {
     const empty: DotSamples = { id: 0, x: 1, y: 1, clickT: 1000, frames: [] };
     expect(fitCalibration([empty, { ...empty, id: 1 }])).toEqual({
       model: null,
+      choice: null,
       validFramesPerDot: [0, 0],
     });
+  });
+});
+
+// --- Model choice by leave-one-dot-out cross-validation (PLAN §8.6) ---
+
+/** Deterministic noise in [-1, 1]. */
+function noise(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return (state / 4294967296) * 2 - 1;
+  };
+}
+
+/** 13 dots on a grid, `perDot` frames each; the vector is `featuresOf(x, y, random)`. */
+function syntheticDots(
+  perDot: number,
+  featuresOf: (x: number, y: number, random: () => number) => number[],
+  seed = 1,
+): DotSamples[] {
+  const random = noise(seed);
+  const spots = [0.1, 0.5, 0.9].flatMap((fx) => [0.1, 0.5, 0.9].map((fy) => [fx, fy] as const));
+  spots.push([0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]);
+  return spots.map(([fx, fy], id) => {
+    const x = fx * 1600;
+    const y = fy * 900;
+    const clickT = 1000 + id * 2000;
+    const frames: CalibFrame[] = Array.from({ length: perDot }, (_, i) => ({
+      t: clickT - 600 + i * 20,
+      face: true,
+      blink: false,
+      vector: featuresOf(x, y, random),
+    }));
+    return { id, x, y, clickT, frames };
+  });
+}
+
+describe("selectModel (leave-one-dot-out cross-validation)", () => {
+  // Two informative features (iris position, linear in the dot) and eight that are mostly noise.
+  const mostlyNoise = (x: number, y: number, random: () => number): number[] => [
+    x / 1600 + 0.05 * random(),
+    y / 900 + 0.05 * random(),
+    x / 1600 + 0.05 * random(),
+    y / 900 + 0.05 * random(),
+    ...Array.from({ length: 6 }, () => random()),
+  ];
+
+  it("keeps the plain linear model when the signal is linear and the rest is noise", () => {
+    const choice = selectModel(syntheticDots(20, mostlyNoise));
+    expect(choice.degree).toBe(1);
+    expect(CV_ALPHAS).toContain(choice.alpha);
+    expect(choice.cvErrorPx).not.toBeNull();
+    expect(choice.cvErrorPx as number).toBeLessThan(300); // px, of a 1600 px screen
+  });
+
+  it("takes degree 2 when the gaze really is quadratic in the features", () => {
+    const quadratic = (x: number, y: number, random: () => number): number[] => {
+      const u = Math.sqrt(x / 1600) + 0.003 * random(); // the dot is the square of the feature
+      const v = Math.sqrt(y / 900) + 0.003 * random();
+      return [u, v, u, v, 0, 0, 0, 0, 0, 0].map((n, i) => (i < 4 ? n : 0.001 * random()));
+    };
+    expect(selectModel(syntheticDots(20, quadratic, 5)).degree).toBe(2);
+  });
+
+  it("the chosen model generalises better than a forced degree 2 with alpha 1 (the pilot's overfit)", () => {
+    const dots = syntheticDots(20, mostlyNoise, 7);
+    const fresh = syntheticDots(20, mostlyNoise, 99); // same dots, new noise: what the live dot sees
+    const forced = fitCalibration(dots, { degree: 2, alpha: 1, cvErrorPx: null }).model;
+    const chosen = fitCalibration(dots).model;
+    const error = (model: typeof forced): number => {
+      let total = 0;
+      let count = 0;
+      for (const dot of fresh) {
+        for (const frame of dot.frames) {
+          const [px, py] = predict(model as NonNullable<typeof model>, frame.vector as number[]);
+          total += Math.hypot(px - dot.x, py - dot.y);
+          count += 1;
+        }
+      }
+      return total / count;
+    };
+    expect(error(chosen)).toBeLessThan(error(forced));
+  });
+
+  it("with fewer than the needed dots it uses the plain linear model and reports no CV error", () => {
+    const two = syntheticDots(20, mostlyNoise).slice(0, MIN_CV_DOTS - 1);
+    expect(selectModel(two)).toEqual({ degree: 1, alpha: 1, cvErrorPx: null });
+  });
+
+  it("fitCalibration uses a given choice instead of choosing", () => {
+    const dots = syntheticDots(20, mostlyNoise);
+    const fit = fitCalibration(dots, { degree: 2, alpha: 100, cvErrorPx: 1 });
+    expect(fit.model).toMatchObject({ degree: 2, alpha: 100 });
+    expect(fit.choice).toEqual({ degree: 2, alpha: 100, cvErrorPx: 1 });
+  });
+
+  it("only tries the grid of PLAN §8.6", () => {
+    expect([...CV_DEGREES]).toEqual([1, 2]);
+    expect(CV_ALPHAS[0]).toBe(1e-3);
+    expect(CV_ALPHAS[CV_ALPHAS.length - 1]).toBe(1e3);
+  });
+
+  it("on the real face frames it finds a finite error and a model that scores the validation points", () => {
+    const fit = fitCalibration(CALIBRATION_DOTS);
+    expect(fit.choice?.cvErrorPx).not.toBeNull();
+    expect(Number.isFinite(fit.choice?.cvErrorPx ?? Number.NaN)).toBe(true);
+    const score = scoreValidation(fit.model, VALIDATION_DOTS, VIEWPORT);
+    expect(score.meanErrorNorm as number).toBeLessThan(0.1);
   });
 });
 

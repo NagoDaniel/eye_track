@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-16 — Browser model chosen by cross-validation; smoothed gaze dot (deviation from §5.6 step 3)
+- Plan section: §5.6 (step 3: degree 2, alpha fixed 1.0), §8.6, §12.1
+- Decision: the browser gate fits the quick model as §8.6 describes the server's fit: leave-one-dot-out cross-validation over a plain linear ridge and the degree-2 ridge, each with alpha on the log grid 1e-3 to 1e3, and keeps the best (ties go to the simpler model). The chosen degree, alpha and CV error are shown in the debug panel; the gate thresholds and everything else in §5.6 are unchanged. The live gaze dot (debug only) is smoothed with a one-euro filter (0.5 Hz at rest, beta 0.0005) and kept inside the viewport.
+- Reason: the human's first real run (study 3): the fixed degree-2 model on 10 correlated features and 301 frames overfitted; against the moving-dot ground truth 25 % of its predictions fell more than 15 % outside the screen and the 90th-percentile error was 1.17 screen diagonals. The cross-validated choice on the same run is a linear ridge with alpha 10 (validation error 0.079, 90th percentile 0.36); smoothing halved the frame-to-frame travel of the dot without raising its median error (0.123 to 0.114 to 0.121 depending on beta). The same data also showed that eyelid openness and face size help on the static calibration dots but hurt on moving targets (iris and head angles alone: median 0.125, 99 % on screen); one subject only, so the feature set stays as in §8.4 until more pilot data exists.
+- Approved by: Nágó Dániel ("yes. Lets try your two ideas", 2026-10-16)
+
 ## 2026-10-16 — Dropped stimulus frames are counted from the media time (deviation from §5.4)
 - Plan section: §5.4 ("check `presentedFrames` gaps")
 - Decision: a dropped stimulus frame is a step of the media time of more than one frame duration between two `requestVideoFrameCallback` calls (`round(step x fps) - 1`; the video's `fps` comes with the video in the session response), not a gap in `presentedFrames`. `presentedFrames` is still logged.

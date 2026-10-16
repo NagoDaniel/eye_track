@@ -162,6 +162,10 @@ describe("CalibrationGate on real frames", () => {
     h.gate.evaluatePreVideo(1);
     const report = h.gate.lastReport;
     expect(report).toMatchObject({ block: "before_video", attempt: 1 });
+    // the model was chosen by cross-validation (PLAN §8.6), not fixed
+    expect(report?.choice?.degree === 1 || report?.choice?.degree === 2).toBe(true);
+    expect(report?.choice?.cvErrorPx).not.toBeNull();
+    expect(h.gate.model).toMatchObject({ degree: report?.choice?.degree, alpha: report?.choice?.alpha });
     expect(report?.points).toHaveLength(5);
     const diagonal = Math.hypot(VIEWPORT.width, VIEWPORT.height);
     report?.points.forEach((point, i) => {

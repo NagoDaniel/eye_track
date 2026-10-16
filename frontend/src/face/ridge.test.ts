@@ -79,6 +79,35 @@ describe("fitRidge", () => {
     });
   });
 
+  it("a degree-1 model matches scikit-learn's StandardScaler + Ridge (no polynomial step)", () => {
+    const targets = sklearn.targets.map((t): [number, number] => [t[0] ?? 0, t[1] ?? 0]);
+    const model = fitRidge(sklearn.features, targets, sklearn.linear_alpha, 1);
+    expect(model.degree).toBe(1);
+    expect(model.weights[0]).toHaveLength(sklearn.features[0]?.length ?? -1); // no squares, no products
+    sklearn.new_features.forEach((row, i) => {
+      const [x, y] = predict(model, row);
+      expect(Math.abs(x - (sklearn.linear_predictions[i]?.[0] ?? Number.NaN))).toBeLessThan(
+        SKLEARN_TOLERANCE,
+      );
+      expect(Math.abs(y - (sklearn.linear_predictions[i]?.[1] ?? Number.NaN))).toBeLessThan(
+        SKLEARN_TOLERANCE,
+      );
+    });
+  });
+
+  it("degree 2 is the default and is stored in the model", () => {
+    const model = fitRidge(
+      [[1], [2], [3], [4]],
+      [
+        [1, 1],
+        [2, 2],
+        [3, 3],
+        [4, 4],
+      ],
+    );
+    expect(model.degree).toBe(2);
+  });
+
   it("uses the population std and replaces a zero std by 1", () => {
     const model = fitRidge(
       [

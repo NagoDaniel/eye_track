@@ -3,8 +3,9 @@
 // Same model as scikit-learn
 //   make_pipeline(StandardScaler(), PolynomialFeatures(degree=2, include_bias=False),
 //                 Ridge(alpha=1.0, fit_intercept=True))
-// fitted once for the x target and once for the y target. The numbers are compared with scikit-learn
-// in ridge.test.ts (fixture made by scripts/make_ridge_fixture.py).
+// fitted once for the x target and once for the y target. A model of `degree` 1 leaves out the
+// polynomial step (a plain linear ridge). The numbers are compared with scikit-learn in ridge.test.ts
+// (fixture made by scripts/make_ridge_fixture.py).
 
 /** Fixed regularisation of the browser gate fit (PLAN §5.6: α = 1.0). */
 export const RIDGE_ALPHA = 1.0;
@@ -13,9 +14,13 @@ export const MIN_RIDGE_SAMPLES = 2;
 /** A Cholesky pivot at or below this means the system is not positive definite (singular). */
 const MIN_CHOLESKY_PIVOT = 1e-12;
 
+/** Degree of the polynomial expansion: 1 is a plain linear model, 2 adds squares and products. */
+export type RidgeDegree = 1 | 2;
+
 /** Plain JSON-serialisable parameters of a fitted model. `weights[0]` is x, `weights[1]` is y. */
 export interface RidgeModel {
   alpha: number;
+  degree: RidgeDegree;
   /** Per input column. */
   means: number[];
   /** Per input column, population std (ddof = 0); 0 is replaced by 1. */
@@ -46,6 +51,10 @@ export function expandDegree2(row: readonly number[]): number[] {
     }
   }
   return expanded;
+}
+
+function expand(row: readonly number[], degree: RidgeDegree): number[] {
+  return degree === 2 ? expandDegree2(row) : [...row];
 }
 
 /** Solve A w = b for symmetric positive definite A (Cholesky); b holds several right-hand sides. */
@@ -117,6 +126,7 @@ export function fitRidge(
   features: number[][],
   targets: Array<[number, number]>,
   alpha: number = RIDGE_ALPHA,
+  degree: RidgeDegree = 2,
 ): RidgeModel {
   if (!(alpha > 0)) throw new Error("ridge: alpha must be positive");
   const width = checkInput(features, targets);
@@ -130,7 +140,7 @@ export function fitRidge(
     return std === 0 ? 1 : std;
   });
 
-  const expanded = features.map((row) => expandDegree2(standardise(row, means, stds)));
+  const expanded = features.map((row) => expand(standardise(row, means, stds), degree));
   const size = (expanded[0] as number[]).length;
   const expandedMeans = columnMeans(expanded, size);
   const centred = expanded.map((row) =>
@@ -170,7 +180,7 @@ export function fitRidge(
       (sum, mean, column) => sum + mean * ((weights[o][column] as number) ?? 0),
       0,
     );
-  return { alpha, means, stds, weights, intercepts: [intercept(0), intercept(1)] };
+  return { alpha, degree, means, stds, weights, intercepts: [intercept(0), intercept(1)] };
 }
 
 /** Predicted [x, y] for one feature vector. */
@@ -180,7 +190,7 @@ export function predict(model: RidgeModel, features: readonly number[]): [number
       `ridge: the model takes ${model.means.length} features, got ${features.length}`,
     );
   }
-  const expanded = expandDegree2(standardise(features, model.means, model.stds));
+  const expanded = expand(standardise(features, model.means, model.stds), model.degree);
   const dot = (weights: readonly number[], intercept: number): number =>
     expanded.reduce((sum, value, column) => sum + value * (weights[column] ?? 0), intercept);
   return [dot(model.weights[0], model.intercepts[0]), dot(model.weights[1], model.intercepts[1])];

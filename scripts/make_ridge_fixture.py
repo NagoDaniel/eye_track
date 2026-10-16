@@ -20,6 +20,7 @@ SAMPLES = 120
 FEATURES = 10  # the Pipeline A vector of quickCalib.ts
 NEW_SAMPLES = 25
 ALPHA = 1.0
+LINEAR_ALPHA = 10.0  # a different alpha, so the test sees that alpha and degree are both used
 CONSTANT_COLUMN = 3  # StandardScaler turns a zero std into 1
 OUT = Path(__file__).resolve().parent.parent / "shared" / "fixtures" / "ridge_fit.json"
 
@@ -52,6 +53,12 @@ def main() -> None:
         model.fit(x, y[:, column])
         predictions[:, column] = model.predict(new_x)
 
+    linear_predictions = np.zeros((NEW_SAMPLES, 2))
+    for column in range(2):
+        model = make_pipeline(StandardScaler(), Ridge(alpha=LINEAR_ALPHA, fit_intercept=True))
+        model.fit(x, y[:, column])
+        linear_predictions[:, column] = model.predict(new_x)
+
     payload = {
         "comment": "scikit-learn reference for ridge.ts; regenerate with scripts/make_ridge_fixture.py",
         "alpha": ALPHA,
@@ -59,6 +66,8 @@ def main() -> None:
         "targets": y.tolist(),
         "new_features": new_x.tolist(),
         "predictions": predictions.tolist(),
+        "linear_alpha": LINEAR_ALPHA,
+        "linear_predictions": linear_predictions.tolist(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload) + "\n")

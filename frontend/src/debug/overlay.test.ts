@@ -44,6 +44,7 @@ function view(overrides: Partial<DebugView> = {}): DebugView {
       pointErrors: [0.05, 0.2],
       validFramesPerDot: [12, 3],
       reason: "head moved",
+      model: "degree 2, alpha 1",
     },
     gateErrors: null,
     quality: { ...defaults },
@@ -124,6 +125,7 @@ describe("createDebugOverlay", () => {
     const gate = text("gate");
     expect(gate).toContain("attempt 2: FAILED");
     expect(gate).toContain("0.123");
+    expect(gate).toContain("model degree 2, alpha 1");
     expect(gate).toContain("0.050 0.200");
     expect(gate).toContain("12 3");
     expect(gate).toContain("head moved");

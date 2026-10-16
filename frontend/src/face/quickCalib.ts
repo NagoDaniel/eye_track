@@ -7,7 +7,7 @@ import { CALIB_POST_CLICK_MS } from "../constants";
 import type { EventDataMap, GateBlock, GateReason } from "../eventLog";
 import type { FrameFeatures } from "./features";
 import { MIN_RIDGE_SAMPLES, RIDGE_ALPHA, fitRidge, predict } from "./ridge";
-import type { RidgeModel } from "./ridge";
+import type { RidgeDegree, RidgeModel } from "./ridge";
 
 /** PLAN §8.4: a blink is an eyeBlink blendshape above this in either eye ... */
 export const BLINK_SCORE_THRESHOLD = 0.5;
@@ -96,28 +96,115 @@ export function usableVectors(dot: DotSamples): number[][] {
   return vectors;
 }
 
+/** Regularisation strengths tried by the cross-validation (PLAN §8.6: log grid 1e-3 ... 1e3). */
+export const CV_ALPHAS: readonly number[] = [1e-3, 1e-2, 1e-1, 1, 10, 100, 1e3];
+/** Model shapes tried: a plain linear ridge and the degree-2 expansion (PLAN §8.6 keeps the better). */
+export const CV_DEGREES: readonly RidgeDegree[] = [1, 2];
+/** Dots with usable frames needed for a cross-validation; with fewer the plain linear ridge is used. */
+export const MIN_CV_DOTS = 3;
+
+/** Which model the calibration chose, and how well it predicted dots it had not seen. */
+export interface ModelChoice {
+  degree: RidgeDegree;
+  alpha: number;
+  /** Mean over the dots, left out one at a time, of the mean per-frame distance to the dot in px;
+   * null when there were too few dots to cross-validate. */
+  cvErrorPx: number | null;
+}
+
 export interface CalibrationFit {
   /** null when the dots gave fewer than `MIN_RIDGE_SAMPLES` usable frames in total. */
   model: RidgeModel | null;
+  /** The chosen shape and regularisation (null together with `model`). */
+  choice: ModelChoice | null;
   /** Usable frames per calibration dot, in dot order. */
   validFramesPerDot: number[];
 }
 
-/** Fit the ridge model on the usable frames of all calibration dots; the target is the dot position. */
-export function fitCalibration(dots: DotSamples[], alpha: number = RIDGE_ALPHA): CalibrationFit {
-  const features: number[][] = [];
-  const targets: Array<[number, number]> = [];
-  const validFramesPerDot: number[] = [];
-  for (const dot of dots) {
-    const vectors = usableVectors(dot);
-    validFramesPerDot.push(vectors.length);
-    for (const vector of vectors) {
-      features.push(vector);
-      targets.push([dot.x, dot.y]);
+interface Samples {
+  features: number[][];
+  targets: Array<[number, number]>;
+  /** The dot each sample belongs to (an index into `dots`). */
+  dot: number[];
+}
+
+function samplesOf(dots: DotSamples[]): Samples {
+  const out: Samples = { features: [], targets: [], dot: [] };
+  dots.forEach((dot, index) => {
+    for (const vector of usableVectors(dot)) {
+      out.features.push(vector);
+      out.targets.push([dot.x, dot.y]);
+      out.dot.push(index);
+    }
+  });
+  return out;
+}
+
+/** Leave-one-dot-out error of one candidate, or Infinity when a fit fails (singular system). */
+function crossValidate(samples: Samples, degree: RidgeDegree, alpha: number): number {
+  const held = [...new Set(samples.dot)];
+  let total = 0;
+  for (const dot of held) {
+    const train = samples.dot.map((d) => d !== dot);
+    const features = samples.features.filter((_, i) => train[i]);
+    const targets = samples.targets.filter((_, i) => train[i]);
+    if (features.length < MIN_RIDGE_SAMPLES) return Number.POSITIVE_INFINITY;
+    let model: RidgeModel;
+    try {
+      model = fitRidge(features, targets, alpha, degree);
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
+    let sum = 0;
+    let count = 0;
+    samples.dot.forEach((d, i) => {
+      if (d !== dot) return;
+      const [x, y] = predict(model, samples.features[i] as number[]);
+      const [tx, ty] = samples.targets[i] as [number, number];
+      sum += Math.hypot(x - tx, y - ty);
+      count += 1;
+    });
+    total += sum / count;
+  }
+  return total / held.length;
+}
+
+/**
+ * Choose the degree and the regularisation by leave-one-dot-out cross-validation (PLAN §8.6, done in
+ * the browser too after the first real run: the fixed degree 2 with alpha 1 overfitted and sent the
+ * live gaze far off screen). Ties go to the simpler model: lower degree, then stronger regularisation.
+ */
+export function selectModel(dots: DotSamples[]): ModelChoice {
+  const samples = samplesOf(dots);
+  if (new Set(samples.dot).size < MIN_CV_DOTS) {
+    return { degree: 1, alpha: RIDGE_ALPHA, cvErrorPx: null };
+  }
+  let best: ModelChoice = { degree: 1, alpha: RIDGE_ALPHA, cvErrorPx: Number.POSITIVE_INFINITY };
+  for (const degree of CV_DEGREES) {
+    for (const alpha of [...CV_ALPHAS].reverse()) {
+      const error = crossValidate(samples, degree, alpha);
+      if (error < (best.cvErrorPx ?? Number.POSITIVE_INFINITY))
+        best = { degree, alpha, cvErrorPx: error };
     }
   }
-  const model = features.length < MIN_RIDGE_SAMPLES ? null : fitRidge(features, targets, alpha);
-  return { model, validFramesPerDot };
+  return Number.isFinite(best.cvErrorPx)
+    ? best
+    : { degree: 1, alpha: RIDGE_ALPHA, cvErrorPx: null };
+}
+
+/**
+ * Fit the ridge model on the usable frames of all calibration dots; the target is the dot position.
+ * Without a `choice` the model is chosen by cross-validation (`selectModel`).
+ */
+export function fitCalibration(dots: DotSamples[], choice?: ModelChoice): CalibrationFit {
+  const samples = samplesOf(dots);
+  const validFramesPerDot = dots.map((dot) => usableVectors(dot).length);
+  if (samples.features.length < MIN_RIDGE_SAMPLES) {
+    return { model: null, choice: null, validFramesPerDot };
+  }
+  const chosen = choice ?? selectModel(dots);
+  const model = fitRidge(samples.features, samples.targets, chosen.alpha, chosen.degree);
+  return { model, choice: chosen, validFramesPerDot };
 }
 
 export function median(values: readonly number[]): number {
