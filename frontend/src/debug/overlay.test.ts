@@ -7,8 +7,8 @@ import { type DebugView, createDebugOverlay, formatBytes } from "./overlay";
 const defaults: QualityThresholds = {
   min_face_ratio_warn: 0.8,
   max_face_ratio_warn: 1.25,
-  brightness_min: 60,
-  brightness_max: 200,
+  brightness_min: 0.25,
+  brightness_max: 0.85,
   face_ratio_min: 0.1,
   face_ratio_max: 0.25,
   max_yaw_deg: 25,
@@ -28,7 +28,7 @@ function view(overrides: Partial<DebugView> = {}): DebugView {
       uploadPendingBytes: 1536 * 1024,
     },
     signals: {
-      brightness: 123.4,
+      brightness: 0.47,
       faceRatio: 0.153,
       faceScaleRatio: 1.02,
       yawDeg: -3.5,
@@ -116,7 +116,7 @@ describe("createDebugOverlay", () => {
     expect(counters).toContain("7");
     expect(counters).toContain("3 chunks, 1.5 MB");
     const signals = text("signals");
-    expect(signals).toContain("123.4");
+    expect(signals).toContain("0.47");
     expect(signals).toContain("0.153");
     expect(signals).toContain("-3.5");
     expect(signals).toContain("1.3");
@@ -153,9 +153,9 @@ describe("createDebugOverlay", () => {
     overlay.update(view());
     const rows = [...root.querySelectorAll(".debug-slider-text")].map((e) => e.textContent);
     expect(rows).toHaveLength(8);
-    expect(rows.find((r) => r?.startsWith("brightness min"))).toContain("now 123.40");
+    expect(rows.find((r) => r?.startsWith("brightness min"))).toContain("now 0.47");
     expect(rows.find((r) => r?.startsWith("max yaw"))).toContain("now 3.50");
-    expect(slider("brightness_min").value).toBe("60");
+    expect(slider("brightness_min").value).toBe("0.25");
     expect(slider("max_yaw_deg").value).toBe("25");
   });
 
@@ -192,18 +192,18 @@ describe("createDebugOverlay", () => {
     it("calls onQualityChange with the full new thresholds when valid", () => {
       const overlay = make();
       overlay.update(view());
-      drag("brightness_min", 80);
+      drag("brightness_min", 0.3);
       expect(onQualityChange).toHaveBeenCalledTimes(1);
-      expect(onQualityChange).toHaveBeenCalledWith({ ...defaults, brightness_min: 80 });
+      expect(onQualityChange).toHaveBeenCalledWith({ ...defaults, brightness_min: 0.3 });
     });
 
     it("does not call it when a lower bound would pass its upper bound, and marks the slider", () => {
       const overlay = make();
       overlay.update(view());
-      drag("brightness_min", 220);
+      drag("brightness_min", 0.9);
       expect(onQualityChange).not.toHaveBeenCalled();
       expect(slider("brightness_min").parentElement?.classList.contains("invalid")).toBe(true);
-      drag("brightness_min", 100);
+      drag("brightness_min", 0.35);
       expect(onQualityChange).toHaveBeenCalledTimes(1);
       expect(slider("brightness_min").parentElement?.classList.contains("invalid")).toBe(false);
     });
@@ -211,11 +211,11 @@ describe("createDebugOverlay", () => {
     it("builds on earlier valid changes", () => {
       const overlay = make();
       overlay.update(view());
-      drag("brightness_min", 80);
+      drag("brightness_min", 0.3);
       drag("max_yaw_deg", 30);
       expect(onQualityChange).toHaveBeenLastCalledWith({
         ...defaults,
-        brightness_min: 80,
+        brightness_min: 0.3,
         max_yaw_deg: 30,
       });
     });
@@ -237,10 +237,10 @@ describe("createDebugOverlay", () => {
       Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
       const overlay = make();
       overlay.update(view());
-      drag("brightness_min", 80);
+      drag("brightness_min", 0.3);
       click();
       await flush();
-      expect(writeText).toHaveBeenCalledWith('"quality": {\n  "brightness_min": 80\n}');
+      expect(writeText).toHaveBeenCalledWith('"quality": {\n  "brightness_min": 0.3\n}');
       expect(root.querySelector(".debug-copy-status")?.textContent).toBe("Copied.");
       expect(root.querySelector<HTMLTextAreaElement>("textarea")?.hidden).toBe(true);
     });

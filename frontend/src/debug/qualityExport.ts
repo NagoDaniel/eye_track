@@ -2,6 +2,8 @@
 // ordering rules the backend enforces, and a pasteable JSON export (PLAN §12.1, §4.1; DECISIONS
 // "Milestone 2 scope" item 3). The defaults live in shared/protocol.json and are passed in.
 
+import type { StudyConfig } from "../config";
+
 export const QUALITY_KEYS = [
   "min_face_ratio_warn",
   "max_face_ratio_warn",
@@ -14,8 +16,8 @@ export const QUALITY_KEYS = [
 ] as const;
 export type QualityKey = (typeof QUALITY_KEYS)[number];
 
-/** The numeric keys of `StudyConfig["quality"]` (all of them, once the config has them). */
-export type QualityThresholds = Record<QualityKey, number>;
+/** The `quality` block of the study config (PLAN §4.1; every key is numeric). */
+export type QualityThresholds = StudyConfig["quality"];
 
 export interface QualitySlider {
   key: QualityKey;
@@ -28,8 +30,8 @@ export interface QualitySlider {
 export const QUALITY_SLIDERS: readonly QualitySlider[] = [
   { key: "min_face_ratio_warn", label: "face scale warn below", min: 0.3, max: 1, step: 0.01 },
   { key: "max_face_ratio_warn", label: "face scale warn above", min: 1, max: 3, step: 0.01 },
-  { key: "brightness_min", label: "brightness min", min: 0, max: 255, step: 1 },
-  { key: "brightness_max", label: "brightness max", min: 0, max: 255, step: 1 },
+  { key: "brightness_min", label: "brightness min", min: 0, max: 1, step: 0.01 },
+  { key: "brightness_max", label: "brightness max", min: 0, max: 1, step: 0.01 },
   { key: "face_ratio_min", label: "face ratio min", min: 0.02, max: 0.4, step: 0.005 },
   { key: "face_ratio_max", label: "face ratio max", min: 0.02, max: 0.6, step: 0.005 },
   { key: "max_yaw_deg", label: "max yaw (deg)", min: 5, max: 60, step: 1 },

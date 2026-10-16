@@ -120,7 +120,7 @@ export function formatCounters(c: DebugCounters): string {
 export function formatSignals(s: QualitySignals): string {
   const blink = s.blink === null ? MISSING : s.blink ? "yes" : "no";
   return [
-    `brightness  ${num(s.brightness, 1)}`,
+    `brightness  ${num(s.brightness, 2)}`,
     `face ratio  ${num(s.faceRatio, 3)}`,
     `face scale  ${num(s.faceScaleRatio, 2)}`,
     `yaw         ${num(s.yawDeg, 1, "°")}`,
