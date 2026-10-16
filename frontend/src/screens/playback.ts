@@ -12,6 +12,11 @@ import { button, el, p } from "../ui/dom";
 export interface PlaybackDeps {
   doc?: Document;
   win?: Window;
+  /**
+   * Start logging the presented frames of the stimulus video (PLAN §5.3); returns the function that
+   * stops it. Called once the video's metadata is loaded, stopped when playback ends or fails.
+   */
+  trackFrames?: (video: HTMLVideoElement) => () => void;
 }
 
 /** Resolves when the video has ended. Rejects if it cannot be loaded or played. */
@@ -74,7 +79,10 @@ export function playbackScreen(
       target.addEventListener(type, handler);
       listeners.push([target, type, handler]);
     };
+    let stopFrames: (() => void) | null = null;
     const finish = (): void => {
+      stopFrames?.();
+      stopFrames = null;
       for (const [target, type, handler] of listeners) target.removeEventListener(type, handler);
       events.setVideoIntrinsic(null);
       media.removeAttribute("src");
@@ -85,6 +93,7 @@ export function playbackScreen(
       const size: Size = { width: media.videoWidth, height: media.videoHeight };
       const viewport: Size = { width: win.innerWidth, height: win.innerHeight };
       events.setVideoIntrinsic(size);
+      stopFrames ??= deps.trackFrames?.(media) ?? null;
       log.log("video_load", {
         video_id: video.id,
         duration: media.duration,
@@ -98,12 +107,17 @@ export function playbackScreen(
     on(media, "pause", () => {
       if (!media.ended) log.log("video_pause", { video_id: video.id, media_time: mediaTime() });
     });
-    on(media, "waiting", () => log.log("video_stall", { video_id: video.id, media_time: mediaTime() }));
+    on(media, "waiting", () =>
+      log.log("video_stall", { video_id: video.id, media_time: mediaTime() }),
+    );
     on(media, "ended", () => {
       log.log("video_ended", { video_id: video.id });
       finish();
     });
-    on(media, "error", () => reject(new Error(`Video ${video.id} could not be played`)));
+    on(media, "error", () => {
+      stopFrames?.();
+      reject(new Error(`Video ${video.id} could not be played`));
+    });
     on(media, "timeupdate", () => {
       if (!media.seeking) lastGoodTime = media.currentTime;
     });
