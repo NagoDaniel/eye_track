@@ -302,9 +302,8 @@ class FeatureRecord(Strict):
     """One line of the `features` stream: a frame the live face model processed (PLAN §5.4).
 
     `t` is the client clock when the webcam frame was presented to the page; `webcam_media_time`,
-    `capture_time` and `presented_frames` are the metadata of that `requestVideoFrameCallback` on the
-    hidden webcam preview (§5.3).
-    Without a face, every measurement is null.
+    `capture_time` and `presented_frames` are the metadata of that `requestVideoFrameCallback`
+    on the hidden webcam preview (§5.3). Without a face, every measurement is null.
     """
 
     t: float
