@@ -14,6 +14,30 @@ Format:
 
 ---
 
+## 2026-10-16 — Milestone 3 scope and open choices
+- Plan section: §4, §5.6, §7, §8.1 to §8.10, §12.2, §12.3, §14
+- Decision:
+  1. **Session fixture.** A real MediaRecorder session (webcam chunks, features, events, stimulus frames) is captured from the e2e run (fake camera playing the human's face clip) by `scripts/make_session_fixture.py`. It is committed if it is 10 MB or less; if it is larger, the agent asks before committing.
+  2. **`landmarks.parquet` (§8.3)** holds per frame: `pts`, `face`, 478 x 3 float32 landmarks, `matrix[16]` (row-major), `blink_l`, `blink_r`. Not all 52 blendshapes.
+  3. **Attempts (§5.6, §8.6).** The server derives which calibration dots belong to which attempt from event order (calibration block, validation block, `calib_gate_result`); the dot events get no `attempt` field.
+  4. **`raw/webcam.webm` is written by ingest** although raw data is otherwise immutable (§1): it is a deterministic assembly of the immutable chunks, like `events.jsonl`. The chunks are never changed.
+  5. **`conf` (§7)** is 0 when invalid, 0.5 when interpolated, otherwise 1 minus a linear penalty for how far the raw prediction lies outside the viewport (0 at the edge, 1 at the 15 % limit).
+  6. **Smoother step response (§8.7):** "settled" means within 10 % (30 px) of a 300 px step, on synthetic data with measurement noise of 15 px; it settles within about 60 ms.
+  7. **Drift correction (§8.8):** linear interpolation of the offset vector between the mid-times of the validation blocks, constant before the first and after the last; with one block, constant. Applied to every phase. Degrees of visual angle are always null in M3 (stations were dropped in 1b).
+  8. **I-DT (§8.9):** dispersion = x-range plus y-range; "session validation precision" = median over the validation blocks.
+  9. **Moving-dot acceptance (§14):** median `error_norm` against the ground-truth path at most 0.15, at least 80 % valid playback samples, and the human looks at the debug replay.
+  10. **Pipeline thresholds** live in a `PipelineConfig` with the plan's defaults in code (not editable per study); the values used are written into each derived file.
+  11. **Sync (§8.2):** a named `sync_min_peak_correlation` (0.3) only flags the session, it never blocks. A session shorter than two 60 s windows uses one window and gets the flag `sync_short`.
+  12. **Quality flags and inclusion (§8.10, §4.1).** `min/max_face_ratio_warn` (reserved in M2) are multipliers of the median face ratio during the calibration phase. Inclusion uses the mean `error_norm` over all validation blocks (uncorrected; corrected values are reported too) and the valid fraction over playback only.
+  13. **scikit-learn is added** (it is in §3's list). Where it saves code (Huber fit, reference for ridge) it is used.
+  14. **Stale `running` jobs (R2):** at worker start, `running` jobs with `attempts` below `JOB_MAX_ATTEMPTS` (default 3) are requeued, the others are marked `failed` ("worker died"); the session status goes back to `uploaded` when requeued. Safe because `WORKER_CONCURRENCY` is fixed at 1 and the stages are idempotent.
+  15. **Calibration `failed` (§8.6)** is a data problem, not a crash: the later stages are skipped, no `gaze_a.parquet` is written, the session is `processed` with the flag `calibration_failed` and is excluded. Status `failed` is for crashes.
+  16. **Scope of §12.3 `[M1-M3]` items:** `export-session` / `import-session` are in M3 (T12). The Jupyter notebook and the admin diagnostics page move to Milestone 6.
+  17. **Debug replay job (§12.2):** a new job kind `render_debug` (migration; a small addition to the kinds in §4). The replay shows Pipeline A only in M3; Pipeline B joins in M5.
+  18. **Carry-overs stay in Milestone 6:** the total inflated cap per stream in `/complete` (M2 review major 2) and the vitest 4 upgrade (`npm audit`).
+- Reason: answers to the numbered questions of `/milestone-start 3`.
+- Approved by: Nágó Dániel ("you can get scikit. Others seem good, you can start", 2026-10-16; all recommendations accepted)
+
 ## 2026-10-16 — Milestone 2 review decisions and admin additions
 - Plan section: §4, §4.1, §5.4, §5.6, §6, §12.1
 - Decision:
