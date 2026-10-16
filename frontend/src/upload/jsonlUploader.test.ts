@@ -9,8 +9,7 @@ interface Sent {
 }
 
 async function gunzip(bytes: Uint8Array): Promise<string> {
-  const source = new Response(bytes).body;
-  if (source === null) throw new Error("no body");
+  const source = new Blob([bytes as BlobPart]).stream();
   return new Response(source.pipeThrough(new DecompressionStream("gzip"))).text();
 }
 
