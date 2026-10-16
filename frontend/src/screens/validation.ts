@@ -5,7 +5,11 @@ import { runDotBlock } from "../calibration/dot";
 import type { StudyConfig } from "../config";
 import type { EventLog } from "../eventLog";
 
-export function validationScreen(root: HTMLElement, config: StudyConfig, log: EventLog): Promise<void> {
+export function validationScreen(
+  root: HTMLElement,
+  config: StudyConfig,
+  log: EventLog,
+): Promise<void> {
   assertPointCounts(config);
   // The config has no separate validation dot duration: "same dot behaviour" (PLAN §5.5) means calibration's.
   return runDotBlock(
@@ -14,5 +18,6 @@ export function validationScreen(root: HTMLElement, config: StudyConfig, log: Ev
     validationPoints(window.innerWidth, window.innerHeight),
     config.calibration.dot_duration_ms,
     log,
+    { fullscreen: { required: config.playback.require_fullscreen } },
   );
 }
