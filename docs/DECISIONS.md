@@ -14,6 +14,24 @@ Format:
 
 ---
 
+## 2026-10-16 — Milestone 2 implementation choices (T4 to T13)
+- Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13
+- Decision (all are the simplest reading of what the plan leaves open; flag any you object to):
+  1. **Face model in a classic worker.** MediaPipe's WASM loader needs `importScripts`, which module workers lack (checked in Chromium: "ModuleFactory not set"). `scripts/build-face-worker.mjs` (esbuild, now a dev dependency) bundles `src/face/modelWorker.ts` to `/mediapipe/face-worker.js`, a classic worker, before `vite` and `vite build`; it runs in the same way in dev and production. CPU delegate; init about 130 ms, about 10 ms per frame on a laptop (headless).
+  2. **Matrix layout.** The browser delivers the transformation matrix column-major; compared on the same clip with the Python API it matches after a transpose (landmarks agree within about 0.01 normalised units; the frames of the two decoders differ slightly). Feature records hold it row-major.
+  3. **Feature record `t`** is the time the webcam frame was presented to the page (the `requestVideoFrameCallback` time), not when the model finished (corrects the wording of T1 item 2 docstrings). Features are recorded only while the recording runs; the device check frames are not.
+  4. **Model rate** (DECISIONS item 10 of the scope entry): `AdaptiveRate` reduces to 75 % of the rate when more than 5 % of the stimulus frames of a 2 s window were dropped (at most one step per window), never below 8 fps, and returns by 25 % steps after 5 s without drops. `FrameGate` lets frames through on a fixed schedule so a 24 fps target on a 30 fps camera averages 24 fps. All are named constants in `face/adaptiveRate.ts`; starting values for real laptops. The stimulus video's fps is sent to the browser (`VideoRef.fps`, an addition to the §6 response).
+  5. **Face lost:** `face_lost` / `face_regained` are logged when confirmed (500 ms), not at the onset; `lost_ms` is exact. The banner (3 s without a face) never pauses anything. The events are only logged while recording.
+  6. **Blink rule:** `eyeBlink > 0.5` for either eye, or either eye's openness below 0.15 (starting value; the clip's blinks have 0.07 to 0.14, open eyes 0.3 to 0.39).
+  7. **Gate details:** training window 700 ms before to 100 ms after the click, also used for the validation points; the cause is chosen in the order few frames, low brightness (mean face brightness below `quality.brightness_min`), head or distance change (face-size spread above 12 % or head angle spread above 20 degrees across the dots), else high error; a point without a usable frame counts as a failure; with fewer than 2 usable frames in total there is no model and the gate reports few frames. The model of the last passed attempt (else the last attempt) is kept; later validation blocks are scored with it and logged with attempt 1.
+  8. **Session plan:** the `calibration` step now includes the pre-video validation and the gate with its retries; `validation` steps are only the blocks between and after videos. A study with `on_fail: end_session` ends after the last failed attempt: the participant sees a thank-you text and the recording is uploaded.
+  9. **Fullscreen in dots:** an interrupted dot restarts with the same `id` after fullscreen returns (two shows, the first closed by a hide).
+  10. **Debug mode:** the panel is on by default and hidden with `D` (it covers where dots appear, found by the e2e test); `S` ends the running dot block or video (video: logs `video_ended`); `F` toggles the forced failure; the sliders write into the session's own `quality` config object, so the device check and the gate use them at once; the gaze dot is the mean of the last 5 predictions of the quick model.
+  11. **Moving-dot fixture** (§12.4): `e2e/fixtures/moving_dot.mp4`, 1280x720, 25 fps, 21.8 s (545 frames, 9 waypoints with 1.5 s pauses and 0.7 s smoothstep moves, a 2 s first pause), with `moving_dot_path.json` (per-frame ground truth, computed by the code that draws the frames; dot centroid within 0.23 px). Not used by the e2e test (it plays the 3 s test clip); for the pilot checklist.
+  12. **e2e:** the fake camera plays `e2e/fixtures/face.mp4` as `.y4m`; it cannot follow the dots, so the e2e studies use `calibration_gate.max_attempts: 1` and the test asserts that the `calibration_gate_failed` flag is present exactly when the logged pre-video result failed.
+- Reason: needed to build the tasks; nothing here contradicts the plan except the points marked as additions.
+- Approved by: plan leaves open (Nágó Dániel approved starting Milestone 2 tasks without review; check-in pending)
+
 ## 2026-10-15 — Milestone 2 T3: feature definition and the face fixture
 - Plan section: §5.4, §5.6 step 2, §8.4
 - Decision:

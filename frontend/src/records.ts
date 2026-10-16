@@ -6,9 +6,10 @@
 export type Landmark = [number, number, number];
 
 /**
- * A frame the live face model processed. `t` is `performance.now()` when the result was produced;
- * `webcam_media_time`, `capture_time` and `presented_frames` come from `requestVideoFrameCallback`
- * on the hidden webcam preview. Without a face every measurement is null.
+ * A frame the live face model processed. `t` is `performance.now()` when the webcam frame was
+ * presented to the page; `webcam_media_time`, `capture_time` and `presented_frames` are the metadata
+ * of that `requestVideoFrameCallback` on the hidden webcam preview. Without a face every
+ * measurement is null.
  */
 export interface FeatureRecord {
   t: number;

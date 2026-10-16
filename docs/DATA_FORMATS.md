@@ -1,6 +1,6 @@
 # Data formats
 
-What the system writes to disk and sends over the wire, as of Milestone 1b. Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog}.ts` mirror it and tests compare all three.
+What the system writes to disk and sends over the wire, as of Milestone 2. Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
 
 ## Files under `DATA_ROOT` (default `./data`, `/data` in the containers)
 
@@ -11,18 +11,29 @@ studies/{study_id}/sessions/{session_id}/
   raw/
     chunks/{stream}/{seq:06d}.bin    chunks exactly as the browser sent them
     events.jsonl                     assembled from the events chunks when the session completes
+    browser_features.jsonl           assembled from the features chunks (only if there are some)
+    stimulus_frames.jsonl            assembled from the stimulus_frames chunks (only if there are some)
     meta.json                        session row + config snapshot
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
 
-Not written yet: `webcam.webm`, `browser_features.jsonl`, `stimulus_frames.jsonl` and everything under `derived/` (Milestones 2 and 3).
+Not written yet: `webcam.webm` (the concatenated and remuxed webcam chunks) and everything under `derived/` (Milestone 3).
 
 ## Streams and chunks
 
 Four stream names exist: `webcam`, `features`, `events`, `stimulus_frames`. A session uploads each stream as numbered chunks: `PUT /api/sessions/{id}/chunks/{stream}/{seq}`, raw bytes in the body, header `X-Chunk-SHA256` with the lowercase hex sha256 of the body, bearer upload token. Seqs start at 0 and are contiguous. The server verifies the hash, stores the bytes unchanged and records `(session, stream, seq, size, sha256)` in the `chunks` table. The same seq with the same bytes is accepted again (idempotent); the same seq with other bytes is refused (409).
 
-In Milestone 1b only the `events` stream is used.
+What each stream holds:
+
+| stream | chunk content | chunk written by the browser |
+|---|---|---|
+| `webcam` | raw bytes of one continuous WebM (VP9, else VP8, else the browser's default) from `MediaRecorder`, about 2.5 Mbit/s. **Only chunk 0 has the WebM header**: the recording is the byte concatenation of the chunks in seq order. | every `recording.chunk_ms` (the recorder's timeslice) |
+| `features` | gzip of JSON lines, one per frame the live face model processed (below) | every `recording.chunk_ms`, none for an empty interval |
+| `events` | gzip of JSON lines (below) | same |
+| `stimulus_frames` | gzip of JSON lines, one per presented frame of the stimulus video (below) | same |
+
+The server refuses (422, nothing stored) a `features`, `events` or `stimulus_frames` chunk that is not one complete gzip stream or inflates to more than `MAX_EVENTS_CHUNK_INFLATED_MB`, and a first `webcam` chunk (seq 0) that does not start with the WebM magic bytes `1A 45 DF A3`. Other webcam chunks are not inspected.
 
 ## The `events` stream
 
@@ -52,7 +63,44 @@ One line:
 | `video_ended` | `video_id` |
 | `client_error` | `message`, `stack` (or `null`), `url` |
 
-Names that exist but are not written yet (Milestone 2): `calib_gate_result`, `face_lost`, `face_regained`, `recorder_start`, `recorder_dataavailable`, `recorder_stop`, `debug_skip`.
+| `recorder_start` | `mime_type`, `bits_per_second`, `settings` (the camera's `track.getSettings()` as the browser reports it: actual width, height, frame rate). Logged from the recorder's `start` event, a moment after the recording begins. |
+| `recorder_dataavailable` | `seq`, `size`: one per webcam chunk, after it was stored in the browser |
+| `recorder_stop` | `chunks`, `bytes`: totals of the recording, after the last chunk was stored |
+| `face_lost` | `{}`: no face for at least 500 ms while recording; `t` is when this was confirmed |
+| `face_regained` | `lost_ms`: the face was back for 500 ms; `lost_ms` is the length of the loss from the first frame without a face |
+| `calib_gate_result` | `block` (`before_video`, `between_videos`, `after_last_video`), `attempt` (1-based; later blocks use 1), `passed` (`true`, `false`, or `null` when skipped), `skipped`, `mean_error_norm` (or `null`), `point_errors` (per validation point, normalised by the viewport diagonal; `null` for a point without a usable frame), `valid_frames_per_dot` (per calibration dot, in dot order), `reason` (`ok`, `few_face_frames`, `low_brightness`, `head_or_distance_change`, `high_error`, `no_validation`, `forced_debug`). Only `before_video` results can block the participant; later blocks are logged for the quality report. |
+| `debug_skip` | `target` (`calibration`, `validation`, `video`): debug mode `S` |
+
+A dot that was interrupted (fullscreen left) and restarted has two `calib_dot_show` events with the same `id` (the first closed by a `calib_dot_hide`); consumers use the **last** show and click of each `(phase, id)`.
+
+## The `features` stream and `raw/browser_features.jsonl`
+
+One line per frame the live face model processed, at the study video's frame rate (the camera's during calibration and validation), reduced when the stimulus video drops frames. Only written while recording.
+
+```json
+{"t": 12345.6, "webcam_media_time": 41.233, "capture_time": 12340.1, "presented_frames": 1237, "face": true,
+ "lm": [[x, y, z], ...49 landmarks], "matrix": [16 numbers], "blink_l": 0.03, "blink_r": 0.04,
+ "face_ratio": 0.162, "brightness": 0.47}
+```
+
+- `t`: client clock (`performance.now()`, ms) when the webcam frame was presented to the page, from `requestVideoFrameCallback` on the hidden webcam preview. `webcam_media_time`, `capture_time` (or `null`) and `presented_frames` are that callback's metadata.
+- `face`: `false` when no face was found; then `lm`, `matrix`, `blink_l`, `blink_r`, `face_ratio` and `brightness` are all `null`. If there were several faces, the first one is used.
+- `lm`: 49 MediaPipe mesh landmarks (normalised image x, y, z; 5 decimals), the subset and order of `shared/landmark_subset.json` (both iris rings, eye corners and lids, nose tip, chin, forehead, cheeks).
+- `matrix`: the facial transformation matrix, **row-major** (translation in indices 3, 7, 11, in cm). The browser API delivers it column-major; the app converts it.
+- `blink_l`, `blink_r`: the `eyeBlinkLeft` / `eyeBlinkRight` blendshape scores. `face_ratio`: distance between the two eye centres as a fraction of the frame width. `brightness`: mean luminance of the face bounding box, 0 to 1.
+- The Pipeline A features (iris position in the eye-local frame, eye openness, head yaw/pitch/roll) are computed from `lm` and `matrix` and the frame's aspect ratio by `backend/worker/pipeline/features_a.py` and `frontend/src/face/features.ts`; their definition is in those files' headers and in DECISIONS ("Milestone 2 T3").
+
+`raw/browser_features.jsonl` is the gunzipped chunks concatenated in seq order, written at `/complete` when every line is valid. If not, nothing is written, the chunks are kept and the session is flagged `features_invalid`.
+
+## The `stimulus_frames` stream and `raw/stimulus_frames.jsonl`
+
+One line per presented frame of the stimulus video (`requestVideoFrameCallback`), the authoritative mapping from the client clock to the video position:
+
+```json
+{"t": 20001.25, "expected_display_time": 20016.5, "media_time": 1.2, "presented_frames": 36}
+```
+
+`t` is the client clock when the callback ran; the other three are the callback's metadata (`media_time` in seconds). The record does not say which video it belongs to: the `video_load` / `video_ended` events delimit the videos, and `presented_frames` restarts with each video. Invalid lines give the flag `stimulus_frames_invalid`, as above.
 
 ## `raw/meta.json`
 
@@ -76,7 +124,7 @@ Written when the session is created and rewritten (atomically) when it completes
 
 - `config` is a snapshot of the study config (PLAN §4.1, every default filled in). It never changes afterwards, so later edits to the study do not change how an existing session is processed.
 - `status`, `consent_*`, `flags` and `client_info` are empty or `created` in the first version and final in the second.
-- `flags` can contain: `interrupted` (the participant reloaded the page mid-session and finished the upload from a later page load), `events_invalid` (the events stream could not be assembled, see above), `empty` (the session completed without any chunk).
+- `flags` can contain: `interrupted` (the participant reloaded the page mid-session and finished the upload from a later page load), `events_invalid` (the events stream could not be assembled, see above), `empty` (the session completed without any chunk), `features_invalid` and `stimulus_frames_invalid` (that stream could not be assembled), `calibration_gate_failed` (the last pre-video `calib_gate_result` has `passed: false`; derived by the server from the events).
 
 ## Session status
 
