@@ -224,11 +224,15 @@ async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> 
           playbackScreen(root, video, url, session.config.playback, runtime.log, events, {
             skip: debug?.skipBus,
             trackFrames: (element) =>
-              startStimulusFrameLogging(element, (record, dropped) => {
-                runtime.stimulusFrames.push(record);
-                capture.droppedStimulusFrames += dropped;
-                capture.rate.report(record.t, 1, dropped);
-              }),
+              startStimulusFrameLogging(
+                element,
+                (record, dropped) => {
+                  runtime.stimulusFrames.push(record);
+                  capture.droppedStimulusFrames += dropped;
+                  capture.rate.report(record.t, 1, dropped);
+                },
+                video.fps,
+              ),
           }),
         );
         capture.setPlaybackFps(null);

@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-16 — Dropped stimulus frames are counted from the media time (deviation from §5.4)
+- Plan section: §5.4 ("check `presentedFrames` gaps")
+- Decision: a dropped stimulus frame is a step of the media time of more than one frame duration between two `requestVideoFrameCallback` calls (`round(step x fps) - 1`; the video's `fps` comes with the video in the session response), not a gap in `presentedFrames`. `presentedFrames` is still logged.
+- Reason: the human's first real run (Chrome, Mac, display scale 2) showed `presentedFrames` rising by 2 for each frame of a 30 fps video (1162 of 1168 steps), which made every frame look dropped, so the rate control cut the face model to its 8 fps floor during playback (9.6 and 8 fps measured against 29 fps before). The media time of the same frames was a clean 33 ms step.
+- Approved by: Nágó Dániel asked for the cause of the jumpy gaze dot; this was found while answering (flag if you object)
+
 ## 2026-10-16 — Milestone 2 implementation choices (T4 to T13)
 - Plan section: §5.2, §5.3, §5.4, §5.6, §8.4, §12.1, §12.4, §13
 - Decision (all are the simplest reading of what the plan leaves open; flag any you object to):

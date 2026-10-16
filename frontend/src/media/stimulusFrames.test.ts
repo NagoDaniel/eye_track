@@ -64,6 +64,7 @@ function setup(): { video: FakeVideo; frames: Logged[]; stop: () => void } {
     (record, dropped) => {
       frames.push({ record, dropped });
     },
+    25,
   );
   return { video, frames, stop };
 }
@@ -74,18 +75,32 @@ afterEach(() => {
 
 describe("droppedFrames", () => {
   it("is 0 without a previous frame", () => {
-    expect(droppedFrames(null, 500)).toBe(0);
+    expect(droppedFrames(null, 5, 25)).toBe(0);
   });
 
-  it("is 0 for consecutive frames and counts the gap otherwise", () => {
-    expect(droppedFrames(10, 11)).toBe(0);
-    expect(droppedFrames(10, 12)).toBe(1);
-    expect(droppedFrames(10, 15)).toBe(4);
+  it("is 0 for consecutive frames and counts the skipped frames otherwise", () => {
+    expect(droppedFrames(0.4, 0.44, 25)).toBe(0);
+    expect(droppedFrames(0.4, 0.48, 25)).toBe(1); // one frame never seen
+    expect(droppedFrames(0.4, 0.6, 25)).toBe(4);
+  });
+
+  it("tolerates the small jitter of media times", () => {
+    expect(droppedFrames(1.0, 1.0 + 1 / 30 + 0.002, 30)).toBe(0);
+    expect(droppedFrames(1.0, 1.0 + 1 / 30 - 0.002, 30)).toBe(0);
   });
 
   it("never goes negative", () => {
-    expect(droppedFrames(10, 10)).toBe(0);
-    expect(droppedFrames(10, 3)).toBe(0);
+    expect(droppedFrames(2, 2, 30)).toBe(0);
+    expect(droppedFrames(2, 1, 30)).toBe(0);
+  });
+
+  it("the real 30 fps video of the pilot run: steps of 33 ms are no drops, however the compositor counts", () => {
+    // Chrome on a 2x Mac reported presentedFrames += 2 per frame of this video: 1162 of 1168 steps.
+    for (let i = 1; i < 100; i++) expect(droppedFrames((i - 1) / 30, i / 30, 30)).toBe(0);
+  });
+
+  it("the real 25 fps video of the pilot run: a step of 80 ms is one missed frame", () => {
+    expect(droppedFrames(0.04, 0.12, 25)).toBe(1);
   });
 });
 
@@ -110,10 +125,22 @@ describe("startStimulusFrameLogging", () => {
     expect(video.pendingCount).toBe(1);
   });
 
-  it("reports dropped frames from gaps in presentedFrames", () => {
+  it("reports dropped frames from gaps in the media time", () => {
     const { video, frames } = setup();
     for (const n of [1, 2, 5, 6]) video.present(frame(n));
     expect(frames.map((f) => f.dropped)).toEqual([0, 0, 2, 0]);
+  });
+
+  it("does not count a compositor counter that rises by 2 per frame", () => {
+    const { video, frames } = setup();
+    for (let n = 1; n <= 5; n++) video.present({ ...frame(n), presentedFrames: 2 * n });
+    expect(frames.map((f) => f.dropped)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("refuses a video frame rate that is not positive", () => {
+    expect(() =>
+      startStimulusFrameLogging(new FakeVideo() as unknown as HTMLVideoElement, () => undefined, 0),
+    ).toThrow(/frame rate/);
   });
 
   it.each(["pause", "seeking", "waiting", "ended"])(
@@ -183,6 +210,7 @@ describe("startStimulusFrameLogging", () => {
       (record, dropped) => {
         frames.push({ record, dropped });
       },
+      25,
     );
     // The browser already queued the callback when stop() is called, and ignores the cancel.
     const queued = video.queued();
@@ -195,10 +223,14 @@ describe("startStimulusFrameLogging", () => {
   it("keeps logging when the consumer throws on one frame", () => {
     const video = new FakeVideo();
     let calls = 0;
-    startStimulusFrameLogging(video as unknown as HTMLVideoElement, () => {
-      calls += 1;
-      if (calls === 1) throw new Error("consumer failed");
-    });
+    startStimulusFrameLogging(
+      video as unknown as HTMLVideoElement,
+      () => {
+        calls += 1;
+        if (calls === 1) throw new Error("consumer failed");
+      },
+      25,
+    );
     expect(() => video.present(frame(1))).toThrow("consumer failed");
     expect(video.pendingCount).toBe(1);
     video.present(frame(2));
@@ -207,7 +239,7 @@ describe("startStimulusFrameLogging", () => {
 
   it("throws a clear error when requestVideoFrameCallback is missing", () => {
     const video = new EventTarget() as unknown as HTMLVideoElement;
-    expect(() => startStimulusFrameLogging(video, () => undefined)).toThrow(
+    expect(() => startStimulusFrameLogging(video, () => undefined, 25)).toThrow(
       /requestVideoFrameCallback/,
     );
   });
