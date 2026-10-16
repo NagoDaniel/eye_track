@@ -21,7 +21,7 @@ Approved by Nágó Dániel on 2026-10-16. Status: `todo` / `doing` / `done`. Eac
 
 | # | Task | PLAN | Tests (real data where the stage needs it) | Human |
 |---|---|---|---|---|
-| T1 | todo. Stale `running` jobs: requeue or fail at worker start (DECISIONS item 14); tests for `worker.run.main()` (SIGTERM, concurrency guard). `app/jobs.py`, `worker/run.py` | DECISIONS 2026-10-12 | real Postgres: kill a worker mid-job, restart, check job and session state; SIGTERM test | no |
+| T1 | **done** (2026-10-16). Stale `running` jobs: requeue or fail at worker start (DECISIONS item 14); tests for `worker.run.main()` (SIGTERM, concurrency guard). `app/jobs.py`, `worker/run.py` | DECISIONS 2026-10-12 | real Postgres: kill a worker mid-job, restart, check job and session state; SIGTERM test | no |
 | T2 | todo. Dependencies (numpy, scipy, pandas, pyarrow, matplotlib, scikit-learn); session fixture capture script and fixture (item 1); ingest: sha256 and completeness check, webcam concatenation, ffmpeg remux, per-frame pts (PyAV), JSONL streams. `worker/pipeline/ingest.py`, `scripts/make_session_fixture.py`, `shared/fixtures/session_e2e/` | §8.1, §7 | real ffmpeg and PyAV on the fixture: remux seekable with duration, frame count, missing or corrupt chunk fails loudly | no |
 | T3 | todo. Server landmarks, full-res MediaPipe VIDEO mode, `landmarks.parquet` (item 2). `worker/pipeline/landmarks.py` | §8.3 | real MediaPipe on the first frames of the fixture: 478 float32 landmarks, one face per frame | no |
 | T4 | todo. Features A table and blink rule; `features_a.parquet`. `features_a.py` | §8.4 | `shared/fixtures/face_frames.json` equals `frame_features`; blinks found on the fixture | no |
@@ -46,7 +46,6 @@ Approved by Nágó Dániel on 2026-10-16. Status: `todo` / `doing` / `done`. Eac
 - `npm audit` reports 3 findings (2 critical) in `tinypool`, a vitest 3 dependency (dev only, never shipped). Fix is a breaking upgrade to vitest 4; not done. Decide whether to upgrade (suggest doing it in a small separate task).
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
 - Participant codes (initials + birth month + day, human's choice) are derived from personal data and can collide; a collision matters at withdrawal (M6), which deletes all data for a code. Revisit before real data collection.
-- From the 1a review: stale `running` jobs (R2) must be solved in M3 (DECISIONS).
 
 ## Needs human testing
 - Fresh-VM run of PLAN §11.6 (postponed by the human).
@@ -55,4 +54,4 @@ Approved by Nágó Dániel on 2026-10-16. Status: `todo` / `doing` / `done`. Eac
 - Fine-tuning of the quality thresholds, blink openness, gate limits and the browser model's features is deferred to after M3, with the offline pipeline and pilot data (human, 2026-10-16). The starting values and the evidence are in DECISIONS.
 
 ## Next step
-T1 (stale `running` jobs), then T2 onwards in order (`/milestone-next`).
+T2 (dependencies, session fixture, ingest; `/milestone-next`). T1 note: when a `process_session` handler arrives (T11) it must set the session to `processing` for `recover_stale_running` to reset it; `JOB_MAX_ATTEMPTS` is in `.env.example` and compose.
