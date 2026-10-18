@@ -241,6 +241,21 @@ Not files of their own: `backend/worker/pipeline/predict.py` and `smoothing.py` 
 - **Segments:** runs of valid and interpolated samples; a longer gap starts a new segment, and segments are smoothed independently.
 - **Smoothing (`x_sm`, `y_sm`):** a Rauch-Tung-Striebel (forward-backward Kalman) smoother per segment with a constant-velocity model, x and y independent, measurement noise 15 px, white-noise acceleration density 3e7 px^2/s^3, velocity at the start of a segment unknown (2000 px/s). Interpolated samples count as measurements. Not smoothed (NaN): samples in no segment.
 
+### Validation accuracy, precision and drift (PLAN §8.8)
+
+Computed by `backend/worker/pipeline/validation.py`; the results are part of `quality.json` (Milestone 3, T10) and the corrected columns of `gaze_a.parquet` (T9). One entry per **validation block**: a run of `phase: validation` dots, from the calibration attempt that was used onwards (blocks of earlier, failed attempts are not scored). `kind` is `before_video`, `between_videos` or `after_last_video`, found from the `video_load` / `video_ended` events.
+
+For each point, the raw predictions of the valid frames from 700 ms before to 100 ms after the dot's click (the training window):
+
+- `error_px`: distance between the median prediction (median of x and of y) and the target; `error_norm`: that over the viewport diagonal at the click; `error_deg`: always null (needs a station, which does not exist yet).
+- `precision_px`: RMS of the distance between consecutive frames' predictions (only frames that directly follow each other); null with no such pair.
+- `error_corrected_px` / `error_corrected_norm`: the error after the drift at the click time is taken out (below).
+- A point without a valid frame has all of these null and does not count in the block's mean.
+
+Per block: `mean_error_px`, `mean_error_norm`, `mean_error_corrected_*`, `precision_px` (mean over the points), `offset_px` (mean over the points of the median prediction minus the target), `t_ms` (mean click time of the points with data) and `points_with_data`. Session level: `precision_px` is the median over the blocks (the input of the fixation dispersion threshold, §8.9) and `drift` lists, for the blocks with data, `t_ms`, `dx_px`, `dy_px`.
+
+**Drift correction:** the offset at a time is the linear interpolation of the blocks' offsets between their `t_ms`, constant before the first and after the last block (with one block, constant). Subtracting it from `x` and `y` gives the drift-corrected gaze; the uncorrected columns are always kept. The first block (right after the calibration) is included, so the correction also removes the calibration's own constant bias.
+
 ### Client time to stimulus time (PLAN §8.2 step 5)
 
 Not a file: `backend/worker/pipeline/stimulus_map.py` maps client times to `(video_id, stim_time)` from `raw/stimulus_frames.jsonl` and the `video_load` / `video_ended` events (the frame records carry no video id). A time between two presented frames gets the media time linearly interpolated between them. `stim_time` is null in a gap: a step between two frames where the wall clock advanced more than 50 ms more than the media time (pause, stall) or the media time went back (seek); dropped frames advance both and are not gaps. A video is on screen from its first presented frame until its `video_ended` event (or one frame after its last frame); after its last frame only one frame duration is extrapolated. Outside a video both are null.

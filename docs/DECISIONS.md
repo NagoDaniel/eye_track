@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T8: validation and drift
+- Plan section: §8.8
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Blocks scored:** the validation blocks from the calibration attempt that was used onwards. An earlier failed attempt's block is not scored (its calibration is not the model that is applied). Blocks are labelled from the video events, not from the gate results (a study without the gate has none).
+  2. **Frames and predictions:** valid frames only, raw (unsmoothed) predictions, the same window as the training window (700 ms before to 100 ms after the click, `calib_window_*`).
+  3. **Precision** is the RMS of the distance between the predictions of frames that directly follow each other; pairs with a dropped or invalid frame in between are not used, so a point with no such pair has no precision. The block's precision is the mean over its points; the session's (for I-DT, DECISIONS milestone 3 item 8) the median over the blocks.
+  4. **Offset vector** of a block: the mean over its points of (median prediction minus target). Its time is the mean click time of the points with data. The correction subtracts the offset, so it removes the calibration's own constant bias too (the first block is included, as the plan says "each validation block").
+  5. **Corrected error** of a point: the error of its median prediction after subtracting the drift at its own click time (interpolated), so with several blocks it is not exactly zero, which is what shows whether a linear drift explains the error.
+  6. On the recorded session (fake camera, not looking at the dots) the pre-video block has predictions on screen but the block after the video has none: the model extrapolates far off screen when the head turns, and the validity rule (§8.7) leaves those frames out. The block then has `points_with_data` 0 and no drift entry.
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T7: prediction, validity and smoothing
 - Plan section: §8.7
 - Decision (readings of what the plan leaves open; flag any you object to):

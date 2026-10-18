@@ -70,7 +70,8 @@ class Attempt:
         return self.gate is not None and self.gate.passed is True
 
 
-def _dots(shows: dict[int, tuple[float, float]], clicks: dict[int, float]) -> list[Dot]:
+def build_dots(shows: dict[int, tuple[float, float]], clicks: dict[int, float]) -> list[Dot]:
+    """Dots in id order from the last show (position) and last click (time) of each id."""
     return [Dot(i, x, y, clicks.get(i)) for i, (x, y) in sorted(shows.items())]
 
 
@@ -86,7 +87,7 @@ def calibration_attempts(events: Sequence[EventRecord]) -> list[Attempt]:
     def close() -> None:
         nonlocal shows, clicks, start
         if start is not None:
-            attempts.append(Attempt(len(attempts), start, _dots(shows, clicks), None))
+            attempts.append(Attempt(len(attempts), start, build_dots(shows, clicks), None))
         shows, clicks, start = {}, {}, None
 
     for event in events:
