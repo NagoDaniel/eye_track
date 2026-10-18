@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**3 — Pipeline A** (PLAN §14): in progress on branch `m3-pipeline-a`; task list below, scope choices in DECISIONS (2026-10-16, "Milestone 3 scope and open choices"). Milestone 2 (Recording and sync data) was accepted by Nágó Dániel and merged into `main` on 2026-10-16; its task list, results, the first real-run fixes and the review are in git history (last commit before the merge: `ca0bbb3`) and in DECISIONS (entries of 2026-10-15 and 2026-10-16).
+**3 — Pipeline A** (PLAN §14): accepted by Nágó Dániel on 2026-10-18, merged via PR from branch `m3-pipeline-a`; task list below, scope choices in DECISIONS (2026-10-16, "Milestone 3 scope and open choices"). Milestone 2 (Recording and sync data) was accepted by Nágó Dániel and merged into `main` on 2026-10-16; its task list, results, the first real-run fixes and the review are in git history (last commit before the merge: `ca0bbb3`) and in DECISIONS (entries of 2026-10-15 and 2026-10-16).
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -11,7 +11,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 1a Infrastructure | done (accepted and merged 2026-10-12) | m1a-infrastructure | task record and review are in git history (`41e299d`) |
 | 1b Skeleton app | done (accepted and merged 2026-10-15) | m1b-skeleton-app | PR #2; task record and review fixes in git history (`745c48c`) |
 | 2 Recording and sync data | done (accepted and merged 2026-10-16) | m2-recording | reviewed by the plan-reviewer, fixes done except the items under "Open problems"; `make e2e` produces complete raw data (webcam WebM, features, stimulus frames, events) |
-| 3 Pipeline A | all 15 tasks done; H1 (real webcam, moving dot) passed 2026-10-18; review fixes done, waiting for acceptance and merge | m3-pipeline-a | not pushed yet; `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
+| 3 Pipeline A | done (accepted 2026-10-18; H1 passed, review fixes done) | m3-pipeline-a | `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
 | 4 Analysis | not started | | |
 | 5 Pipeline B and comparison | not started | | |
 | 6 Hardening for pilot | not started | | |
@@ -118,4 +118,4 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 20. One `make e2e` run in five failed its first browser test once (empty page for 100 s, no cause found, see "Open problems"). If it happens to you, keep `e2e/test-results/*/trace.zip` and tell me.
 
 ## Next step
-Your checklist above. Then `/milestone-review 3`, fix what it finds, merge (your word), and `/milestone-start 4` (Analysis: heatmaps, AOI metrics, synchrony). For Milestone 4: the per-session outputs to build on are `derived/gaze_a.parquet` (smoothed and drift-corrected columns, `x_vid`/`y_vid`, `stim_time`, `valid`, `phase`), `derived/fixations_a.parquet`, `derived/quality.json` (the inclusion decision per session) and `sessions.quality`; `PipelineConfig` holds every threshold; the participant results page and the admin session page are where per-participant results go (DECISIONS 2026-10-14).
+Milestone 3 is merged. Run `/milestone-start 4` (Analysis: heatmaps, AOI metrics, synchrony). Precision tuning of the gaze models is deferred (DECISIONS 2026-10-18). For Milestone 4: the per-session outputs to build on are `derived/gaze_a.parquet` (smoothed and drift-corrected columns, `x_vid`/`y_vid`, `stim_time`, `valid`, `phase`), `derived/fixations_a.parquet`, `derived/quality.json` (the inclusion decision per session) and `sessions.quality`; `PipelineConfig` holds every threshold; the participant results page and the admin session page are where per-participant results go (DECISIONS 2026-10-14).
