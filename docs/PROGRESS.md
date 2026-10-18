@@ -60,7 +60,26 @@ Two debug sessions by Nágó Dániel, screen 1710 px wide, `cli.py moving-dot-re
 | validation jitter (frame to frame) | 93 px | 31 px |
 | gaze lag behind the dot | +160 ms | +160 ms |
 
+Sync on the real recordings (`derived/sync.json`): A (153 s, the first real use of the windowed drift fit) has 3 windows, all used, lags -32.3 / -33.9 / -32.9 ms, correlation 0.997 in each, residual at most 1.3 ms, slope error 5.7e-6, no flags; B (73 s) is `sync_short` with lag -53.5 ms, correlation 0.999.
+
 Findings (details in DECISIONS "Milestone 3 pilot result"): vertical gaze is the weak axis; A is worse but the glasses cannot be told apart from posture and fatigue with two sessions; the +160 ms lag is the same in both; the mean-offset drift correction does not help on this test; a smaller feature set is worse than the 10 features; the linear calibration model beats the quadratic one. The browser gate and the server's validation agree. Tuning is deferred (human, 2026-10-18).
+
+## Review of Milestone 3 (plan-reviewer, 2026-10-18): proposed fixes, NOT approved
+Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backend, 474 frontend) and `make e2e` all passed in the reviewer's own run. The full report is in the conversation of 2026-10-18; these are the tasks it asks for. Approve, change or drop them by number.
+
+| # | Severity | Task | Test |
+|---|---|---|---|
+| R1 | major | `import-session --force` deletes the existing session before the archive is verified (`app/session_archive.py:163-179`). Extract and verify into a temporary directory first, swap only when everything is fine | `--force` with a corrupt archive leaves the existing session's files and rows unchanged |
+| R2 | major | The stage table loses its data when a stage fails: stage results are only in `quality.json`, written after the loop (`worker/pipeline/runner.py:193-199`). Write the per-stage status (ok, skipped, failed with the error) after every stage and on failure to its own file (`derived/stages.json`); the admin stage table reads it and shows status | a session that fails at `landmarks` shows ingest as done with its duration and landmarks as failed; admin page test |
+| R3 | major | Evidence for "done when" lives only in typed numbers. Save the `moving-dot-report --json` output of both H1 sessions and the sync summary as `docs/evidence/m3-h1/` (aggregate numbers only, no gaze rows, no video; needs the human's OK because they are the human's own sessions in a public repo), and say in the PR text that the agreed criterion (0.15) is looser than the gate (0.10) and the inclusion threshold (0.12) | files exist and parse |
+| R4 | minor | `worker/pipeline/moving_dot.py:75` hard-codes 0.15; use `config.dot_max_median_error_norm` | the within-threshold share follows the config |
+| R5 | minor, privacy | The replay contains the participant's webcam picture: (a) `export-session --no-raw-video` must leave `debug/replay.mp4` out (`_is_raw_video`), (b) the session page must not load it on every view (`preload="none"`), (c) the access log gets the admin's username, (d) note for M6: retention and withdrawal must delete the replay too | export test; page test; log test |
+| R6 | minor | DECISIONS entry: calibration training uses frames with a face, no blink and finite features (not the plan's `valid`, which depends on the model being fitted) | doc only |
+| R7 | minor | Import hardening: `ArchiveError` instead of `ValueError`/`KeyError` for an unknown stream or a missing `participant_code`; a size limit on archive members | tests for each |
+| R8 | minor | `cli.py process` refuses when a job for the session is open (same rule as the admin button) | CLI test |
+| R9 | minor | `replay.encode`: no `assert` for control flow; a broken ffmpeg pipe reports ffmpeg's stderr | test with a failing ffmpeg command |
+
+Not proposed as tasks (accepted or later): plot failures are recorded in the stage summary but do not flag the session (documented, DECISIONS T13); the participant results page shows the inclusion line and a link, not the whole report (T14); no test kills a worker in the middle of a real pipeline run (the two halves are tested); the real-fixture lag bound of 150 ms is loose; the flaky first e2e test (see Open problems).
 
 ## Your checklist for Milestone 3
 Everything below needs a real webcam, real lighting, or your decision. The code and tests are done.
