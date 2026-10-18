@@ -6,7 +6,7 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 
 import { createHash } from "node:crypto";
 
-import { type Admin, createStudy, login, sessionsOf, uploadVideo } from "./admin";
+import { type Admin, createStudy, login, settledSessionsOf, uploadVideo } from "./admin";
 import { runSession, runUntilDot } from "./participant";
 
 const PARTICIPANT = "AB0315";
@@ -36,9 +36,12 @@ test("the admin can play the uploaded video", async () => {
 
 const STREAMS = ["webcam", "features", "events", "stimulus_frames"] as const;
 // The fake camera cannot look where the dots are, so the browser gate fails and the server flags
-// the session; no other flag is expected in a normal run.
+// the session; the worker adds its own flags (sync_*, calibration_failed). No other flag is
+// expected in a normal run.
 const GATE_FLAG = "calibration_gate_failed";
-const otherFlags = (flags: string[]): string[] => flags.filter((f) => f !== GATE_FLAG);
+const PIPELINE_FLAG = /^(sync_|calibration_failed$)/;
+const otherFlags = (flags: string[]): string[] =>
+  flags.filter((f) => f !== GATE_FLAG && !PIPELINE_FLAG.test(f));
 
 function indexOfType(types: string[], type: string, from = 0): number {
   const i = types.indexOf(type, from);
@@ -51,12 +54,19 @@ test("a full dummy session is completed and its events reach the server", async 
   await page.goto(`/s/e2e-full?p=${PARTICIPANT}`);
   await runSession(page);
 
-  const [session, ...others] = await sessionsOf(admin, studyId);
+  // The worker picks the session up when /complete queues it (PLAN §8); wait for it.
+  const [session, ...others] = await settledSessionsOf(admin, studyId);
   expect(others).toEqual([]);
   expect(session).toBeDefined();
   if (session === undefined) return;
-  expect(session.status).toBe("uploaded");
+  expect(session.status).toBe("processed");
   expect(otherFlags(session.flags)).toEqual([]);
+  // The quality report is stored with the session: every stage ran and the inclusion is decided.
+  const quality = session.quality as { stages: Record<string, unknown>; inclusion: { included: boolean } };
+  expect(Object.keys(quality.stages).sort()).toEqual(
+    ["calibration", "features", "gaze", "ingest", "landmarks", "quality", "sync"],
+  );
+  expect(typeof quality.inclusion.included).toBe("boolean");
   expect(session.events_error).toBeNull();
   // Complete raw data: every stream has chunks and none has a gap (PLAN §14).
   for (const stream of STREAMS) {
@@ -121,8 +131,8 @@ test("uploads survive a dropped connection", async ({ page }) => {
   }, 8_000);
   await runSession(page);
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(otherFlags(session?.flags ?? [])).toEqual([]);
   for (const info of Object.values(session?.streams ?? {})) expect(info.missing).toEqual([]);
   for (const stream of STREAMS) expect(session?.chunks[stream]).toBeGreaterThan(0);
@@ -140,8 +150,10 @@ test("a reloaded session can resume its upload and is flagged interrupted", asyn
   await page.getByRole("button", { name: "Resume upload" }).click();
   await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible({ timeout: 30_000 });
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  // It never recorded anything (the reload came before the camera started): there is no webcam
+  // to process, and the worker says so instead of pretending.
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("failed");
   expect(session?.flags).toContain("interrupted");
   expect(session?.events_error).toBeNull();
   expect(session?.events_total).toBeGreaterThan(0);
@@ -161,8 +173,8 @@ test("a reload while the webcam chunks wait in the browser still ends with the f
   await page.getByRole("button", { name: "Resume upload" }).click();
   await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible({ timeout: 60_000 });
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(session?.flags).toContain("interrupted");
   for (const stream of STREAMS) {
     expect(session?.streams[stream]?.missing, `gaps in ${stream}`).toEqual([]);
@@ -187,9 +199,12 @@ test("debug mode: the overlay shows, S skips the calibration, the session is a d
   await page.keyboard.press("s");
   await runSession(page);
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(session?.is_debug).toBe(true);
+  expect((session?.quality as { inclusion: { reasons: string[] } }).inclusion.reasons).toContain(
+    "debug_session",
+  );
   const skips = session?.events.filter((e) => e.type === "debug_skip") ?? [];
   expect(skips.map((e) => e.data.target)).toEqual(["calibration"]);
   const clicked = session?.events.filter(

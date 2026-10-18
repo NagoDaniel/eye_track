@@ -17,12 +17,16 @@ from app.jobs import claim_next, mark_done, mark_failed, recover_stale_running
 from app.logging import bind_context, configure_logging
 from app.models import Job, JobKind, WorkerHeartbeat
 from app.settings import Settings
+from worker.handlers import make_process_session
 
 log = logging.getLogger("worker")
 
-# A handler runs one job and returns a short log text. Real handlers arrive with the pipeline.
+# A handler runs one job and returns a short log text.
 Handler = Callable[[Job], str]
-HANDLERS: dict[JobKind, Handler] = {}
+
+
+def make_handlers(factory: sessionmaker[Session], settings: Settings) -> dict[JobKind, Handler]:
+    return {JobKind.PROCESS_SESSION: make_process_session(factory, settings)}
 
 
 def beat(db: Session, worker_id: str, now: datetime) -> None:
@@ -108,6 +112,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
+    handlers = make_handlers(factory, settings)
     # Concurrency is 1, so any job still `running` belongs to a worker that died.
     recover_stale_jobs(factory, settings.job_max_attempts)
     heartbeat = Heartbeat(factory, worker_id, settings.worker_heartbeat_interval_s)
@@ -115,7 +120,7 @@ def main() -> None:
     log.info("worker started", extra={"worker_id": worker_id})
     try:
         while not stop.is_set():
-            if not process_one(factory, HANDLERS):
+            if not process_one(factory, handlers):
                 stop.wait(settings.worker_poll_interval_s)
     finally:
         heartbeat.stop()

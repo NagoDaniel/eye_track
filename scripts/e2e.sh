@@ -129,6 +129,35 @@ for raw in dirs:
 assert recorded == 4, recorded
 print(f"{len(dirs)} sessions, {recorded} with a complete recording")
 
+# The worker processes every completed session (PLAN §8, §13): wait for the queue to empty, then
+# check the derived files of each session that recorded the webcam.
+import time
+def open_jobs() -> int:
+    query = "select count(*) from jobs where status in ('queued', 'running')"
+    return int(run("exec", "-T", "db", "psql", "-U", "eyetrack", "-d", "eyetrack", "-At", "-c", query))
+deadline = time.time() + 300
+while open_jobs() and time.time() < deadline:
+    time.sleep(2)
+assert open_jobs() == 0, "the worker did not finish the processing jobs in 300 s"
+def count(where: str) -> int:
+    return int(run("exec", "-T", "db", "psql", "-U", "eyetrack", "-d", "eyetrack", "-At", "-c",
+                   f"select count(*) from jobs where {where}"))
+failed = count("status = 'failed'")
+# Only the session that was reloaded before it recorded anything fails (it has no webcam).
+no_webcam = count("status = 'failed' and log like '%webcam: there are no chunks%'")
+assert failed == no_webcam == 1, f"{failed} failed jobs, {no_webcam} of them for a missing webcam"
+checker = open("scripts/e2e_check_derived.py").read()
+for raw in dirs:
+    events = [json.loads(l) for l in sh(f"cat {raw}/events.jsonl").splitlines()]
+    if not any(e["type"] == "recorder_stop" for e in events):
+        continue
+    out = subprocess.run(
+        ["docker", "compose", "-p", project, "--env-file", envf, "-f", "docker-compose.yml",
+         "exec", "-T", "api", "python", "-", raw.rsplit("/", 1)[0] + "/derived"],
+        input=checker, check=True, capture_output=True, text=True).stdout.strip()
+    print(out)
+print("the session without a webcam failed to process, as expected")
+
 # E2E_EXPORT_SESSION=<dir>: copy the raw directory of one complete session and the server's chunk
 # manifest out of the stack, for scripts/make_session_fixture.py (the pipeline tests' real session).
 export = os.environ.get("E2E_EXPORT_SESSION")

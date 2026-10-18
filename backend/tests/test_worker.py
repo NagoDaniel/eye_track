@@ -207,10 +207,10 @@ def test_main_recovers_stale_jobs_at_start_and_stops_on_sigterm(migrated_engine:
         problem = problem or "the worker did not stop within 30 s of SIGTERM"
     assert problem is None, f"{problem}\nworker log:\n{stderr}"
 
-    # Job 1 was requeued and claimed again (attempt 2); no handler is registered yet, so it fails
-    # with that message. Job 2 had used all attempts and failed as "worker died".
+    # Job 1 was requeued and claimed again (attempt 2); it has no session_id, so the real
+    # process_session handler refuses it. Job 2 had used all attempts and failed as "worker died".
     assert proc.returncode == 0, stderr
-    assert jobs[1].attempts == 2 and "no handler" in jobs[1].log
+    assert jobs[1].attempts == 2 and "needs a session_id" in jobs[1].log
     assert jobs[2].attempts == 3 and "worker died" in jobs[2].log
     lines = [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
     assert any(r["msg"] == "stale jobs recovered" for r in lines)

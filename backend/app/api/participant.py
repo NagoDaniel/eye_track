@@ -33,7 +33,8 @@ from app.chunks import (
 )
 from app.consent import UnknownConsentVersion, consent_text
 from app.events import gunzip_limited
-from app.models import AdminUser, Chunk, SessionStatus, Study, Video
+from app.jobs import enqueue
+from app.models import AdminUser, Chunk, JobKind, SessionStatus, Study, Video
 from app.models import Session as SessionRow
 from app.schemas import (
     BROWSER_REQUIREMENTS,
@@ -350,8 +351,13 @@ def complete(
     ):
         if wanted and flag not in session.flags:
             session.flags = [*session.flags, flag]
+    first_completion = session.status != SessionStatus.UPLOADED
     session.status = SessionStatus.UPLOADED
     write_meta(root, session, config)
+    if first_completion and not no_chunks:
+        # Once per session (a repeated /complete must not queue it again); a session without any
+        # chunk has nothing to process.
+        enqueue(db, JobKind.PROCESS_SESSION, {"session_id": str(session.id)})
     db.commit()
     return CompleteResponse(status="uploaded", missing={})
 

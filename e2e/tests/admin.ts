@@ -104,6 +104,7 @@ export interface SessionDetail {
   events: SessionEvent[];
   events_total: number;
   events_error: string | null;
+  quality: Record<string, unknown> | null;
 }
 
 export async function sessionsOf(admin: Admin, studyId: number): Promise<SessionDetail[]> {
@@ -117,4 +118,20 @@ export async function sessionsOf(admin: Admin, studyId: number): Promise<Session
     details.push((await detail.json()) as SessionDetail);
   }
   return details;
+}
+
+/** Statuses a session ends in once the worker has dealt with it (PLAN §8). */
+export const SETTLED = ["processed", "failed"];
+
+/** Wait until the worker has finished every session of the study, then return them. */
+export async function settledSessionsOf(admin: Admin, studyId: number): Promise<SessionDetail[]> {
+  const deadline = Date.now() + 240_000;
+  for (;;) {
+    const sessions = await sessionsOf(admin, studyId);
+    if (sessions.every((s) => SETTLED.includes(s.status))) return sessions;
+    if (Date.now() > deadline) {
+      throw new Error(`sessions not processed in time: ${sessions.map((s) => s.status).join(", ")}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
 }

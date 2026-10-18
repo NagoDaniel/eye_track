@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T11: stage runner, job handler, enqueue at /complete
+- Plan section: §6, §8, §13
+- Decision:
+  1. **`/complete` queues `process_session`** (reverses DECISIONS 1b scope item 2, as planned): once per session, on the first completion only, and not for a session without chunks (`empty`). A session that never recorded the webcam (the participant reloaded before the camera started) is queued, fails in the ingest stage with "webcam: there are no chunks" and ends `failed`; that is loud, and the e2e test expects exactly this.
+  2. **Stages and order:** ingest, landmarks, features, sync, calibration, gaze, quality (`worker/pipeline/runner.py`). A run can start at a stage (`from_stage`) or run one (`only`); the stages before keep the summary from the last run that included them (read back from `quality.json`). Each stage's duration and summary are in `quality.json` under `stages`.
+  3. **Failure:** a stage that raises stops the run (`StageFailed`, naming the stage); the earlier stages' files stay. A failed calibration is not a failure: the gaze stage is skipped and its old files are removed (they are derived, so stale ones would mislead), the quality stage excludes the session.
+  4. **Session state:** the handler sets `processing` before the stages (so a dead worker is recognised), then `processed` when the quality report exists, `failed` on an exception. `only` of an early stage on a never-processed session leaves it `uploaded` (no report yet). The pipeline owns the flags `sync_*` and `calibration_failed`: they are recomputed from `sync.json` and `calibration_a.json` at the end of every run, so a later good run removes them.
+  5. **The handler gets its own database sessions** and holds none while the stages run (they take minutes); the chunk table rows for ingest are read before.
+  6. `sessions.quality` stores the whole `quality.json` (PostgreSQL JSONB does not keep the order of keys; the file does).
+  7. e2e (`scripts/e2e.sh`, `scripts/e2e_check_derived.py`): after the Playwright tests the script waits for the queue to empty, then checks every derived file of each session that recorded: exists, columns as in DATA_FORMATS, one row per webcam frame, the stages in `quality.json`; exactly one job may fail, for the missing webcam.
+- Reason: wiring the stages to the job queue and the participant API as the plan says (§6, §8).
+- Approved by: plan; details plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T10: quality report and inclusion
 - Plan section: §8.10, §4.1, §12.1
 - Decision:

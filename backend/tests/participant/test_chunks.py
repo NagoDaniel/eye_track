@@ -451,7 +451,7 @@ def test_complete_is_idempotent(
     assert status_of(migrated_engine, created) == SessionStatus.UPLOADED
 
 
-def test_complete_creates_no_job_and_leaves_no_tmp_files(
+def test_complete_queues_the_processing_once_and_leaves_no_tmp_files(
     client: TestClient,
     created: dict[str, Any],
     data_root: Path,
@@ -460,9 +460,22 @@ def test_complete_creates_no_job_and_leaves_no_tmp_files(
 ) -> None:
     upload_all(client, created)
     complete(client, created, LAST)
+    complete(client, created, LAST)  # a repeated /complete must not queue it again
+    with Db(migrated_engine) as db:
+        jobs = db.scalars(select(Job)).all()
+        assert [(j.kind.value, j.args, j.status.value) for j in jobs] == [
+            ("process_session", {"session_id": created["session_id"]}, "queued")
+        ]
+    assert list(session_dir(data_root, study_id, created).rglob("*.tmp")) == []
+
+
+def test_an_incomplete_complete_queues_nothing(
+    client: TestClient, created: dict[str, Any], migrated_engine: Engine
+) -> None:
+    upload_all(client, created)
+    assert complete(client, created, {**LAST, "webcam": 5}).json()["status"] == "incomplete"
     with Db(migrated_engine) as db:
         assert db.scalar(select(func.count()).select_from(Job)) == 0
-    assert list(session_dir(data_root, study_id, created).rglob("*.tmp")) == []
 
 
 def test_corrupt_events_chunk_is_refused_at_the_put_and_not_stored(
@@ -528,6 +541,7 @@ def test_complete_of_a_session_without_any_chunk_is_flagged_empty(
     with Db(migrated_engine) as db:
         row = db.get_one(SessionRow, uuid.UUID(created["session_id"]))
         assert row.flags == ["interrupted", "empty"]
+        assert db.scalar(select(func.count()).select_from(Job)) == 0  # nothing to process
 
 
 def test_a_session_with_events_is_not_flagged_empty(
