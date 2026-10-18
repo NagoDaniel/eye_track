@@ -11,7 +11,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 1a Infrastructure | done (accepted and merged 2026-10-12) | m1a-infrastructure | task record and review are in git history (`41e299d`) |
 | 1b Skeleton app | done (accepted and merged 2026-10-15) | m1b-skeleton-app | PR #2; task record and review fixes in git history (`745c48c`) |
 | 2 Recording and sync data | done (accepted and merged 2026-10-16) | m2-recording | reviewed by the plan-reviewer, fixes done except the items under "Open problems"; `make e2e` produces complete raw data (webcam WebM, features, stimulus frames, events) |
-| 3 Pipeline A | all 15 tasks done, waiting for your real-webcam run (H1) and the review | m3-pipeline-a | not pushed yet; `make lint`, `make test` (650 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
+| 3 Pipeline A | all 15 tasks done; H1 (real webcam, moving dot) passed 2026-10-18; in review | m3-pipeline-a | not pushed yet; `make lint`, `make test` (650 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
 | 4 Analysis | not started | | |
 | 5 Pipeline B and comparison | not started | | |
 | 6 Hardening for pilot | not started | | |
@@ -47,6 +47,20 @@ Approved by Nágó Dániel on 2026-10-16. Status: `todo` / `doing` / `done`. Eac
 - `npm audit` reports 3 findings (2 critical) in `tinypool`, a vitest 3 dependency (dev only, never shipped). Fix is a breaking upgrade to vitest 4; not done. Decide whether to upgrade (suggest doing it in a small separate task).
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
 - Participant codes (initials + birth month + day, human's choice) are derived from personal data and can collide; a collision matters at withdrawal (M6), which deletes all data for a code. Revisit before real data collection.
+
+## H1 result (real webcam, moving-dot video, 2026-10-18)
+Two debug sessions by Nágó Dániel, screen 1710 px wide, `cli.py moving-dot-report`: both **PASS** (median error at most 0.15 of the diagonal, at least 80 % valid).
+
+| | A, first run (glasses), `080ebab8` | B, no glasses, `fb226e78` |
+|---|---|---|
+| median error, whole video | 197 px (0.098) | 92 px (0.046) |
+| median error in pauses / movements | 188 / 232 px | 76 / 176 px |
+| valid frames in playback | 98 % | 98 % |
+| calibration cross-validation error | 177 px | 116 px |
+| validation jitter (frame to frame) | 93 px | 31 px |
+| gaze lag behind the dot | +160 ms | +160 ms |
+
+Findings (details in DECISIONS "Milestone 3 pilot result"): vertical gaze is the weak axis; A is worse but the glasses cannot be told apart from posture and fatigue with two sessions; the +160 ms lag is the same in both; the mean-offset drift correction does not help on this test; a smaller feature set is worse than the 10 features; the linear calibration model beats the quadratic one. The browser gate and the server's validation agree. Tuning is deferred (human, 2026-10-18).
 
 ## Your checklist for Milestone 3
 Everything below needs a real webcam, real lighting, or your decision. The code and tests are done.

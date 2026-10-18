@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 pilot result (H1) and deferred tuning
+- Plan section: §14 (Milestone 3 "done when"), §8.6, §8.8, §12.4
+- Decision: the acceptance run (two real-webcam sessions on the moving-dot video, see PROGRESS "H1 result") meets the criterion of DECISIONS 2026-10-16 item 9 (median error at most 0.15 of the viewport diagonal, at least 80 % valid): 0.098 and 0.046, 98 % valid. Observations, none acted on yet (human, 2026-10-18: "continue with the development plan, fine-tune the models for better precision later"):
+  1. Vertical accuracy is worse than horizontal: the iris moves 0.04 to 0.05 eye widths vertically across the screen against 0.19 to 0.24 horizontally.
+  2. Session A (glasses, three calibration attempts, 153 s before the video) is noisier than B (no glasses): frame-to-frame jitter in the validation points 93 against 31 px. The per-frame landmark noise is the same (iris y frame-to-frame sd 0.0047 against 0.0041), so glasses are one possible cause among posture and fatigue; two sessions cannot tell.
+  3. Both sessions show the same +160 ms gaze lag behind the dot (human latency, or a fixed latency in the webcam or display chain; not separated).
+  4. The drift correction of §8.8 (mean offset of 5 validation points, interpolated) does not help on the moving dot: B 92 to 115 px, A 197 to 190 px, although the validation error itself improves (A 0.074 to 0.042, B 0.056 to 0.050). The offset mixes drift with the compression at those five positions. Both columns are kept; use the uncorrected ones until a better rule exists.
+  5. Offline checks on the same two sessions: the 10-feature ridge beats every smaller set tried (iris average with yaw and pitch, with roll, with openness, iris only, left/right iris with yaw and pitch) on validation error and on the moving dot in both sessions; linear beats degree 2 by a wide margin in the cross-validation (A 177 against 235 px, B 116 against 201 px).
+  6. The browser gate and the server's validation agree (B: 0.069 and 0.040 against 0.072 and 0.040).
+- Tuning candidates for later (they need more pilot sessions, with and without glasses, ideally from other participants): the drift rule, the vertical axis (more calibration points near the top and bottom, repeated dots), the gaze lag, the smoother and quality thresholds (DECISIONS 2026-10-16).
+- Reason: record the acceptance evidence and the decision to continue with the plan.
+- Approved by: Nágó Dániel
+
 ## 2026-10-18 — Milestone 3 T15: debug replay video and webcam playback
 - Plan section: §12.2, §10; DECISIONS 2026-10-14 item 3, milestone 3 item 17
 - Decision:
