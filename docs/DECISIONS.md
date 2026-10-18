@@ -14,6 +14,16 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T3: server-side landmarks
+- Plan section: §8.3
+- Decision:
+  1. **Decoder and colour.** Frames are decoded with PyAV and converted with its default `rgb24` conversion; no colour matrix is forced. On the face clip this differs from OpenCV's conversion by about 1/255 per pixel (at most 18) and the landmarks by about 0.01 normalised units, the same size as the browser-vs-Python difference seen in milestone 2. Not worth tuning; the sync (T5) and the calibration absorb it.
+  2. **Faces.** Up to 2 faces are looked for and the first is kept, as in the browser (`MAX_FACES`). A face without a transformation matrix or without the `eyeBlink` blendshapes is an error, not a silent "no face" (as in the browser, DECISIONS 2026-10-16).
+  3. **Model file.** `FACE_LANDMARKER_MODEL` (already set in the backend image) is the new setting `face_landmarker_model`. The tests use that file when it exists, otherwise they download the model once into pytest's cache with `shared/download_model.py` (sha256 checked), so CI needs no extra step but does need network.
+  4. **mypy.** `mediapipe` and `pyarrow` ship no types: `ignore_missing_imports` for those two packages only.
+- Reason: details the plan leaves open for the landmark stage.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-16 — Milestone 3 T2: ingest and the session fixture
 - Plan section: §7, §8.1, §13
 - Decision:

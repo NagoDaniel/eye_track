@@ -52,6 +52,11 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Form"]
 strict = true
 files = ["app", "worker", "tests", "alembic", "cli.py", "../shared"]
 
+# These ship no type information; the few calls into them are wrapped in typed functions.
+[[tool.mypy.overrides]]
+module = ["mediapipe.*", "pyarrow.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "../shared/tests"]
 pythonpath = ["."]

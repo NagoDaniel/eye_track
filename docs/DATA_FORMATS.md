@@ -17,6 +17,7 @@ studies/{study_id}/sessions/{session_id}/
     meta.json                        session row + config snapshot
   derived/
     webcam_frames.parquet            one row per webcam frame, from ingest (below)
+    landmarks.parquet                server-side MediaPipe landmarks of every webcam frame (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -33,6 +34,21 @@ One row per video packet of `raw/webcam.webm`, which is one per shown frame. The
 | `pts` | float64 | presentation time in seconds from the start of the recording |
 
 Snappy-compressed. The ingest summary also reports whether the pts are strictly increasing; the server-side landmark stage (`landmarks.parquet`) records the pts of the frames it decodes and is the reference for those.
+
+### `derived/landmarks.parquet` (landmarks stage, PLAN §8.3)
+
+One row per decoded frame of `raw/webcam.webm`, from the real MediaPipe Face Landmarker (Python, VIDEO mode, full resolution, blendshapes and transformation matrix on, up to 2 faces looked for and the first one kept, as in the browser). Code: `backend/worker/pipeline/landmarks.py`.
+
+| column | type | meaning |
+|---|---|---|
+| `index` | int64 | 0-based frame number in decoding order |
+| `pts` | float64 | presentation time in seconds (equals `webcam_frames.parquet`) |
+| `face` | bool | a face was found |
+| `lm` | fixed-size list of 1434 float32 | 478 landmarks x (x, y, z), flattened, normalised image coordinates; the mesh index `i` is at `3i..3i+2`, so the iris rings are 468 to 477. Null without a face. |
+| `matrix` | fixed-size list of 16 float64 | facial transformation matrix, row-major, translation (cm) in indices 3, 7, 11. Null without a face. |
+| `blink_l`, `blink_r` | float32 | `eyeBlinkLeft` / `eyeBlinkRight` blendshape scores. Null without a face. |
+
+Schema metadata: `width` and `height` of the decoded frames (strings). Timestamps handed to MediaPipe are the pts in whole milliseconds, moved up by 1 ms where two frames would share one. The result of a frame depends slightly on the frames before it (the model tracks), and on the decoder's colour conversion: PyAV and OpenCV differ by about 0.01 in normalised units on the same clip, like the browser's output.
 
 ## Streams and chunks
 

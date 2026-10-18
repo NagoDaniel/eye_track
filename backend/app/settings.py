@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     data_root: Path = Path("/data")
     models_root: Path = Path("/models")
+    # MediaPipe Face Landmarker for the server-side landmarks (PLAN §8.3); baked into the image.
+    face_landmarker_model: Path = Path("/opt/mediapipe/face_landmarker.task")
 
     api_workers: int = 2
     worker_concurrency: int = 1
