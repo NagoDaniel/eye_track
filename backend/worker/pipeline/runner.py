@@ -27,12 +27,15 @@ from worker.pipeline.features_a import FEATURES_FILE, compute_features
 from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE, run_gaze
 from worker.pipeline.ingest import ChunkRecord, ingest
 from worker.pipeline.landmarks import LANDMARKS_FILE, detect_landmarks
+from worker.pipeline.plots import run_plots
 from worker.pipeline.quality import QUALITY_FILE, build_quality
 from worker.pipeline.sync import SYNC_FILE, run_sync
 
 log = logging.getLogger("pipeline")
 
-STAGE_NAMES = ("ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality")
+STAGE_NAMES = (
+    "ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality", "plots",
+)  # fmt: skip
 # Session flags set by the pipeline (and removed again when a run no longer finds the problem).
 CALIBRATION_FAILED_FLAG = "calibration_failed"
 SYNC_FLAG_PREFIX = "sync_"
@@ -132,6 +135,10 @@ def _quality(ctx: Context) -> dict[str, Any]:
     return {"included": report["inclusion"]["included"], "reasons": report["inclusion"]["reasons"]}
 
 
+def _plots(ctx: Context) -> dict[str, Any]:
+    return run_plots(ctx.root, ctx.study_id, ctx.session_id, ctx.config).as_dict()
+
+
 STAGES: dict[str, StageFn] = {
     "ingest": _ingest,
     "landmarks": _landmarks,
@@ -140,6 +147,7 @@ STAGES: dict[str, StageFn] = {
     "calibration": _calibration,
     "gaze": _gaze,
     "quality": _quality,
+    "plots": _plots,
 }
 
 
@@ -186,8 +194,9 @@ def run_pipeline(
             ctx.stages[name] = {"seconds": round(seconds, 3), "summary": summary}
             log.info("stage done", extra={"seconds": round(seconds, 3)})
     quality_path = ctx.derived / QUALITY_FILE
-    if "quality" in selected and quality_path.exists():
-        # The quality stage cannot know its own duration: put it into the file it wrote.
+    if quality_path.exists() and ("quality" in selected or "plots" in selected):
+        # The quality stage cannot know its own duration (nor the plots after it): put the stage
+        # results into the file it wrote.
         report = json.loads(quality_path.read_text(encoding="utf-8"))
         report["stages"] = ctx.stages
         atomic_write_bytes(quality_path, (json.dumps(report, indent=1) + "\n").encode())

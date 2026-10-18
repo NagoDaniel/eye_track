@@ -54,7 +54,16 @@ def test_process_runs_the_pipeline_and_prints_the_stages(
     result = runner.invoke(cli.app, ["process", str(here.session_id)])
     assert result.exit_code == 0, result.output
     assert f"Session {here.session_id}: processed" in result.output
-    for stage in ("ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality"):
+    for stage in (
+        "ingest",
+        "landmarks",
+        "features",
+        "sync",
+        "calibration",
+        "gaze",
+        "quality",
+        "plots",
+    ):
         assert stage in result.output
     assert "included in the analysis: False" in result.output
     assert (derived(here) / "quality.json").exists()

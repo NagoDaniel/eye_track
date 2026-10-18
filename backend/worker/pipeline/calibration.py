@@ -338,6 +338,56 @@ def _failed(
                           config=config, **values)  # fmt: skip
 
 
+@dataclass(frozen=True)
+class AttemptFit:
+    """The fit of one calibration attempt: a model, or the reason there is none."""
+
+    failed_reason: str | None
+    valid_per_dot: list[int]
+    kept_per_dot: list[int]
+    model: RidgeModel | None
+    selection: ModelSelection | None
+
+
+def fit_attempt(
+    attempt: Attempt,
+    frame_t_ms: Floats,
+    vectors: Floats,
+    usable: NDArray[np.bool_],
+    config: PipelineConfig,
+) -> AttemptFit:
+    """Steps 2 to 5 of the module docstring for one attempt."""
+    train = training_samples(attempt.dots, frame_t_ms, vectors, usable, config)
+    none = [0] * len(train.valid_per_dot)
+    sparse = sum(1 for n in train.valid_per_dot if n < config.calib_min_frames_per_dot)
+    if sparse > config.calib_max_sparse_dots:
+        return AttemptFit("too_few_valid_frames", train.valid_per_dot, none, None, None)
+    first = select_model(train.features, train.targets, train.dot_index, config)
+    if not np.isfinite(first.chosen.error_px):
+        return AttemptFit("fit_impossible", train.valid_per_dot, none, None, None)
+    model = fit_ridge(train.features, train.targets, first.chosen.alpha, first.chosen.degree)
+    keep = inlier_mask(model, train.features, train.dot_index, config)
+    features, targets, dots = train.features[keep], train.targets[keep], train.dot_index[keep]
+    selection = select_model(features, targets, dots, config)
+    if not np.isfinite(selection.chosen.error_px):
+        return AttemptFit("fit_impossible", train.valid_per_dot, none, None, None)
+    final = fit_ridge(features, targets, selection.chosen.alpha, selection.chosen.degree)
+    kept = np.bincount(dots, minlength=len(attempt.dots)).tolist()
+    return AttemptFit(None, train.valid_per_dot, kept, final, selection)
+
+
+def viewport_before(events: Sequence[EventRecord], t_ms: float) -> tuple[float, float] | None:
+    """The viewport size logged by the last `viewport_change` at or before `t_ms`."""
+    viewport = None
+    for e in events:
+        if e.t > t_ms:
+            break
+        if e.type == "viewport_change":
+            size = e.data.get("viewport", {})
+            viewport = (float(size["width"]), float(size["height"]))
+    return viewport
+
+
 def fit_calibration(
     events: Sequence[EventRecord],
     frame_t_ms: Floats,
@@ -352,36 +402,16 @@ def fit_calibration(
     if chosen is None:
         return _failed("no_calibration_dots", attempts, config)
     attempt, reason = chosen
-    viewport = None
-    for e in events:
-        if e.t > attempt.start_t:
-            break
-        if e.type == "viewport_change":
-            size = e.data.get("viewport", {})
-            viewport = (float(size["width"]), float(size["height"]))
-    info = {"attempt": attempt, "attempt_reason": reason, "viewport": viewport}
-
-    train = training_samples(attempt.dots, frame_t_ms, vectors, usable, config)
-    sparse = sum(1 for n in train.valid_per_dot if n < config.calib_min_frames_per_dot)
-    if sparse > config.calib_max_sparse_dots:
-        return _failed("too_few_valid_frames", attempts, config, valid_per_dot=train.valid_per_dot,
-                       kept_per_dot=[0] * len(train.valid_per_dot), **info)  # fmt: skip
-
-    first = select_model(train.features, train.targets, train.dot_index, config)
-    if not np.isfinite(first.chosen.error_px):
-        return _failed("fit_impossible", attempts, config, valid_per_dot=train.valid_per_dot,
-                       kept_per_dot=[0] * len(train.valid_per_dot), **info)  # fmt: skip
-    model = fit_ridge(train.features, train.targets, first.chosen.alpha, first.chosen.degree)
-    keep = inlier_mask(model, train.features, train.dot_index, config)
-    features, targets, dots = train.features[keep], train.targets[keep], train.dot_index[keep]
-    selection = select_model(features, targets, dots, config)
-    if not np.isfinite(selection.chosen.error_px):
-        return _failed("fit_impossible", attempts, config, valid_per_dot=train.valid_per_dot,
-                       kept_per_dot=[0] * len(train.valid_per_dot), **info)  # fmt: skip
-    final = fit_ridge(features, targets, selection.chosen.alpha, selection.chosen.degree)
-    kept = np.bincount(dots, minlength=len(attempt.dots)).tolist()
-    return CalibrationFit("ok", None, attempt, reason, attempts, train.valid_per_dot, kept, final,
-                          selection, viewport, config)  # fmt: skip
+    viewport = viewport_before(events, attempt.start_t)
+    fit = fit_attempt(attempt, frame_t_ms, vectors, usable, config)
+    if fit.failed_reason is not None or fit.model is None or fit.selection is None:
+        return _failed(fit.failed_reason or "fit_impossible", attempts, config,
+                       valid_per_dot=fit.valid_per_dot, kept_per_dot=fit.kept_per_dot,
+                       attempt=attempt, attempt_reason=reason, viewport=viewport)  # fmt: skip
+    return CalibrationFit(
+        "ok", None, attempt, reason, attempts, fit.valid_per_dot, fit.kept_per_dot, fit.model,
+        fit.selection, viewport, config,
+    )  # fmt: skip
 
 
 # --- The stage: files in, calibration_a.json out ---

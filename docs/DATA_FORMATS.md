@@ -24,6 +24,7 @@ studies/{study_id}/sessions/{session_id}/
     gaze_a.parquet                   the gaze of every webcam frame (below)
     fixations_a.parquet              the fixations of the playback phase (below)
     quality.json                     the session quality report and inclusion decision (below)
+    debug/*.png                      debug plots (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).

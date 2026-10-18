@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T13: debug plots
+- Plan section: §12.2
+- Decision:
+  1. **Plots are the last stage (`plots`)** after `quality`, so they can use the quality report; the stage list is now ingest, landmarks, features, sync, calibration, gaze, quality, plots. The runner writes the stage results into `quality.json` after a run that included `quality` or `plots`.
+  2. **A plot that cannot be drawn does not fail the session.** Missing inputs mean skipped (with the reason, and the old picture is removed); an exception is logged and recorded in the stage summary (`errors`) but the other plots are still drawn and the session stays `processed`. The data is fine without the picture, and the plan's "flag it and move on" is met by the record in `quality.json`; no session flag is added.
+  3. **`calibration.png` fits every attempt again** (`fit_attempt`, extracted from `fit_calibration`) so that failed attempts can be drawn, and draws the validation points that followed each attempt with that attempt's model. Pipeline B is not drawn (M5).
+  4. **Added:** the moving-dot plot (path against gaze) through `cli.py moving-dot-report --plot`, as the pilot check's picture (DECISIONS milestone 3 item 9); not a stage.
+  5. Looked at the plots of the recorded session by eye and changed what was wrong: the sync panel for one window showed numeric noise (now a note), calibration predictions far outside the screen were cut off without notice (now counted), and wild raw predictions squashed the gaze plot (now the axes show half a screen around the screen).
+- Reason: details the plan leaves open for the debug plots.
+- Approved by: plan; details plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T12: CLI
 - Plan section: §11.4, §12.3, §12.4
 - Decision:

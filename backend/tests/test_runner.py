@@ -74,7 +74,7 @@ def read(path: Path) -> pd.DataFrame:
 def test_stage_selection() -> None:
     names = list(STAGE_NAMES)
     assert select_stages(names, None, None) == names
-    assert select_stages(names, "sync", None) == ["sync", "calibration", "gaze", "quality"]
+    assert select_stages(names, "sync", None) == ["sync", "calibration", "gaze", "quality", "plots"]
     assert select_stages(names, None, "features") == ["features"]
     with pytest.raises(ValueError, match="unknown stage 'nope'"):
         select_stages(names, "nope", None)

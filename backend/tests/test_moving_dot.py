@@ -246,3 +246,25 @@ def test_the_command_explains_what_is_missing(
 
 def test_the_default_path_is_the_committed_ground_truth() -> None:
     assert cli._default_dot_path().resolve() == PATH_FILE.resolve()
+
+
+def test_the_plot_option_draws_the_path_and_the_gaze(
+    synthetic_in_db: Synthetic, tmp_path: Path
+) -> None:
+    out = tmp_path / "dot.png"
+    path = path_of_the_synthetic_scanpath(tmp_path)
+    result = runner.invoke(cli.app, ["moving-dot-report", str(synthetic_in_db.session_id), "--path",
+                                     str(path), "--plot", str(out)])  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n" and out.stat().st_size > 5000
+
+
+def test_the_moving_dot_figure_has_the_dot_and_the_gaze() -> None:
+    from worker.pipeline.plots import plot_moving_dot
+
+    table = gaze_table(noise_px=3.0)
+    figure = plot_moving_dot(table, PATH, report(table))
+    x_panel, y_panel = figure.axes
+    assert [line.get_label() for line in x_panel.get_lines()] == ["dot", "gaze"]
+    assert y_panel.yaxis_inverted() and y_panel.get_xlabel() == "video time (s)"
+    assert "PASS" in str(figure.get_suptitle())

@@ -64,7 +64,7 @@ test("a full dummy session is completed and its events reach the server", async 
   // The quality report is stored with the session: every stage ran and the inclusion is decided.
   const quality = session.quality as { stages: Record<string, unknown>; inclusion: { included: boolean } };
   expect(Object.keys(quality.stages).sort()).toEqual(
-    ["calibration", "features", "gaze", "ingest", "landmarks", "quality", "sync"],
+    ["calibration", "features", "gaze", "ingest", "landmarks", "plots", "quality", "sync"],
   );
   expect(typeof quality.inclusion.included).toBe("boolean");
   expect(session.events_error).toBeNull();

@@ -203,16 +203,13 @@ def build(
     (derived / "sync.json").write_text(
         json.dumps(
             {
-                "version": 1,
-                "lag_ms": -3.0,
-                "peak": 0.99,
-                "residual_max_ms": 0.0,
-                "flags": [],
-                "t_of_pts": {"a_ms": 0.0, "b": 1.0},
+                "version": 1, "recorder_start_ms": 500.0, "lag_ms": -3.0, "peak": 0.99,
+                "residual_max_ms": 0.0, "flags": [], "t_of_pts": {"a_ms": 0.0, "b": 1.0},
+                "windows": [], "curve": {"lag_ms": [], "r": []},
             }
         ),
         encoding="utf-8",
-    )
+    )  # fmt: skip
     weights = np.zeros((10, 2))
     weights[0, 0], weights[1, 1] = 1000.0, 1000.0
     model = RidgeModel(1.0, 1, np.zeros(10), np.ones(10), weights, np.zeros(2))

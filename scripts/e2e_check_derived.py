@@ -57,8 +57,18 @@ for key in ("webcam", "events", "calibration", "sync", "inclusion", "stages"):
     if key not in quality:
         fail(f"quality.json has no {key}")
 stages = list(quality["stages"])
-if stages != ["ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality"]:
+if stages != ["ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality", "plots"]:
     fail(f"quality.json stages are {stages}")
+plots = quality["stages"]["plots"]["summary"]
+if plots["errors"]:
+    fail(f"plots failed: {plots['errors']}")
+for name in plots["written"]:
+    data = (derived / "debug" / name).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 5000:
+        fail(f"debug/{name} is not a real PNG")
+for name in ("calibration.png", "sync.png", "signals.png"):
+    if name not in plots["written"]:
+        fail(f"debug/{name} was not drawn: {plots['skipped'].get(name)}")
 
 if calibration["status"] == "ok":
     need("gaze_a.parquet", [

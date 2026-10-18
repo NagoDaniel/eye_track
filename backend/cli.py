@@ -22,6 +22,7 @@ from worker.handlers import make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
+from worker.pipeline.plots import plot_moving_dot, png_bytes
 from worker.pipeline.runner import STAGE_NAMES
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -186,6 +187,7 @@ def moving_dot_report_command(
     path: Path | None = typer.Option(None, "--path", help="moving_dot_path.json (ground truth)."),
     video_id: str | None = typer.Option(None, "--video-id", help="If it watched several videos."),
     as_json: bool = typer.Option(False, "--json", help="Print JSON instead of text."),
+    plot: Path | None = typer.Option(None, "--plot", help="Also draw the path and the gaze (PNG)."),
 ) -> None:
     """How far the gaze was from the moving dot: the Milestone 3 pilot check (PLAN §12.4)."""
     sid = _session_id(session_id)
@@ -200,17 +202,22 @@ def moving_dot_report_command(
     if not gaze_file.is_file():
         typer.echo(f"error: {gaze_file.name} does not exist: process the session first", err=True)
         raise typer.Exit(1)
+    table = pq.read_table(gaze_file)
+    dot_path = DotPath.load(path or _default_dot_path())
     try:
         report = moving_dot_report(
-            pq.read_table(gaze_file),
+            table,
             parse_events(events_path(config.data_root, study_id, sid).read_bytes()),
-            DotPath.load(path or _default_dot_path()),
+            dot_path,
             PipelineConfig(),
             video_id,
         )
     except MovingDotError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
+    if plot is not None:
+        plot.write_bytes(png_bytes(plot_moving_dot(table, dot_path, report)))
+        typer.echo(f"Plot written to {plot}", err=True)
     typer.echo(json.dumps(report, indent=1) if as_json else format_report(report))
     if not report["passes"]:
         raise typer.Exit(2)

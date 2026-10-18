@@ -79,7 +79,7 @@ def test_processing_a_session_end_to_end(
     assert row.quality is not None and row.quality["inclusion"]["included"] is False
     # (JSONB does not keep the order of keys; the file `quality.json` does.)
     assert set(row.quality["stages"]) == {
-        "ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality",
+        "ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality", "plots",
     }  # fmt: skip
     # Flags of the pipeline are recomputed: the browser's stays, the stale ones go, the new come.
     assert row.flags == ["calibration_gate_failed", "sync_short"]
