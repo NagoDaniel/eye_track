@@ -19,6 +19,7 @@ studies/{study_id}/sessions/{session_id}/
     webcam_frames.parquet            one row per webcam frame, from ingest (below)
     landmarks.parquet                server-side MediaPipe landmarks of every webcam frame (below)
     features_a.parquet               Pipeline A features of every webcam frame (below)
+    sync.json                        webcam frame time to client time (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -175,7 +176,35 @@ One row per row of `landmarks.parquet`, computed from the 49-landmark subset of 
 | `blink_l`, `blink_r` | float64 | `eyeBlinkLeft` / `eyeBlinkRight` scores |
 | `blink` | bool | `blink_l > blink_score_threshold` or `blink_r > blink_score_threshold` or `open_l < blink_openness_threshold` or `open_r < blink_openness_threshold` (defaults 0.5 and 0.15; PLAN §8.4) |
 
-Every float column is null in a frame without a face, where `blink` is false. Schema metadata `config` holds the thresholds used, as JSON. The thresholds are fields of `PipelineConfig` (`backend/worker/pipeline/config.py`), which collects the plan's numbers for all stages.
+Every float column is null in a frame without a face, where `blink` is false. Schema metadata: `config` holds the thresholds used, as JSON; `width` and `height` are copied from `landmarks.parquet`. The thresholds are fields of `PipelineConfig` (`backend/worker/pipeline/config.py`), which collects the plan's numbers for all stages.
+
+### `derived/sync.json` (sync stage, PLAN §8.2)
+
+Maps the time of a webcam frame (`pts`, seconds) to the client clock `t` (ms): `t = a_ms + 1000 * b * pts`. Code: `backend/worker/pipeline/sync.py`.
+
+```json
+{
+  "version": 1,
+  "config": { "...": "every PipelineConfig value used" },
+  "recorder_start_ms": 4313.8,
+  "lag_ms": -3.6, "peak": 0.998,
+  "t_of_pts": { "a_ms": 4310.2, "b": 1.0 },
+  "residual_max_ms": 0.0,
+  "windows": [ { "pts_center": 5.6, "lag_ms": -3.6, "peak": 0.998, "used": true, "residual_ms": 0.0 } ],
+  "curve": { "lag_ms": [-1000, -990, "..."], "r": [0.02, "...", null] },
+  "flags": ["sync_short"],
+  "frames": { "server": 340, "browser": 313 }
+}
+```
+
+- The coarse map is `t = recorder_start_ms + 1000 * pts`. `lag_ms` is the offset from it that maximises the correlation of the browser's and the server's signals over the whole session, `peak` the correlation there (mean over the two channels of the Pearson correlation over the common valid samples). `curve` is the correlation at every lag searched (`null` where too little data overlapped), for the debug plot.
+- The signals are the horizontal iris position in the eye-local frame (mean of both eyes) and the head yaw, z-scored, from `features_a.parquet` and from the browser's `raw/browser_features.jsonl` (run through the same `frame_features`); frames without a face and blinks are left out; both are resampled to 100 Hz, gaps over 150 ms are not bridged.
+- `windows`: the same search in windows of 60 s (a rest shorter than 30 s joins the last one), each relative to the whole-session lag. `used` windows (peak at least 0.3 and not at the edge of the search) go into the Huber fit of lag against pts, which gives `a_ms` and `b`; `residual_ms` is a used window's distance from that line. A session with fewer than two full windows has one window, `b` is 1 and the lag is the offset.
+- `flags` (the stage never fails on a weak result; the caller puts them on the session): `sync_short` (less than two windows), `sync_weak_peak` (whole-session peak under 0.3), `sync_lag_at_limit` (best lag at the edge of the +-1000 ms search), `sync_drift_high` (`|b - 1|` over 0.001), `sync_residual_high` (a window more than 40 ms off the line), `sync_drift_unknown` (fewer than two usable windows in a long session), `sync_coarse_only` (no usable browser or server frames: the coarse map with lag 0, `peak` null).
+
+### Client time to stimulus time (PLAN §8.2 step 5)
+
+Not a file: `backend/worker/pipeline/stimulus_map.py` maps client times to `(video_id, stim_time)` from `raw/stimulus_frames.jsonl` and the `video_load` / `video_ended` events (the frame records carry no video id). A time between two presented frames gets the media time linearly interpolated between them. `stim_time` is null in a gap: a step between two frames where the wall clock advanced more than 50 ms more than the media time (pause, stall) or the media time went back (seek); dropped frames advance both and are not gaps. A video is on screen from its first presented frame until its `video_ended` event (or one frame after its last frame); after its last frame only one frame duration is extrapolated. Outside a video both are null.
 
 ## Participant code
 

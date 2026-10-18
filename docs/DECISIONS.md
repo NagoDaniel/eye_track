@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T5: sync and the stimulus-time map
+- Plan section: §8.2
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Signal.** "Horizontal iris position minus eye-corner midpoint, plus head yaw, z-scored" is read as two channels (the eye-local iris x, which already is that difference, averaged over both eyes; and yaw), each z-scored, correlated one by one, the two correlations averaged. Summing the two into one signal could cancel when they move in opposite directions; averaging the correlations cannot. Blinks and frames without a face are left out of both signals.
+  2. **Windows.** Consecutive windows of 60 s over the webcam pts, a rest under 30 s joins the last window (the 30 s is a new named value, `sync_min_window_s`). Each window's lag is searched within +-1000 ms of the whole-session lag. A window with a peak under 0.3 or at the edge of the search is left out of the fit.
+  3. **Fit.** scikit-learn's `HuberRegressor` (epsilon 1.35) on lag against pts; `b = 1 + slope/1000`. With fewer than two usable windows in a long session the slope is taken as 1 and the session gets `sync_drift_unknown`.
+  4. **Flags instead of failures.** A weak or edge result flags the session (`sync_weak_peak`, `sync_lag_at_limit`, ...); only a missing `recorder_start` event is an error. Without usable browser features or server frames the coarse map is used with `sync_coarse_only`.
+  5. **On the recorded session** the server and browser signals correlate at 0.998 with a lag of -4 ms: both models see the same frames, and the `recorder_start` event is logged at the moment the first recorded frame (pts 0) is made, so the coarse map is already right.
+  6. **Stimulus gaps** are found from the frames themselves (wall time advanced more than media time by over `stim_gap_tolerance_ms`, 50 ms, or media time went back), not from `video_pause`/`video_stall` events, so dropped frames and display jitter (the recorded session shows 33 or 50 ms steps for a 25 fps video) are not gaps. A video is on screen from its first presented frame to its `video_ended` event.
+  7. `sync_max_gap_ms` (150 ms), `sync_min_overlap_s` (1 s), `sync_min_window_s` (30 s) and `stim_gap_tolerance_ms` (50 ms) are new named values in `PipelineConfig` that the plan does not give.
+- Reason: details the plan leaves open for the sync stage.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T4: features table and the pipeline config
 - Plan section: §8.4, §1
 - Decision:

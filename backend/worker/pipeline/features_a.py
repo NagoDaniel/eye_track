@@ -250,7 +250,11 @@ def compute_features(landmarks: Path, out: Path, config: PipelineConfig) -> Feat
     columns.append(pa.array(blink))
     names = ["index", "pts", "face", *FEATURE_COLUMNS, "blink"]
     result = pa.Table.from_arrays(columns, names=names).replace_schema_metadata(
-        {"config": json.dumps(config.as_dict())}
+        {
+            "config": json.dumps(config.as_dict()),
+            "width": metadata[b"width"].decode(),
+            "height": metadata[b"height"].decode(),
+        }
     )
     with atomic_writer(out) as target:
         pq.write_table(result, target, compression="snappy")
