@@ -8,6 +8,7 @@ chunk that changed on disk is found.
 """
 
 import hashlib
+import shutil
 import subprocess
 import uuid
 from collections.abc import Sequence
@@ -33,6 +34,7 @@ from app.storage import (
 )
 
 WEBCAM_FRAMES_FILE = "webcam_frames.parquet"
+INTERMEDIATES_DIR = "intermediates"
 # Cues (the seek index) element id in Matroska/WebM; MediaRecorder files have none, remuxed ones do.
 CUES_ID = b"\x1c\x53\xbb\x6b"
 FFMPEG_ERROR_TAIL = 600
@@ -141,7 +143,13 @@ def _assemble_jsonl(
     return lines
 
 
-def _remux(root: Path, study_id: int, session_id: uuid.UUID, records: list[ChunkRecord]) -> Path:
+def _remux(
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    records: list[ChunkRecord],
+    keep_concat: Path | None = None,
+) -> Path:
     """Concatenate the webcam chunks and remux them so the file has a duration and cues.
 
     ffmpeg writes to a real file, not a pipe: only a seekable output gets the duration and the seek
@@ -167,6 +175,9 @@ def _remux(root: Path, study_id: int, session_id: uuid.UUID, records: list[Chunk
             raise IngestError(f"ffmpeg could not remux the webcam recording: {tail.strip()}")
         remuxed.replace(out)
     finally:
+        if keep_concat is not None and concatenated.exists():
+            keep_concat.parent.mkdir(parents=True, exist_ok=True)
+            concatenated.replace(keep_concat)  # for debugging: also when ffmpeg failed
         concatenated.unlink(missing_ok=True)
         remuxed.unlink(missing_ok=True)
     return out
@@ -200,8 +211,12 @@ def ingest(
     session_id: uuid.UUID,
     manifest: Sequence[ChunkRecord],
     max_inflated_bytes: int,
+    keep_intermediates: bool = False,
 ) -> IngestSummary:
-    """Run the stage. `IngestError` means the raw data is incomplete, corrupt or unreadable."""
+    """Run the stage. `IngestError` means the raw data is incomplete, corrupt or unreadable.
+
+    With `keep_intermediates` the concatenated webcam chunks (before the remux) are kept in
+    `derived/intermediates/`; otherwise that directory is removed."""
     streams = _check_manifest(root, study_id, session_id, manifest)
     paths = {
         "events": events_path(root, study_id, session_id),
@@ -222,7 +237,13 @@ def ingest(
         if stream in streams
     }  # fmt: skip
 
-    webcam = _remux(root, study_id, session_id, streams["webcam"])
+    intermediates = derived_dir(root, study_id, session_id) / INTERMEDIATES_DIR
+    if not keep_intermediates:
+        shutil.rmtree(intermediates, ignore_errors=True)
+    webcam = _remux(
+        root, study_id, session_id, streams["webcam"],
+        intermediates / "webcam_concat.webm" if keep_intermediates else None,
+    )  # fmt: skip
     frames, codec, width, height = _webcam_frames(webcam)
     out = derived_dir(root, study_id, session_id) / WEBCAM_FRAMES_FILE
     with atomic_writer(out) as f:

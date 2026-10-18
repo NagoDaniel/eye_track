@@ -39,16 +39,31 @@ assert LANDMARK_COUNT == 49, LANDMARK_COUNT
 print('landmark subset:', LANDMARK_COUNT)
 "
 
+echo "== the moving-dot ground truth is in the image (cli.py moving-dot-report)"
+run python -c "
+from pathlib import Path
+from worker.pipeline.moving_dot import DotPath
+path = DotPath.load(Path('/shared/moving_dot_path.json'))
+print('moving-dot path:', path.duration_s, 's')
+"
+
 echo "== CLI and alembic available"
 run python cli.py --help >/dev/null
+# The CLI reads its settings before it shows the help of a command, so give it dummy ones.
+for command in process export-session import-session moving-dot-report; do
+  docker run --rm --entrypoint "" -e SECRET_KEY=image-test-secret-0123456789abcdef \
+    -e POSTGRES_PASSWORD=x "$IMAGE" python cli.py "$command" --help >/dev/null \
+    || fail "cli.py $command --help failed"
+done
 run alembic --help >/dev/null
 
 echo "== wrong sha256 in the manifest fails the build"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/shared"
+mkdir -p "$tmp/shared" "$tmp/e2e/fixtures"
 cp -R backend "$tmp/backend"
 cp shared/download_model.py shared/landmark_subset.json "$tmp/shared/"
+cp e2e/fixtures/moving_dot_path.json "$tmp/e2e/fixtures/"
 python3 -c "
 import json
 m = json.load(open('shared/models.json'))

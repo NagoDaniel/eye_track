@@ -55,6 +55,7 @@ class Context:
     model: Path  # the MediaPipe face landmarker
     max_inflated_bytes: int
     manifest: Sequence[ChunkRecord] | None = None  # the chunks table rows; ingest needs them
+    keep_intermediates: bool = False  # keep the files a stage normally removes (debugging)
     stages: dict[str, dict[str, Any]] = field(default_factory=dict)  # results so far, for quality
 
     @property
@@ -68,7 +69,10 @@ StageFn = Callable[[Context], dict[str, Any]]
 def _ingest(ctx: Context) -> dict[str, Any]:
     if ctx.manifest is None:
         raise ValueError("ingest needs the chunk table rows of the session")
-    summary = ingest(ctx.root, ctx.study_id, ctx.session_id, ctx.manifest, ctx.max_inflated_bytes)
+    summary = ingest(
+        ctx.root, ctx.study_id, ctx.session_id, ctx.manifest, ctx.max_inflated_bytes,
+        ctx.keep_intermediates,
+    )  # fmt: skip
     return summary.as_dict()
 
 

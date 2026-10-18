@@ -11,17 +11,14 @@ from sqlalchemy.orm import Session as Db
 from app.db import make_session_factory
 from app.jobs import enqueue
 from app.models import (
-    Chunk,
-    ChunkStream,
     Job,
     JobKind,
     JobStatus,
     SessionStatus,
-    Study,
-    StudyMode,
 )
 from app.models import Session as SessionRow
 from tests.dbutil import make_settings
+from tests.session_db import seed_session
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from worker.handlers import make_process_session
 from worker.pipeline import runner
@@ -32,21 +29,11 @@ from worker.run import process_one
 def seeded(migrated_engine: Engine, tmp_path: Path) -> FixtureSession:
     """The recorded session on disk and in the database, status `uploaded`."""
     s = copy_fixture_session(tmp_path / "data")
-    with Db(migrated_engine) as db:
-        db.add(Study(id=s.study_id, name="S", code="abc", mode=StudyMode.REMOTE, config={}))
-        db.flush()
-        db.add(
-            SessionRow(
-                id=s.session_id, study_id=s.study_id, participant_code="AB0315",
-                upload_token_hash="h", status=SessionStatus.UPLOADED,
-                flags=["calibration_gate_failed", "sync_weak_peak", "calibration_failed"],
-            )
-        )  # fmt: skip
-        db.flush()
-        for r in s.manifest:
-            db.add(Chunk(session_id=s.session_id, stream=ChunkStream(r.stream), seq=r.seq,
-                         size=r.size, sha256=r.sha256))  # fmt: skip
-        db.commit()
+    seed_session(
+        migrated_engine,
+        s,
+        flags=["calibration_gate_failed", "sync_weak_peak", "calibration_failed"],
+    )
     return s
 
 

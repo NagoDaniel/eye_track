@@ -169,6 +169,21 @@ Written when the session is created and rewritten (atomically) when it completes
 
 The worker sets these session flags (and removes them when a later run no longer finds the problem), next to the ones of the participant app: `sync_short`, `sync_weak_peak`, `sync_lag_at_limit`, `sync_drift_high`, `sync_residual_high`, `sync_drift_unknown`, `sync_coarse_only` (see `sync.json`) and `calibration_failed` (see `calibration_a.json`). `sessions.quality` holds `quality.json`.
 
+## Session archive (`cli.py export-session` / `import-session`, PLAN §12.3)
+
+A ZIP that makes a field problem reproducible on a development machine (`backend/app/session_archive.py`):
+
+```
+meta.json      the session row and study-config snapshot (the session's raw/meta.json)
+chunks.json    the session's rows of the chunks table: [{"stream", "seq", "size", "sha256"}, ...]
+raw/...        the raw files without meta.json (chunks, assembled streams, webcam.webm)
+derived/...    everything the stages wrote
+```
+
+`--no-raw-video` leaves out `raw/webcam.webm` and `raw/chunks/webcam/`; `chunks.json` still lists those chunks. Import refuses paths outside `raw/` and `derived/`, checks every chunk file against `chunks.json` (a missing webcam chunk is allowed), creates the study (`imported-<id>`) from the config snapshot if its id is not there, and creates the session with an unusable upload token. The status is `processed` when `derived/quality.json` exists, else `uploaded`; `raw_video_deleted_at` is set when there is no webcam. An existing session needs `--force`, which deletes it first.
+
+`cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.

@@ -121,6 +121,14 @@ class VideoRectTimeline:
             if rect is not None:
                 self._rect[i] = (rect["x"], rect["y"], rect["width"], rect["height"])
 
+    def rect_at(self, t_ms: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Width and height of the video rectangle at each time; NaN where no video is shown."""
+        if len(self._t) == 0:
+            return np.full(len(t_ms), np.nan), np.full(len(t_ms), np.nan)
+        k = np.searchsorted(self._t, t_ms, side="right") - 1
+        rect = np.where((k >= 0)[:, None], self._rect[np.clip(k, 0, None)], np.nan)
+        return rect[:, 2], rect[:, 3]
+
     def normalise(
         self, t_ms: NDArray[np.float64], x: NDArray[np.float64], y: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:

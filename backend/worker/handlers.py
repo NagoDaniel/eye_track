@@ -41,8 +41,9 @@ def make_process_session(
     factory: sessionmaker[Session], settings: Settings, config: PipelineConfig | None = None
 ) -> Callable[[Job], str]:
     """The handler for `process_session` jobs. Args: `session_id`, optionally `from_stage` or
-    `only` (a stage name). The session is `processing` while it runs, then `processed` (the quality
-    report exists) or `failed`; a stage that raises fails the job, with the stage in its log."""
+    `only` (a stage name), `keep_intermediates`. The session is `processing` while it runs, then
+    `processed` (the quality report exists) or `failed`; a stage that raises fails the job, with the
+    stage in its log."""
     pipeline_config = config or PipelineConfig()
 
     def handle(job: Job) -> str:
@@ -71,6 +72,7 @@ def make_process_session(
             model=settings.face_landmarker_model,
             max_inflated_bytes=settings.max_events_chunk_inflated_mb * MIB,
             manifest=manifest,
+            keep_intermediates=bool(job.args.get("keep_intermediates")),
         )
         try:
             stages = runner.run_pipeline(ctx, from_stage=from_stage, only=only)

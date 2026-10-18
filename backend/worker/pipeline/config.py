@@ -84,6 +84,12 @@ class PipelineConfig:
     # A gap between two webcam frames longer than this is counted as a gap in the recording.
     quality_frame_gap_ms: float = 100.0
 
+    # --- Moving-dot acceptance report (PLAN §12.4, §14; DECISIONS milestone 3 item 9) ---
+    # The pilot passes when the median error against the dot's path is at most this share of the
+    # viewport diagonal and at least this share of the playback frames is valid.
+    dot_max_median_error_norm: float = 0.15
+    dot_min_valid_fraction: float = 0.8
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the

@@ -14,6 +14,16 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T12: CLI
+- Plan section: §11.4, §12.3, §12.4
+- Decision:
+  1. **`cli.py process <id> [--from-stage S | --only S] [--keep-intermediates]`** runs the pipeline in the CLI process through the same handler as the worker (status, flags and the report in the database are handled alike) and prints the stage timings. It does not go through the queue; the admin button (T14) will. The "intermediate" file is the concatenated webcam before the remux, kept in `derived/intermediates/`.
+  2. **`export-session` / `import-session`** (layout in DATA_FORMATS): the plan's `raw/`, `derived/` and `meta.json` plus `chunks.json` (the chunk table rows ingest needs). Added `--no-raw-video` (like `backup.sh`) and a printed warning when the video is included. Stimulus videos are not in the archive: re-upload them on the development instance if the debug replay (T15) is wanted. Import creates a missing study from the config snapshot and moves the id sequence past it.
+  3. **`moving-dot-report <id> [--path F] [--video-id V] [--json]`** is the Milestone 3 pilot check with DECISIONS item 9's criterion (median error at most 0.15 of the viewport diagonal and at least 80 % valid playback frames; both are `PipelineConfig` values `dot_max_median_error_norm`, `dot_min_valid_fraction`). Exit status 0 pass, 2 fail. It reports uncorrected and drift-corrected errors (median, mean, 90th percentile), the errors during the dot's pauses and movements apart, and the gaze lag (the shift of the dot's path that fits best; positive means the gaze is behind). Its ground truth `moving_dot_path.json` is copied into the backend image as `/shared/moving_dot_path.json`.
+  4. `cli.py` gets `settings()` (renamed from `_settings`) and `session_factory()` so tests can point it at a test database.
+- Reason: details the plan leaves open for the CLI.
+- Approved by: plan; details plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T11: stage runner, job handler, enqueue at /complete
 - Plan section: §6, §8, §13
 - Decision:
