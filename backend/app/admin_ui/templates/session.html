@@ -55,14 +55,15 @@
 <h2>Processing</h2>
 {% if session.rerun_refused %}<p class="muted">Cannot be run again now: {{ session.rerun_refused }}.</p>{% endif %}
 <table>
-  <thead><tr><th>Stage</th><th>What it does</th><th class="num">Last run (s)</th><th>Result</th><th></th></tr></thead>
+  <thead><tr><th>Stage</th><th>What it does</th><th>Status</th><th class="num">Last run (s)</th><th>Result</th><th></th></tr></thead>
   <tbody>
   {% for st in session.stages %}
-    <tr>
+    <tr{% if st.status == "failed" %} class="gap"{% endif %}>
       <td>{{ st.name }}</td>
       <td class="muted">{{ st.description }}</td>
-      <td class="num">{{ num(st.seconds, "%.1f") if st.ran else "not run" }}</td>
-      <td>{% if st.skipped %}skipped: {{ st.skipped }}{% elif st.summary is not none %}<details><summary>summary</summary><pre>{{ st.summary | tojson(indent=1) }}</pre></details>{% endif %}</td>
+      <td>{% if not st.ran %}<span class="muted">not run</span>{% elif st.status == "failed" %}<strong class="error">failed</strong>{% elif st.status == "skipped" %}skipped{% else %}<span class="ok">ok</span>{% endif %}</td>
+      <td class="num">{{ num(st.seconds, "%.1f") if st.ran else "-" }}</td>
+      <td>{% if st.error %}<pre class="error">{{ st.error }}</pre>{% elif st.skipped %}{{ st.skipped }}{% elif st.summary is not none %}<details><summary>summary</summary><pre>{{ st.summary | tojson(indent=1) }}</pre></details>{% endif %}</td>
       <td>
         <form class="inline" method="post" action="/admin/sessions/{{ session.id }}/rerun">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

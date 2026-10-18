@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.logging import bind_context
+from app.stage_status import read_entries, status_of, write_entries
 from app.storage import atomic_write_bytes, derived_dir, webcam_path
 from worker.pipeline.calibration import CALIBRATION_FILE, run_calibration
 from worker.pipeline.config import PipelineConfig
@@ -178,6 +179,11 @@ def run_pipeline(
     last recorded). Raises `StageFailed`."""
     selected = select_stages(list(stages), from_stage, only)
     ctx.stages = _previous_stages(ctx.derived)
+    # What the stages did, kept in its own file (also when one fails). The stages about to run
+    # lose their old entry: "not run" is true until they have run.
+    entries = read_entries(ctx.derived, {"stages": ctx.stages})
+    for name in selected:
+        entries.pop(name, None)
     for name in selected:
         with bind_context(stage=name, session_id=str(ctx.session_id)):
             log.info("stage started")
@@ -186,10 +192,20 @@ def run_pipeline(
                 summary = stages[name](ctx)
             except Exception as exc:
                 log.exception("stage failed")
+                entries[name] = {
+                    "status": "failed",
+                    "seconds": round(time.perf_counter() - started, 3),
+                    "summary": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                write_entries(ctx.derived, entries)
                 raise StageFailed(name, exc) from exc
-            seconds = time.perf_counter() - started
-            ctx.stages[name] = {"seconds": round(seconds, 3), "summary": summary}
-            log.info("stage done", extra={"seconds": round(seconds, 3)})
+            seconds = round(time.perf_counter() - started, 3)
+            ctx.stages[name] = {"seconds": seconds, "summary": summary}
+            entries[name] = {"status": status_of(summary), "seconds": seconds,
+                             "summary": summary, "error": None}  # fmt: skip
+            write_entries(ctx.derived, entries)
+            log.info("stage done", extra={"seconds": seconds})
     quality_path = ctx.derived / QUALITY_FILE
     if quality_path.exists() and ("quality" in selected or "plots" in selected):
         # The quality stage cannot know its own duration (nor the plots after it): put the stage

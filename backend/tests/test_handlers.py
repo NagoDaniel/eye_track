@@ -94,6 +94,12 @@ def test_a_stage_that_fails_fails_the_job_and_the_session(
     assert "stage 'ingest' failed" in job.log and "webcam chunk 2" in job.log
     row = session_row(migrated_engine, seeded)
     assert row.status is SessionStatus.FAILED and row.quality is None
+    from app.stage_status import read_entries
+    from app.storage import derived_dir
+
+    entries = read_entries(derived_dir(seeded.root, seeded.study_id, seeded.session_id))
+    assert list(entries) == ["ingest"] and entries["ingest"]["status"] == "failed"
+    assert "webcam chunk 2" in entries["ingest"]["error"]
 
 
 def test_a_session_can_be_processed_again_from_a_stage(

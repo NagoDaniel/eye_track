@@ -17,6 +17,7 @@ from app.pipeline_names import PLOT_CAPTIONS, REPLAY_FILE, STAGE_DESCRIPTIONS, S
 from app.reprocess import jobs_of, render_refusal, rerun_refusal
 from app.schemas import EventRecord
 from app.service_errors import NotFoundError
+from app.stage_status import read_entries
 from app.storage import STREAMS, chunk_path, derived_dir, webcam_path
 
 MAX_EVENTS_SHOWN = 1000
@@ -139,7 +140,9 @@ def session_detail(
         "client_info": session.client_info,
         "quality": session.quality,
         "quality_summary": quality_summary(session.quality),
-        "stages": stage_rows(session.quality),
+        "stages": stage_rows(
+            read_entries(derived_dir(data_root, study.id, session_id), session.quality)
+        ),
         "plots": plots_on_disk(data_root, study.id, session_id),
         "jobs": job_rows(db, session_id),
         "rerun_refused": rerun_refusal(db, session),
@@ -163,21 +166,24 @@ def session_detail(
     }
 
 
-def stage_rows(quality: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Every stage in order with what its last run recorded; a stage never run has no seconds."""
-    recorded = {} if quality is None else dict(quality.get("stages") or {})
+def stage_rows(entries: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every stage in order with what its last run recorded (`app.stage_status`); a stage with no
+    entry has not run."""
     rows = []
     for name in STAGE_NAMES:
-        entry = recorded.get(name)
+        entry = entries.get(name)
         summary = None if entry is None else entry.get("summary")
-        skipped = isinstance(summary, dict) and "skipped" in summary
         rows.append(
             {
                 "name": name,
                 "description": STAGE_DESCRIPTIONS[name],
                 "ran": entry is not None,
+                "status": None if entry is None else entry.get("status"),
                 "seconds": None if entry is None else entry.get("seconds"),
-                "skipped": summary["skipped"] if skipped and isinstance(summary, dict) else None,
+                "skipped": summary["skipped"]
+                if isinstance(summary, dict) and "skipped" in summary
+                else None,
+                "error": None if entry is None else entry.get("error"),
                 "summary": summary,
             }
         )

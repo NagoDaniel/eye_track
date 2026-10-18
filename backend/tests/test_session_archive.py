@@ -263,3 +263,44 @@ def test_a_changed_chunk_is_refused_and_leaves_nothing_behind(
     with Db(migrated_engine) as db:
         assert db.scalars(select(SessionRow)).all() == [] and db.scalars(select(Chunk)).all() == []
     assert not (tmp_path / "other" / "studies" / "1" / "sessions" / str(here.session_id)).exists()
+
+
+def test_a_corrupt_archive_with_force_leaves_the_existing_session_untouched(
+    here: FixtureSession, migrated_engine: Engine, tmp_path: Path
+) -> None:
+    export(migrated_engine, here, tmp_path / "s.zip")
+    with zipfile.ZipFile(tmp_path / "s.zip") as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    data = bytearray(files["raw/chunks/events/000001.bin"])
+    data[5] ^= 0xFF
+    files["raw/chunks/events/000001.bin"] = bytes(data)
+    write_zip(tmp_path / "bad.zip", files)
+
+    before = files_of(session_directory(here))
+    with Db(migrated_engine) as db, pytest.raises(ArchiveError, match="does not match"):
+        import_session(db, here.root, tmp_path / "bad.zip", force=True)
+
+    assert files_of(session_directory(here)) == before  # every raw and derived file still there
+    sessions_dir = session_directory(here).parent
+    assert [p.name for p in sessions_dir.iterdir()] == [str(here.session_id)]  # no staging left
+    with Db(migrated_engine) as db:
+        assert db.get_one(SessionRow, here.session_id).status is SessionStatus.PROCESSED
+        assert len(db.scalars(select(Chunk)).all()) == len(here.manifest)
+
+
+def test_a_failure_while_adding_the_rows_puts_the_old_session_back(
+    here: FixtureSession, migrated_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.session_archive as archive_module
+
+    export(migrated_engine, here, tmp_path / "s.zip")
+    before = files_of(session_directory(here))
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the database went away")
+
+    monkeypatch.setattr(archive_module, "_add_rows", broken)
+    with Db(migrated_engine) as db, pytest.raises(RuntimeError, match="went away"):
+        import_session(db, here.root, tmp_path / "s.zip", force=True)
+    assert files_of(session_directory(here)) == before
+    assert [p.name for p in session_directory(here).parent.iterdir()] == [str(here.session_id)]

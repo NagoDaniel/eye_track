@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from app.pipeline_names import STAGE_NAMES
+from app.stage_status import read_entries
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.quality import QUALITY_FILE
@@ -96,6 +97,11 @@ def test_a_full_run_produces_every_file_and_records_every_stage(processed: Fixtu
     assert (processed.raw / "webcam.webm").exists()
     report = json.loads((derived / QUALITY_FILE).read_text("utf-8"))
     assert list(report["stages"]) == list(STAGE_NAMES)
+    entries = read_entries(derived)
+    assert list(entries) == list(STAGE_NAMES) and {e["status"] for e in entries.values()} <= {
+        "ok",
+        "skipped",
+    }
     for name, entry in report["stages"].items():
         assert entry["seconds"] >= 0 and isinstance(entry["summary"], dict), name
     assert report["stages"]["ingest"]["summary"]["webcam_frames"] > 200
@@ -189,6 +195,7 @@ def test_a_failed_calibration_skips_the_gaze_and_excludes_the_session(
 
     assert stages["calibration"]["summary"]["status"] == "failed"
     assert stages["gaze"]["summary"] == {"skipped": "calibration_failed"}
+    assert read_entries(derived)["gaze"]["status"] == "skipped"
     assert (
         not (derived / "gaze_a.parquet").exists() and not (derived / "fixations_a.parquet").exists()
     )

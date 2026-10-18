@@ -99,7 +99,7 @@ def test_the_page_shows_the_report_the_stages_and_the_plots(
     assert all('name="csrf_token"' in f and "disabled" not in f for f in forms)
     stages = re.findall(r'name="from_stage" value="(\w+)"', "".join(forms))
     assert stages == list(STAGE_NAMES)
-    assert "skipped: calibration_failed" in html  # a skipped stage says so
+    assert "calibration_failed" in html and ">skipped<" in html  # a skipped stage says so
     images = re.findall(r'<img class="plot" src="([^"]+)"', html)
     assert [i.rsplit("/", 1)[1] for i in images] == list(PLOT_FILES)
 
@@ -302,11 +302,17 @@ def test_the_json_api(
 
 
 def test_stage_rows_list_every_stage_in_order() -> None:
-    recorded = {
-        "gaze": {"seconds": 2.0, "summary": {"frames": 5}},
-        "calibration": {"seconds": 0.1, "summary": {"skipped": "x"}},
+    entries = {
+        "gaze": {"status": "ok", "seconds": 2.0, "summary": {"frames": 5}, "error": None},
+        "calibration": {
+            "status": "skipped",
+            "seconds": 0.1,
+            "summary": {"skipped": "x"},
+            "error": None,
+        },
+        "sync": {"status": "failed", "seconds": 0.3, "summary": None, "error": "SyncError: boom"},
     }
-    rows = stage_rows({"stages": recorded})
+    rows = stage_rows(entries)
     assert [r["name"] for r in rows] == list(STAGE_NAMES)
     by_name = {r["name"]: r for r in rows}
     assert (
@@ -314,9 +320,37 @@ def test_stage_rows_list_every_stage_in_order() -> None:
         and by_name["gaze"]["seconds"] == 2.0
         and by_name["gaze"]["skipped"] is None
     )
-    assert by_name["calibration"]["skipped"] == "x"
+    assert (
+        by_name["calibration"]["skipped"] == "x" and by_name["calibration"]["status"] == "skipped"
+    )
+    assert by_name["sync"]["status"] == "failed" and by_name["sync"]["error"] == "SyncError: boom"
     assert not by_name["ingest"]["ran"] and by_name["ingest"]["seconds"] is None
-    assert all(not r["ran"] for r in stage_rows(None))
+    assert all(not r["ran"] for r in stage_rows({}))
+
+
+def test_a_failed_stage_shows_in_the_table_with_its_error_and_the_earlier_durations(
+    admin: Admin, processed: Synthetic
+) -> None:
+    from app.stage_status import write_entries
+
+    write_entries(
+        data_derived(processed),
+        {
+            "ingest": {"status": "ok", "seconds": 1.5, "summary": {"frames": 3}, "error": None},
+            "landmarks": {
+                "status": "failed",
+                "seconds": 0.2,
+                "summary": None,
+                "error": "LandmarkError: the face landmarker model does not exist",
+            },
+        },
+    )
+    html = page(admin, processed)
+    assert (
+        'class="gap"' in html and "LandmarkError: the face landmarker model does not exist" in html
+    )
+    assert ">failed<" in html and ">ok<" in html and "1.5" in html
+    assert html.count("not run") == len(STAGE_NAMES) - 2  # everything after the failure
 
 
 def test_summaries_without_a_report_or_inclusion() -> None:

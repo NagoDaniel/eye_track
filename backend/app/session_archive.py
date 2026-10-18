@@ -136,9 +136,11 @@ def import_session(db: Db, root: Path, archive_path: Path, force: bool = False) 
     """Put the archive's session under `root` and into the database.
 
     The study is created from the config snapshot when its id is not there. A session that already
-    exists is an error unless `force`, which first deletes it (rows and files). Chunk files are
-    checked against `chunks.json`; webcam chunks may be missing (an export without raw video).
-    Raises `ArchiveError`; nothing is written to the database in that case.
+    exists is an error unless `force`, which replaces it (rows and files). The archive is extracted
+    and checked first, next to the target and under a temporary name; chunk files are checked
+    against `chunks.json` (webcam chunks may be missing: an export without raw video). Only when
+    everything is fine is anything of an existing session removed. Raises `ArchiveError` and then
+    changes neither files nor database.
     """
     try:
         archive = zipfile.ZipFile(archive_path)
@@ -160,26 +162,48 @@ def import_session(db: Db, root: Path, archive_path: Path, force: bool = False) 
             raise ArchiveError(
                 f"session {session_id} already exists here; use --force to replace it"
             )
+        staging = directory.with_name(f".import-{uuid.uuid4().hex}")
+        try:
+            for info in members:
+                name = PurePosixPath(info.filename)
+                if str(name) == "chunks.json":
+                    continue
+                target = staging / ("raw/meta.json" if str(name) == "meta.json" else str(name))
+                with archive.open(info) as source, atomic_writer(target) as out:
+                    shutil.copyfileobj(source, out)
+            kept = _verify_chunks(staging, chunk_rows)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+
+    replaced: Path | None = None
+    try:
         if existing is not None:
             db.execute(delete(Chunk).where(Chunk.session_id == session_id))
             db.delete(existing)
             db.flush()
         if directory.exists():
-            shutil.rmtree(directory)
-
-        for info in members:
-            name = PurePosixPath(info.filename)
-            target = directory / ("raw/meta.json" if str(name) == "meta.json" else str(name))
-            if str(name) == "chunks.json":
-                continue
-            with archive.open(info) as source, atomic_writer(target) as out:
-                shutil.copyfileobj(source, out)
-
-    try:
-        kept = _verify_chunks(directory, chunk_rows)
-    except ArchiveError:
-        shutil.rmtree(directory, ignore_errors=True)  # do not leave a session half there
+            replaced = directory.with_name(f".replaced-{uuid.uuid4().hex}")
+            directory.rename(replaced)
+        staging.rename(directory)
+        _add_rows(db, meta, config, directory, kept)
+    except BaseException:
+        # Put everything back as it was; the caller rolls the database back.
+        if replaced is not None:
+            shutil.rmtree(directory, ignore_errors=True)
+            replaced.rename(directory)
+        shutil.rmtree(staging, ignore_errors=True)
         raise
+    if replaced is not None:
+        shutil.rmtree(replaced, ignore_errors=True)
+    return session_id
+
+
+def _add_rows(
+    db: Db, meta: dict[str, Any], config: StudyConfig, directory: Path, kept: list[dict[str, Any]]
+) -> None:
+    """The study (if new), the session and its chunk rows."""
+    session_id, study_id = uuid.UUID(meta["id"]), int(meta["study_id"])
     study = db.get(Study, study_id)
     if study is None:
         db.add(
@@ -226,7 +250,6 @@ def import_session(db: Db, root: Path, archive_path: Path, force: bool = False) 
         db.add(Chunk(session_id=session_id, stream=ChunkStream(r["stream"]), seq=r["seq"],
                      size=r["size"], sha256=r["sha256"]))  # fmt: skip
     db.flush()
-    return session_id
 
 
 def _when(value: object) -> datetime | None:
