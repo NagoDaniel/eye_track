@@ -14,6 +14,18 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T10: quality report and inclusion
+- Plan section: §8.10, §4.1, §12.1
+- Decision:
+  1. **Fixations from valid or interpolated samples (T9 item 4) confirmed** by Nágó Dániel ("you can keep it how you've done it").
+  2. **Inclusion rule** (the plan names the thresholds but not the quantities): the validation error is the mean `error_norm` over the validation blocks with data, uncorrected (the corrected value is reported too); the valid fraction is over the frames with a video on screen (a pause counts as playback). A session with no validation data is left out (`no_validation_data`: the accuracy cannot be checked), and so is a debug session (PLAN §12.1: excluded from analysis by default). Sync flags are reported only.
+  3. **Face-lost episodes** come from the server's own detections (a stretch of frames without a face of at least 500 ms, the browser's debounce), not from the browser's events, which are counted separately; both are in the report.
+  4. **Face size flags** (`min_face_ratio_warn`, `max_face_ratio_warn`, reserved for M3 by DECISIONS 2026-10-16): the share of playback frames outside the band, where the band is those multipliers times the median face ratio during the calibration dots (the device check frames are not recorded).
+  5. **Stalls:** a `video_stall` with media time 0 belongs to the video's start (the initial `waiting`) and is counted separately.
+  6. New named values in `PipelineConfig`: `quality_face_lost_min_ms` (500) and `quality_frame_gap_ms` (100).
+- Reason: details the plan leaves open.
+- Approved by: item 1 Nágó Dániel; the rest plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T9: fixations and the gaze table
 - Plan section: §7, §8.2, §8.9
 - Decision (readings of what the plan leaves open; flag any you object to):

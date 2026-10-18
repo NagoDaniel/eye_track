@@ -21,7 +21,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from app.storage import derived_dir, events_path, stimulus_frames_path
+from app.schemas import StudyConfig
+from app.storage import derived_dir, events_path, meta_path, stimulus_frames_path
 from worker.pipeline.features_a import FEATURE_COLUMNS
 from worker.pipeline.ridge import RidgeModel
 
@@ -129,12 +130,22 @@ def build(
     events += dot_events(1000, "calibration", [(100.0 + 60 * i, 100.0 + 30 * i) for i in range(2)])
     if with_validation:
         events += dot_events(VALIDATION_STARTS[0], "validation", TARGETS)
+        events.append(
+            ev(11_200.0, "calib_gate_result", block="before_video", attempt=1, passed=True,
+               skipped=False, mean_error_norm=0.04, point_errors=[0.04] * 5,
+               valid_frames_per_dot=[20, 20], reason="ok")
+        )  # fmt: skip
     events += [
         ev(VIDEO_START_MS, "video_load", video_id="1", duration=8, width=800, height=600,
            rect=VIDEO_RECT),  # fmt: skip
         viewport(VIDEO_START_MS, VIDEO_RECT),
         ev(VIDEO_END_MS, "video_ended", video_id="1"),
         viewport(VIDEO_END_MS, None),
+        ev(VIDEO_START_MS, "video_stall", video_id="1", media_time=0),  # the start of a video
+        ev(13_200.0, "video_stall", video_id="1", media_time=1.0),  # a stall in the middle
+        ev(16_050.0, "fullscreen_change", fullscreen=False),  # an exit while the video plays
+        ev(16_150.0, "fullscreen_change", fullscreen=True),
+        ev(29_400.0, "recorder_stop", chunks=1, bytes=1),
     ]  # fmt: skip
     if with_validation:
         events += dot_events(VALIDATION_STARTS[1], "validation", TARGETS)
@@ -180,8 +191,27 @@ def build(
         derived / "features_a.parquet",
     )
 
+    pq.write_table(
+        pa.table({"index": pa.array(np.arange(len(t)), pa.int64()), "pts": pa.array(t / 1000)}),
+        derived / "webcam_frames.parquet",
+    )
+    meta_path(root, study_id, session_id).write_text(
+        json.dumps({"id": str(session_id), "study_id": study_id, "is_debug": False, "flags": [],
+                    "config": StudyConfig().model_dump()}),
+        encoding="utf-8",
+    )  # fmt: skip
     (derived / "sync.json").write_text(
-        json.dumps({"version": 1, "t_of_pts": {"a_ms": 0.0, "b": 1.0}}), encoding="utf-8"
+        json.dumps(
+            {
+                "version": 1,
+                "lag_ms": -3.0,
+                "peak": 0.99,
+                "residual_max_ms": 0.0,
+                "flags": [],
+                "t_of_pts": {"a_ms": 0.0, "b": 1.0},
+            }
+        ),
+        encoding="utf-8",
     )
     weights = np.zeros((10, 2))
     weights[0, 0], weights[1, 1] = 1000.0, 1000.0
@@ -196,6 +226,11 @@ def build(
                 ],
                 "attempt_used": {"attempt": 1, "index": 0, "passed": True, "reason": "only_attempt",
                                  "start_t": 1000.0},
+                "attempts": [
+                    {"attempt": 1, "index": 0, "passed": True, "gate_reason": "ok", "dots": 2}
+                ],
+                "cv": {"chosen": "linear", "error_px": 12.0, "error_norm": 0.01},
+                "samples": {"valid": 40, "kept": 40, "rejected": 0},
                 "model": model.as_dict(),
             }
         ),

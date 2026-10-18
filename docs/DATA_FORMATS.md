@@ -23,6 +23,7 @@ studies/{study_id}/sessions/{session_id}/
     calibration_a.json               the fitted calibration model of Pipeline A (below)
     gaze_a.parquet                   the gaze of every webcam frame (below)
     fixations_a.parquet              the fixations of the playback phase (below)
+    quality.json                     the session quality report and inclusion decision (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -280,6 +281,27 @@ Not files of their own: `backend/worker/pipeline/predict.py` and `smoothing.py` 
 - **Interpolation:** invalid samples between two valid ones whose times are at most 150 ms apart (`smooth_max_interp_gap_ms`; four lost frames at 30 fps are 167 ms, three are 133 ms) are filled by linear interpolation of x and y over time. They are marked `interpolated` and stay `valid = false`. Nothing is extrapolated before the first or after the last valid sample.
 - **Segments:** runs of valid and interpolated samples; a longer gap starts a new segment, and segments are smoothed independently.
 - **Smoothing (`x_sm`, `y_sm`):** a Rauch-Tung-Striebel (forward-backward Kalman) smoother per segment with a constant-velocity model, x and y independent, measurement noise 15 px, white-noise acceleration density 3e7 px^2/s^3, velocity at the start of a segment unknown (2000 px/s). Interpolated samples count as measurements. Not smoothed (NaN): samples in no segment.
+
+### `derived/quality.json` (quality stage, PLAN §8.10)
+
+Written last, by `backend/worker/pipeline/quality.py`; the admin quality report shows it and the runner copies it to `sessions.quality`. Sections:
+
+| key | content |
+|---|---|
+| `session_flags`, `is_debug` | from `raw/meta.json` |
+| `webcam` | `frames`, `duration_s`, `fps_mean`, `fps_median`, `gaps` (steps over 100 ms), `max_gap_ms`, from `webcam_frames.parquet` |
+| `face_lost` | `all` and `playback`: `episodes`, `total_ms`, `longest_ms` of stretches without a face that last at least 500 ms (from the first frame without a face to the first with one), from the server's own detections; `playback` is null without gaze |
+| `events` | `fullscreen_exits` (while recording), `fullscreen_exits_in_playback`, `stalls` (a `video_stall` with media time over 0), `stalls_at_start`, `page_left` (page hidden or window blurred), `browser_face_lost_episodes` (the browser's `face_lost` events) |
+| `playback` | frames with the video on screen, `valid_frames`, `valid_fraction`, `blink_fraction`, `interpolated_fraction`, and `per_video`; null with a failed calibration |
+| `face_ratio` | median face ratio during the calibration dots, the study's two warn multipliers, and `playback_share_outside`: the share of playback frames whose face ratio is outside `[min_face_ratio_warn, max_face_ratio_warn]` times that median |
+| `browser_gate` | every `calib_gate_result` the browser logged: `block`, `attempt`, `passed`, `skipped`, `mean_error_norm`, `reason` |
+| `calibration` | `status`, `failed_reason`, `attempt_used`, `attempts`, `cv` and `samples` of `calibration_a.json` |
+| `validation` | the blocks, drift and `precision_px` of the validation stage (above) plus `mean_error_norm` and `mean_error_corrected_norm` (mean over the blocks with data); null with a failed calibration |
+| `sync` | `lag_ms`, `peak`, `t_of_pts`, `residual_max_ms`, `flags` of `sync.json` |
+| `inclusion` | `included`, `reasons`, `criteria` (below) |
+| `stages` | per stage its duration and summary, put in by the runner |
+
+**Inclusion** uses the study's `inclusion` thresholds (the config snapshot in `raw/meta.json`; a value equal to its threshold passes). The session is left out, with every reason listed, when: it is a debug session (`debug_session`); the calibration failed (`calibration_failed`, then nothing else is judged); there is no playback (`no_playback_data`) or its valid fraction is below `min_valid_fraction` (`valid_fraction_low`); there is no validation data (`no_validation_data`) or the mean `error_norm` over the validation blocks (uncorrected) is above `max_validation_error_norm` (`validation_error_high`). Sync flags are reported but do not exclude a session.
 
 ### Validation accuracy, precision and drift (PLAN §8.8)
 

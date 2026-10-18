@@ -77,6 +77,13 @@ class PipelineConfig:
     # Shortest fixation.
     fix_min_duration_ms: float = 100.0
 
+    # --- Quality report (PLAN §8.10) ---
+    # A stretch without a face counts as a face-lost episode from this long on (the browser's
+    # debounce, PLAN §5.7).
+    quality_face_lost_min_ms: float = 500.0
+    # A gap between two webcam frames longer than this is counted as a gap in the recording.
+    quality_frame_gap_ms: float = 100.0
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the
