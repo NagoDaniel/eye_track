@@ -61,7 +61,7 @@ class DotPath:
         return out
 
 
-def _stats(error_px: Floats, diagonal: Floats) -> dict[str, float | int | None]:
+def _stats(error_px: Floats, diagonal: Floats, limit_norm: float) -> dict[str, float | int | None]:
     if len(error_px) == 0:
         return {"frames": 0, "median_px": None, "median_norm": None, "mean_px": None,
                 "p90_px": None, "within_threshold": None}  # fmt: skip
@@ -72,7 +72,7 @@ def _stats(error_px: Floats, diagonal: Floats) -> dict[str, float | int | None]:
         "median_norm": float(np.median(norm)),
         "mean_px": float(error_px.mean()),
         "p90_px": float(np.percentile(error_px, 90)),
-        "within_threshold": float((norm <= 0.15).mean()),
+        "within_threshold": float((norm <= limit_norm).mean()),
     }
 
 
@@ -127,6 +127,7 @@ def moving_dot_report(
         "valid_frames": int(valid.sum()),
         "valid_fraction": valid_fraction,
     }
+    limit = config.dot_max_median_error_norm
     for label, names in (
         ("uncorrected", ("x_vid", "y_vid")),
         ("drift_corrected", ("x_vid_dc", "y_vid_dc")),
@@ -134,9 +135,9 @@ def moving_dot_report(
         err, diag, st = errors(*names)
         paused = path.in_pause(st)
         result[label] = {
-            **_stats(err, diag),
-            "pauses": _stats(err[paused], diag[paused]),
-            "movements": _stats(err[~paused], diag[~paused]),
+            **_stats(err, diag, limit),
+            "pauses": _stats(err[paused], diag[paused], limit),
+            "movements": _stats(err[~paused], diag[~paused], limit),
         }
     # The gaze lag: the shift of the dot's path that fits the gaze best (positive: gaze behind).
     shifts = np.arange(-LAG_RANGE_MS, LAG_RANGE_MS + 1, LAG_STEP_MS)

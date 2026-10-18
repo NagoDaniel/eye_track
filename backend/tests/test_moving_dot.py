@@ -110,6 +110,15 @@ def test_the_thresholds_are_config_values() -> None:
     assert moving_dot_report(table, events_for_full_screen_video(), PATH, lenient)["passes"]
 
 
+def test_the_share_within_the_limit_follows_the_config() -> None:
+    table = gaze_table(offset_px=(300.0, 200.0))  # about 0.28 of the diagonal
+    strict = moving_dot_report(table, events_for_full_screen_video(), PATH, CONFIG)
+    lenient = replace(CONFIG, dot_max_median_error_norm=0.5)
+    wide = moving_dot_report(table, events_for_full_screen_video(), PATH, lenient)
+    assert strict["uncorrected"]["within_threshold"] < 0.1
+    assert wide["uncorrected"]["within_threshold"] > 0.9
+
+
 def test_the_gaze_lag_is_found() -> None:
     for delay_ms in (0, 120, -80):
         r = report(gaze_table(delay_s=delay_ms / 1000, noise_px=2.0))

@@ -16,6 +16,7 @@ from app.logging import configure_logging
 from app.models import Job, JobKind
 from app.models import Session as SessionRow
 from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
+from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import derived_dir, events_path
@@ -114,6 +115,12 @@ def process_command(
         args["from_stage"] = from_stage
     if only is not None:
         args["only"] = only
+    with factory() as db:
+        existing = db.get(SessionRow, sid)
+        refusal = None if existing is None else rerun_refusal(db, existing)
+    if refusal is not None:
+        typer.echo(f"error: {refusal}", err=True)
+        raise typer.Exit(1)
     handler = make_process_session(factory, config)
     try:
         handler(Job(kind=JobKind.PROCESS_SESSION, args=args))

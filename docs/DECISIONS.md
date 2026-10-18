@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 review fixes: calibration samples, stage file, import
+- Plan section: §8.6, §12.2, §12.3
+- Decision: (1) The calibration trains on the *usable* frames of a dot (a face, no blink, finite features), not on the plan's `valid` frames (§8.6). `valid` is a property of the fitted model's output (it needs predictions inside the screen margin and the face-geometry checks), so it cannot select the samples the model is fitted on. The gaze stage applies `valid` as the plan says. (2) The per-stage status, duration, summary and error are also kept in `derived/stages.json`, written after every stage, so a failed stage leaves a trace (`quality.json` is only written when the quality stage runs). (3) `import-session --force` verifies the archive in a staging directory before it touches the existing session; a failure puts the old session back. (4) `cli.py process` refuses a session with an open job or in a state the admin "run again" also refuses. (5) The moving-dot "within threshold" share uses the configured limit (`dot_max_median_error_norm`) instead of a literal.
+- Reason: findings of the plan-reviewer subagent (R1, R2, R4, R6, R8) on `m3-pipeline-a`.
+- Approved by: Nágó Dániel
+
 ## 2026-10-18 — Milestone 3 pilot result (H1) and deferred tuning
 - Plan section: §14 (Milestone 3 "done when"), §8.6, §8.8, §12.4
 - Decision: the acceptance run (two real-webcam sessions on the moving-dot video, see PROGRESS "H1 result") meets the criterion of DECISIONS 2026-10-16 item 9 (median error at most 0.15 of the viewport diagonal, at least 80 % valid): 0.098 and 0.046, 98 % valid. Observations, none acted on yet (human, 2026-10-18: "continue with the development plan, fine-tune the models for better precision later"):

@@ -13,8 +13,9 @@ from typer.testing import CliRunner
 
 import cli
 from app.db import make_session_factory
+from app.jobs import enqueue
+from app.models import Job, JobKind, JobStatus, SessionStatus
 from app.models import Session as SessionRow
-from app.models import SessionStatus
 from tests.dbutil import make_settings
 from tests.session_db import seed_session
 from tests.session_fixture import FixtureSession, copy_fixture_session
@@ -106,6 +107,23 @@ def test_process_refuses_bad_arguments(here: FixtureSession) -> None:
     ):
         result = runner.invoke(cli.app, args)
         assert result.exit_code == 1 and message in result.output, (args, result.output)
+
+
+def test_process_refuses_a_session_that_is_busy(
+    here: FixtureSession, migrated_engine: Engine
+) -> None:
+    with Db(migrated_engine) as db:
+        job_id = enqueue(db, JobKind.PROCESS_SESSION, {"session_id": str(here.session_id)}).id
+        db.commit()
+    queued = runner.invoke(cli.app, ["process", str(here.session_id)])
+    assert queued.exit_code == 1 and "already queued or running" in queued.output
+    with Db(migrated_engine) as db:
+        db.get_one(Job, job_id).status = JobStatus.DONE
+        db.get_one(SessionRow, here.session_id).status = SessionStatus.PROCESSING
+        db.commit()
+    busy = runner.invoke(cli.app, ["process", str(here.session_id)])
+    assert busy.exit_code == 1 and "the session is processing" in busy.output
+    assert not derived(here).exists() or not (derived(here) / "quality.json").exists()
 
 
 def test_process_reports_the_stage_that_failed(
