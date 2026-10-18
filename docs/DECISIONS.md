@@ -14,6 +14,15 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T4: features table and the pipeline config
+- Plan section: §8.4, §1
+- Decision:
+  1. **`PipelineConfig`** (`backend/worker/pipeline/config.py`, DECISIONS milestone 3 item 10) now exists with the two blink thresholds (0.5 and the starting value 0.15 from milestone 2); later tasks add their fields. A stage takes it as an argument and records what it used (here as `config` in the Parquet metadata).
+  2. **The browser keeps its own copy of the blink thresholds** (`frontend/src/face/quickCalib.ts`): the browser gate is only a pass/fail check and the server's fit is authoritative (PLAN §5.6), so tuning the server value does not have to change what participants see. If the two should move together, say so and a shared definition goes into `shared/protocol.json`.
+  3. A frame without a face has all features null and `blink` false (it is invalid because it has no face).
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T3: server-side landmarks
 - Plan section: §8.3
 - Decision:

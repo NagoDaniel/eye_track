@@ -25,11 +25,20 @@ import math
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from app.storage import atomic_writer
+from worker.pipeline.config import PipelineConfig
 
 # `shared/` sits next to `backend/` in the repository and at `/shared` in the image.
 _SUBSET_FILE = Path(__file__).resolve().parents[3] / "shared" / "landmark_subset.json"
 
 MATRIX_SIZE = 16
+LANDMARK_COUNT_FULL = 478  # the mesh in landmarks.parquet (worker/pipeline/landmarks.py)
 
 
 def _load_subset() -> dict[int, int]:
@@ -157,3 +166,92 @@ def frame_features(
         tz=tz,
         face_ratio=between / aspect,
     )
+
+
+# --- The stage: landmarks.parquet to features_a.parquet (PLAN §8.4) -------------------------------
+
+FEATURES_FILE = "features_a.parquet"
+# Mesh indices of the 49-landmark subset, in the order of a feature record's `lm`.
+SUBSET_MESH_INDICES = sorted(SUBSET_POSITION, key=SUBSET_POSITION.__getitem__)
+
+# Float columns that are null in a frame without a face, in the order they are written.
+FEATURE_COLUMNS = (
+    "iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r",
+    "yaw", "pitch", "roll", "tx", "ty", "tz", "face_ratio", "blink_l", "blink_r",
+)  # fmt: skip
+
+
+def is_blink(
+    blink_l: float, blink_r: float, open_l: float, open_r: float, config: PipelineConfig
+) -> bool:
+    """PLAN §8.4: an eyeBlink blendshape above the threshold in either eye, or either eye's
+    openness below its threshold. The limits themselves are not blinks."""
+    return (
+        blink_l > config.blink_score_threshold
+        or blink_r > config.blink_score_threshold
+        or open_l < config.blink_openness_threshold
+        or open_r < config.blink_openness_threshold
+    )
+
+
+@dataclass(frozen=True)
+class FeatureSummary:
+    frames: int
+    frames_with_face: int
+    blinks: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def compute_features(landmarks: Path, out: Path, config: PipelineConfig) -> FeatureSummary:
+    """Pipeline A features of every frame of `landmarks.parquet` (see `landmarks.py`).
+
+    One row per landmark row, with `index` and `pts` copied. `face` is false and every feature null
+    in a frame without a face; `blink` is then false (such a frame is invalid for another reason).
+    `blink_l` and `blink_r` are the blendshape scores. The thresholds used go into the file's
+    metadata as `config`. Raises ValueError when the frame size is missing from the metadata.
+    """
+    table = pq.read_table(landmarks)
+    metadata = table.schema.metadata or {}
+    try:
+        aspect = int(metadata[b"width"]) / int(metadata[b"height"])
+    except KeyError as exc:
+        raise ValueError(f"{landmarks.name} has no frame width and height in its metadata") from exc
+
+    n = table.num_rows
+    face = np.array(table["face"].to_pylist(), dtype=np.bool_)
+    rows = np.flatnonzero(face)
+    values = np.full((n, len(FEATURE_COLUMNS)), np.nan)
+    blink = np.zeros(n, dtype=np.bool_)
+    if len(rows):
+        faces = table.take(rows)
+        mesh = (
+            faces["lm"].combine_chunks().values.to_numpy(zero_copy_only=False)
+            .reshape(len(rows), LANDMARK_COUNT_FULL, 3)
+        )  # fmt: skip
+        subset = mesh[:, SUBSET_MESH_INDICES, :]
+        matrices = faces["matrix"].combine_chunks().values.to_numpy(zero_copy_only=False)
+        matrices = matrices.reshape(len(rows), MATRIX_SIZE)
+        scores = np.stack(
+            [faces["blink_l"].to_numpy(zero_copy_only=False), faces["blink_r"].to_numpy()], axis=1
+        )
+        for k, row in enumerate(rows):
+            f = frame_features(subset[k], matrices[k], aspect)
+            values[row] = (
+                *f.iris_l, *f.iris_r, f.open_l, f.open_r, f.yaw, f.pitch, f.roll,
+                f.tx, f.ty, f.tz, f.face_ratio, scores[k, 0], scores[k, 1],
+            )  # fmt: skip
+            blink[row] = is_blink(scores[k, 0], scores[k, 1], f.open_l, f.open_r, config)
+
+    no_face = ~face
+    columns = [table["index"], table["pts"], table["face"]]
+    columns += [pa.array(values[:, i], pa.float64(), mask=no_face) for i in range(values.shape[1])]
+    columns.append(pa.array(blink))
+    names = ["index", "pts", "face", *FEATURE_COLUMNS, "blink"]
+    result = pa.Table.from_arrays(columns, names=names).replace_schema_metadata(
+        {"config": json.dumps(config.as_dict())}
+    )
+    with atomic_writer(out) as target:
+        pq.write_table(result, target, compression="snappy")
+    return FeatureSummary(frames=n, frames_with_face=len(rows), blinks=int(blink.sum()))

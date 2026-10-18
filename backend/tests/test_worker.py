@@ -184,20 +184,28 @@ def test_main_recovers_stale_jobs_at_start_and_stops_on_sigterm(migrated_engine:
         stderr=subprocess.PIPE,
         text=True,
     )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            with f() as db:
-                jobs = {j.id: j for j in db.query(Job).all()}
-                if all(j.status is JobStatus.FAILED for j in jobs.values()):
-                    break
-            assert proc.poll() is None, "worker exited early"
-            time.sleep(0.2)
+    problem = None
+    jobs: dict[int, Job] = {}
+    deadline = time.monotonic() + 30
+    while problem is None:
+        with f() as db:
+            jobs = {j.id: j for j in db.query(Job).all()}
+        if jobs and all(j.status is JobStatus.FAILED for j in jobs.values()):
+            break
+        if proc.poll() is not None:
+            problem = f"the worker exited early with code {proc.returncode}"
+        elif time.monotonic() > deadline:
+            problem = "the stale jobs were not dealt with within 30 s"
         else:
-            pytest.fail("the stale jobs were not dealt with within 30 s")
-    finally:
-        proc.send_signal(signal.SIGTERM)
-    _, stderr = proc.communicate(timeout=20)
+            time.sleep(0.2)
+    proc.send_signal(signal.SIGTERM)
+    try:
+        _, stderr = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _, stderr = proc.communicate()
+        problem = problem or "the worker did not stop within 30 s of SIGTERM"
+    assert problem is None, f"{problem}\nworker log:\n{stderr}"
 
     # Job 1 was requeued and claimed again (attempt 2); no handler is registered yet, so it fails
     # with that message. Job 2 had used all attempts and failed as "worker died".

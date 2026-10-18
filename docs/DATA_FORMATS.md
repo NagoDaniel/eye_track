@@ -18,6 +18,7 @@ studies/{study_id}/sessions/{session_id}/
   derived/
     webcam_frames.parquet            one row per webcam frame, from ingest (below)
     landmarks.parquet                server-side MediaPipe landmarks of every webcam frame (below)
+    features_a.parquet               Pipeline A features of every webcam frame (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -158,6 +159,23 @@ Written when the session is created and rewritten (atomically) when it completes
 ## Session status
 
 `created` (session made) → `consented` (consent recorded) → `recording` (first chunk accepted) → `uploaded` (`/complete` found no missing chunk). `processing`, `processed`, `failed` and `withdrawn` exist in the database but nothing sets them yet. Completing a session does not enqueue a job until Milestone 3.
+
+### `derived/features_a.parquet` (features stage, PLAN §8.4)
+
+One row per row of `landmarks.parquet`, computed from the 49-landmark subset of `shared/landmark_subset.json`, the matrix and the frame's aspect ratio by `frame_features` (`backend/worker/pipeline/features_a.py`, the Python twin of the browser's `features.ts`; definitions in that file's header).
+
+| column | type | meaning |
+|---|---|---|
+| `index`, `pts`, `face` | | copied from `landmarks.parquet` |
+| `iris_l_x`, `iris_l_y`, `iris_r_x`, `iris_r_y` | float64 | iris centre in the eye-local frame (origin at the middle of the eye corners, x along the corner-to-corner line, unit: eye width) |
+| `open_l`, `open_r` | float64 | eye openness: middle lid distance over eye width |
+| `yaw`, `pitch`, `roll` | float64 | head angles in degrees from the transformation matrix (positive pitch: head down; positive yaw: face turned to the image's right; positive roll: counter-clockwise) |
+| `tx`, `ty`, `tz` | float64 | head translation in cm |
+| `face_ratio` | float64 | distance between the two eye centres as a fraction of the frame width |
+| `blink_l`, `blink_r` | float64 | `eyeBlinkLeft` / `eyeBlinkRight` scores |
+| `blink` | bool | `blink_l > blink_score_threshold` or `blink_r > blink_score_threshold` or `open_l < blink_openness_threshold` or `open_r < blink_openness_threshold` (defaults 0.5 and 0.15; PLAN §8.4) |
+
+Every float column is null in a frame without a face, where `blink` is false. Schema metadata `config` holds the thresholds used, as JSON. The thresholds are fields of `PipelineConfig` (`backend/worker/pipeline/config.py`), which collects the plan's numbers for all stages.
 
 ## Participant code
 
