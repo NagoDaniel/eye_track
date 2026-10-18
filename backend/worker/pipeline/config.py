@@ -70,6 +70,13 @@ class PipelineConfig:
     # Prior spread of the velocity at the start of a segment (px/s): effectively unknown.
     smooth_initial_velocity_std: float = 2000.0
 
+    # --- Fixations, I-DT (PLAN §8.9) ---
+    # Dispersion threshold = max(fraction * viewport width, factor * session validation precision).
+    fix_dispersion_width_fraction: float = 0.05
+    fix_precision_factor: float = 2.0
+    # Shortest fixation.
+    fix_min_duration_ms: float = 100.0
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the

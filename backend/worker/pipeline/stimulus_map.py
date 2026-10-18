@@ -106,3 +106,28 @@ class StimulusMap:
                 ids[i] = video.video_id
                 stim[i] = video.stim_time(float(times[i]))
         return StimulusLookup(video_id=ids, stim_time=stim)
+
+
+class VideoRectTimeline:
+    """Where the video content is on screen (PLAN §5.7: the letterboxed rectangle, in viewport CSS
+    px), from the `viewport_change` events; None while no video is shown."""
+
+    def __init__(self, events: Sequence[EventRecord]) -> None:
+        changes = [e for e in events if e.type == "viewport_change"]
+        self._t = np.array([e.t for e in changes], dtype=np.float64)
+        self._rect = np.full((len(changes), 4), np.nan)
+        for i, e in enumerate(changes):
+            rect = e.data.get("video_rect")
+            if rect is not None:
+                self._rect[i] = (rect["x"], rect["y"], rect["width"], rect["height"])
+
+    def normalise(
+        self, t_ms: NDArray[np.float64], x: NDArray[np.float64], y: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """x and y as fractions of the video content rectangle (0 to 1 inside it, outside it
+        below 0 or above 1); NaN where no video is shown or the input is NaN."""
+        if len(self._t) == 0:
+            return np.full(len(x), np.nan), np.full(len(y), np.nan)
+        k = np.searchsorted(self._t, t_ms, side="right") - 1
+        rect = np.where((k >= 0)[:, None], self._rect[np.clip(k, 0, None)], np.nan)
+        return (x - rect[:, 0]) / rect[:, 2], (y - rect[:, 1]) / rect[:, 3]

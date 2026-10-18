@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T9: fixations and the gaze table
+- Plan section: §7, §8.2, §8.9
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **`x_vid`, `y_vid` come from the smoothed gaze** (`x_sm`, `y_sm`), the column the analysis will use; the raw `x_px` has no video coordinates. The content rectangle is the one of the last `viewport_change` event (null when no video is shown).
+  2. **Extra columns** in `gaze_a.parquet`: `interpolated`, and the drift-corrected `x_px_dc`, `y_px_dc`, `x_sm_dc`, `y_sm_dc`, `x_vid_dc`, `y_vid_dc` (the plan asks for "drift_corrected gaze columns" without naming them). Null when no validation block gave data; with a single block the correction is that block's constant offset (DECISIONS milestone 3 item 7), although the plan says "if several blocks exist".
+  3. **Phase:** `calibration` / `validation` for the span from the first to the last event of a run of those dots, `playback` while a video is on screen, else `other`. Frames in a pause or stall are `playback` with a null `stim_time`.
+  4. **Fixations use the smoothed samples that are valid or interpolated**, not only the valid ones the plan names: interpolation exists to bridge short gaps, and a blink inside a fixation must not split it. A run ends at a frame without a smoothed value, a change of video or a change of viewport size. The dispersion limit uses the viewport width at the start of the run.
+  5. **Duration** of a fixation is the time between its first and last sample (so a 100 ms minimum needs four 30 fps frames). The dispersion is the sum of the x and y ranges (I-DT as published).
+  6. Fixation centroids are given in px and video coordinates, both uncorrected and drift-corrected; the analysis (Milestone 4) chooses.
+  7. New named values in `PipelineConfig`: `fix_dispersion_width_fraction` 0.05, `fix_precision_factor` 2, `fix_min_duration_ms` 100 (all from the plan).
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T8: validation and drift
 - Plan section: §8.8
 - Decision (readings of what the plan leaves open; flag any you object to):

@@ -29,7 +29,12 @@ from app.schemas import EventRecord
 from app.storage import derived_dir, events_path
 from worker.pipeline.calibration import CALIBRATION_FILE, Dot, build_dots
 from worker.pipeline.config import PipelineConfig
-from worker.pipeline.predict import ViewportTimeline, predict_session, viewport_timeline
+from worker.pipeline.predict import (
+    SessionPrediction,
+    ViewportTimeline,
+    predict_session,
+    viewport_timeline,
+)
 
 Floats = NDArray[np.float64]
 Bools = NDArray[np.bool_]
@@ -300,9 +305,14 @@ def score_validation(
 
 
 def validate_session(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    prediction: SessionPrediction | None = None,
 ) -> ValidationResult:
-    """Predict the session and score its validation blocks from the calibration attempt on."""
+    """Score the session's validation blocks from the calibration attempt on. The predictions are
+    made here unless the caller already has them."""
     derived = derived_dir(root, study_id, session_id)
     calibration = json.loads((derived / CALIBRATION_FILE).read_text(encoding="utf-8"))
     if calibration["status"] != "ok":
@@ -311,7 +321,7 @@ def validate_session(
         )
     since = float(calibration["attempt_used"]["start_t"])
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
-    prediction = predict_session(root, study_id, session_id, config)
+    prediction = prediction or predict_session(root, study_id, session_id, config)
     gaze = prediction.gaze
     return score_validation(
         validation_blocks(events, since), prediction.t_ms, gaze.x_px, gaze.y_px, gaze.valid,

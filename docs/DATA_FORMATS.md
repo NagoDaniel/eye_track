@@ -21,6 +21,8 @@ studies/{study_id}/sessions/{session_id}/
     features_a.parquet               Pipeline A features of every webcam frame (below)
     sync.json                        webcam frame time to client time (below)
     calibration_a.json               the fitted calibration model of Pipeline A (below)
+    gaze_a.parquet                   the gaze of every webcam frame (below)
+    fixations_a.parquet              the fixations of the playback phase (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -230,6 +232,44 @@ The per-session gaze model of Pipeline A, fitted on the calibration dots. Code: 
 - **Outliers:** after a first fit, samples whose prediction is further than 2.5 MADs from their dot's median prediction (MAD = the median distance of that dot's predictions to their median) are dropped, and alpha, degree and the weights are chosen and fitted again on the rest.
 - **`model`:** `StandardScaler` (population std, 0 replaced by 1), then for degree 2 the products `x_i * x_j` for `i <= j` after the original columns (scikit-learn's order), then ridge with an unpenalised intercept; `weights[0]` is x, `weights[1]` is y. The browser's `ridge.ts` and this file use the same definition and are tested against scikit-learn.
 - **`status: "failed"`** (`model` null, nothing else is run for the session): `no_calibration_dots`, `too_few_valid_frames` (more than 3 dots with fewer than 5 valid frames), or `fit_impossible`. A failed calibration is a data problem, not a crash; the session is then excluded (DECISIONS milestone 3 item 15).
+
+### `derived/gaze_a.parquet` (gaze stage, PLAN §7)
+
+One row per webcam frame (the rows of `features_a.parquet`), in time order. Code: `backend/worker/pipeline/gaze.py`.
+
+| column | type | meaning |
+|---|---|---|
+| `t` | float64 | client clock, ms (`a + 1000 b pts` of `sync.json`) |
+| `webcam_pts` | float64 | seconds in `webcam.webm` |
+| `video_id` | string, null | the stimulus video on screen (from its first presented frame to its `video_ended` event) |
+| `stim_time` | float64, null | stimulus media time in seconds; null outside a video and in a pause or stall |
+| `x_px`, `y_px` | float32 | raw prediction in viewport CSS px; NaN without usable features |
+| `x_sm`, `y_sm` | float32 | after smoothing; NaN outside the smoother's segments |
+| `x_vid`, `y_vid` | float32, null | `x_sm`, `y_sm` normalised to the video content rectangle (0 to 1 inside; outside it below 0 or above 1); null when no video is shown |
+| `valid` | bool | usable features and the prediction within the viewport expanded by 15 % |
+| `blink` | bool | the blink rule of `features_a.parquet` |
+| `conf` | float32 | 0 for an invalid sample, 0.5 for an interpolated one, otherwise 1 minus a linear penalty for the prediction lying outside the viewport (1 inside it, 0 at the 15 % limit) |
+| `phase` | string | `calibration` or `validation` inside a run of those dots, `playback` while a video is on screen, else `other` |
+
+Added to the plan's columns: `interpolated` (bool: filled in by the smoother's gap interpolation; `valid` stays false) and the drift-corrected gaze `x_px_dc`, `y_px_dc`, `x_sm_dc`, `y_sm_dc`, `x_vid_dc`, `y_vid_dc` (the same columns with the drift of `validation` taken out; all null when no validation block gave data). The uncorrected columns are always kept. Schema metadata `gaze` (JSON) holds the config used, whether the drift correction was possible and the validation precision.
+
+### `derived/fixations_a.parquet` (gaze stage, PLAN §8.9)
+
+I-DT on the smoothed gaze (valid and interpolated samples) of the playback phase, per run of consecutive frames in one video and one viewport size. One row per fixation:
+
+| column | type | meaning |
+|---|---|---|
+| `id` | int64 | 0-based |
+| `start_t`, `end_t`, `duration_ms` | float64 | client clock of the first and last sample (duration = their difference) |
+| `samples` | int64 | |
+| `video_id` | string | |
+| `stim_start`, `stim_end` | float64, null | media time at the first and last sample |
+| `dispersion_px` | float64 | x range plus y range of the samples |
+| `cx_px`, `cy_px` | float64 | centroid of the smoothed gaze, viewport px |
+| `cx_vid`, `cy_vid` | float64, null | centroid in video-normalised coordinates |
+| `cx_px_dc`, `cy_px_dc`, `cx_vid_dc`, `cy_vid_dc` | float64, null | the same, drift-corrected |
+
+Parameters: the dispersion limit is `max(0.05 * viewport width, 2 * validation precision)`, the minimum duration 100 ms. Schema metadata `fixations` (JSON) holds the algorithm, these values (and the validation precision measured) and the whole config.
 
 ### Prediction, validity and smoothing (PLAN §8.7)
 
