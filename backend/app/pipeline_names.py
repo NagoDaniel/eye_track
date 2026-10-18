@@ -37,3 +37,7 @@ PLOT_CAPTIONS = {
     "gaze.png": "Gaze over time",
 }
 PLOT_FILES = tuple(PLOT_CAPTIONS)
+
+# The debug replay video (`derived/debug/replay.mp4`), rendered on request (PLAN §12.2). It contains
+# the participant's webcam video, so it is only served to a logged-in admin.
+REPLAY_FILE = "replay.mp4"

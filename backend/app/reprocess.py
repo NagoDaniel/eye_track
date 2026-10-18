@@ -20,13 +20,16 @@ RERUNNABLE = (SessionStatus.UPLOADED, SessionStatus.PROCESSED, SessionStatus.FAI
 OPEN_JOBS = (JobStatus.QUEUED, JobStatus.RUNNING)
 
 
+JOB_KINDS = (JobKind.PROCESS_SESSION, JobKind.RENDER_DEBUG)
+
+
 def jobs_of(db: Db, session_id: uuid.UUID) -> list[Job]:
-    """The processing jobs of a session, newest first."""
+    """The processing and replay jobs of a session, newest first."""
     return list(
         db.scalars(
             select(Job)
             .where(
-                Job.kind == JobKind.PROCESS_SESSION,
+                Job.kind.in_(JOB_KINDS),
                 Job.args["session_id"].as_string() == str(session_id),
             )
             .order_by(Job.id.desc())
@@ -42,7 +45,7 @@ def rerun_refusal(db: Db, session: SessionRow) -> str | None:
             "only uploaded, processed or failed ones can be run again"
         )
     if any(job.status in OPEN_JOBS for job in jobs_of(db, session.id)):
-        return "a processing job for this session is already queued or running"
+        return "a job for this session is already queued or running"
     return None
 
 
@@ -63,3 +66,27 @@ def queue_rerun(db: Db, session_id: uuid.UUID, from_stage: str | None) -> Job:
     if from_stage is not None:
         args["from_stage"] = from_stage
     return enqueue(db, JobKind.PROCESS_SESSION, args)
+
+
+def render_refusal(db: Db, session: SessionRow, has_gaze: bool) -> str | None:
+    """Why the debug replay cannot be rendered now, or None."""
+    if session.status != SessionStatus.PROCESSED:
+        return f"the session is {session.status.value}; only a processed session can be replayed"
+    if not has_gaze:
+        return "the session has no gaze (its calibration failed?), so there is nothing to replay"
+    if any(job.status in OPEN_JOBS for job in jobs_of(db, session.id)):
+        return "a job for this session is already queued or running"
+    return None
+
+
+def queue_render(db: Db, session_id: uuid.UUID, has_gaze: bool) -> Job:
+    """Queue `render_debug` for a processed session. The caller commits.
+
+    Raises NotFoundError or ConflictError (not now)."""
+    session = db.get(SessionRow, session_id)
+    if session is None:
+        raise NotFoundError(f"session {session_id} not found")
+    refusal = render_refusal(db, session, has_gaze)
+    if refusal is not None:
+        raise ConflictError(refusal)
+    return enqueue(db, JobKind.RENDER_DEBUG, {"session_id": str(session_id)})

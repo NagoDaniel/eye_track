@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T15: debug replay video and webcam playback
+- Plan section: §12.2, §10; DECISIONS 2026-10-14 item 3, milestone 3 item 17
+- Decision:
+  1. **Job kind `render_debug`** (migration `0002`: the `job_kind` CHECK now lists it; the downgrade deletes replay jobs and restores the old list). The worker's handler draws `derived/debug/replay.mp4` and leaves the session status alone. One open job of either kind per session at a time: a render and a re-run exclude each other (both rewrite files the other reads). Rendering needs a processed session with gaze; the button says why when it is off.
+  2. **What the film shows:** see DATA_FORMATS. Drawn at 30 fps along the client clock for the stretches with a video on screen; raw, smoothed and drift-corrected gaze (the plan names raw and smoothed; the corrected one is added because the pilot is about the validation error), fixation rings, webcam with landmarks, timeline bar. Pipeline B is left out until M5. The webcam inset is optional (not drawn when the recording is gone), the stimulus video is not (the replay says to upload it again when missing: imported sessions need it).
+  3. **Participant video is marked and gated:** the file's banner says it contains participant video; the replay and the webcam recording are served only to a logged-in admin (401 otherwise), never cached, with range requests so they can be searched, and every access is logged (`participant video served to an admin`, with the session id). The webcam recording has its own page that shows a warning and plays `raw/webcam.webm`; it is not embedded in the session page. A session whose raw video was deleted (`raw_video_deleted_at`) answers 404.
+  4. `cli.py render-debug <id>` renders here and now and prints the warning.
+  5. Looked at frames of the recorded session by eye and made the text readable (a darkened panel behind it).
+- Reason: details the plan leaves open for the replay.
+- Approved by: plan; details plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T14: admin session inspector
 - Plan section: §12.2, §6 (admin), §10; DECISIONS 2026-10-14 item 2
 - Decision:

@@ -50,7 +50,7 @@ print('moving-dot path:', path.duration_s, 's')
 echo "== CLI and alembic available"
 run python cli.py --help >/dev/null
 # The CLI reads its settings before it shows the help of a command, so give it dummy ones.
-for command in process export-session import-session moving-dot-report; do
+for command in process export-session import-session moving-dot-report render-debug; do
   docker run --rm --entrypoint "" -e SECRET_KEY=image-test-secret-0123456789abcdef \
     -e POSTGRES_PASSWORD=x "$IMAGE" python cli.py "$command" --help >/dev/null \
     || fail "cli.py $command --help failed"

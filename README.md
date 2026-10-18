@@ -90,6 +90,7 @@ All commands run in the project directory on the server.
 | Create an admin | `docker compose exec api python cli.py create-admin --username <name>` |
 | Process a session again | `docker compose exec api python cli.py process <session id> [--from-stage sync \| --only gaze] [--keep-intermediates]` (stages: ingest, landmarks, features, sync, calibration, gaze, quality, plots) |
 | Export / import a session | `docker compose exec api python cli.py export-session <session id> --out /data/s.zip [--no-raw-video]`, then `python cli.py import-session s.zip [--force]` on a development instance. The archive contains the participant's webcam video unless `--no-raw-video` is given. |
+| Render the debug replay video | `docker compose exec api python cli.py render-debug <session id>`, or the button on the session page in the admin. **The video contains the participant's webcam video**; only logged-in admins can play it. |
 | Check the moving-dot pilot | `docker compose exec api python cli.py moving-dot-report <session id> [--plot /data/dot.png]` (exit status 0: pass, 2: fail) |
 | Stop / start | `docker compose stop` / `docker compose up -d` |
 | Pipeline B model weights | `./scripts/fetch_models.sh` (default: ResNet-50) or `./scripts/fetch_models.sh l2cs_mobileone_s0` |

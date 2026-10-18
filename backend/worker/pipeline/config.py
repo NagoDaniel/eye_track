@@ -90,6 +90,11 @@ class PipelineConfig:
     dot_max_median_error_norm: float = 0.15
     dot_min_valid_fraction: float = 0.8
 
+    # --- Debug replay video (PLAN §12.2) ---
+    replay_fps: float = 30.0
+    # The video is scaled to this width (up or down); the timeline bar is added below it.
+    replay_width: int = 960
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the

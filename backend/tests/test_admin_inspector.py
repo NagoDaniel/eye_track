@@ -221,7 +221,8 @@ def test_the_button_queues_the_job_and_the_page_waits_for_it(
     assert job.args == {"session_id": str(processed.session_id), "from_stage": "gaze"}
     html = page(admin, processed, "?queued=true")
     assert "Processing is queued" in html and "already queued or running" in html
-    assert html.count(" disabled") == len(STAGE_NAMES)  # no second job while one is open
+    # No second job while one is open: the stage buttons and the replay button are off.
+    assert html.count(" disabled") == len(STAGE_NAMES) + 1
     assert post_rerun(admin, processed).status_code == 409
 
 
@@ -322,3 +323,145 @@ def test_summaries_without_a_report_or_inclusion() -> None:
     assert quality_summary(None) is None and inclusion_of(None) is None
     assert inclusion_of({"inclusion": "garbage"}) is None
     assert quality_summary({})["inclusion"]["included"] is None  # type: ignore[index]
+
+
+# --- the debug replay and the webcam recording ---
+
+
+def put_video(path: Path, codec: str = "libx264") -> Path:
+    from tests.videos import make_video
+
+    return make_video(path, seconds=1.0, size="160x120", codec=codec)
+
+
+def replay_file(s: Synthetic) -> Path:
+    return data_derived(s) / "debug" / "replay.mp4"
+
+
+def webcam_file(s: Synthetic) -> Path:
+    return data_derived(s).parent / "raw" / "webcam.webm"
+
+
+def test_the_page_offers_the_replay_and_says_it_shows_the_participant(
+    admin: Admin, processed: Synthetic
+) -> None:
+    html = page(admin, processed)
+    assert "Both show the participant's webcam video" in html
+    assert "Render the debug replay" in html and "Not rendered yet" in html
+    assert "<video" not in html  # nothing plays until it exists
+    put_video(replay_file(processed))
+    html = page(admin, processed)
+    assert 'src="/admin/sessions/' in html and "replay.mp4" in html and "Render it again" in html
+
+
+def test_the_replay_button_queues_one_render_job(
+    admin: Admin, processed: Synthetic, migrated_engine: Engine
+) -> None:
+    r = admin.client.post(f"/admin/sessions/{processed.session_id}/render-debug",
+                          data={"csrf_token": admin.csrf}, follow_redirects=False)  # fmt: skip
+    assert r.status_code == 303 and r.headers["location"].endswith("?queued=true")
+    (job,) = jobs(migrated_engine)
+    assert job.kind is JobKind.RENDER_DEBUG and job.args == {
+        "session_id": str(processed.session_id)
+    }
+    # While it is open neither another render nor a re-run of the stages is allowed.
+    again = admin.client.post(f"/admin/sessions/{processed.session_id}/render-debug",
+                              data={"csrf_token": admin.csrf}, follow_redirects=False)  # fmt: skip
+    assert again.status_code == 409 and post_rerun(admin, processed).status_code == 409
+    html = page(admin, processed)
+    assert "debug replay" in html and "already queued or running" in html
+
+
+def test_the_replay_needs_a_processed_session_with_gaze(
+    admin: Admin, processed: Synthetic, migrated_engine: Engine
+) -> None:
+    url = f"/admin/api/sessions/{processed.session_id}/render-debug"
+    assert admin.client.post(url).status_code == 403  # no CSRF header
+    set_status(migrated_engine, processed, SessionStatus.UPLOADED)
+    refused = admin.client.post(url, headers=admin.headers)
+    assert refused.status_code == 409 and "only a processed session" in refused.json()["detail"]
+    set_status(migrated_engine, processed, SessionStatus.PROCESSED)
+    (data_derived(processed) / "gaze_a.parquet").unlink()
+    refused = admin.client.post(url, headers=admin.headers)
+    assert refused.status_code == 409 and "no gaze" in refused.json()["detail"]
+    assert (
+        admin.client.post(
+            f"/admin/api/sessions/{uuid.UUID(int=9)}/render-debug", headers=admin.headers
+        ).status_code
+        == 404
+    )
+    assert jobs(migrated_engine) == []
+
+
+def test_the_replay_is_served_with_range_requests_to_admins_only_and_logged(
+    admin: Admin, processed: Synthetic, caplog: pytest.LogCaptureFixture
+) -> None:
+    video = put_video(replay_file(processed))
+    url = f"/admin/sessions/{processed.session_id}/debug/replay.mp4"
+    with caplog.at_level("INFO", logger="admin"):
+        whole = admin.client.get(url)
+        part = admin.client.get(url, headers={"Range": "bytes=0-99"})
+    assert whole.status_code == 200 and whole.headers["content-type"] == "video/mp4"
+    assert (
+        whole.headers["accept-ranges"] == "bytes" and whole.headers["cache-control"] == "no-store"
+    )
+    assert whole.content == video.read_bytes()
+    assert (
+        part.status_code == 206
+        and part.headers["content-range"] == f"bytes 0-99/{video.stat().st_size}"
+    )
+    assert part.content == video.read_bytes()[:100]
+    served = [r for r in caplog.records if r.name == "admin"]
+    assert [r.getMessage() for r in served] == ["participant video served to an admin"] * 2
+    assert all(getattr(r, "session_id", None) == str(processed.session_id) for r in served)
+    assert anonymous(admin).get(url).status_code == 401
+
+
+def test_the_webcam_recording_is_shown_on_request_with_a_warning(
+    admin: Admin, processed: Synthetic
+) -> None:
+    assert "Show the webcam recording" not in page(admin, processed)  # not assembled yet
+    assert "has not been assembled" in page(admin, processed)
+    put_video(webcam_file(processed), codec="libvpx")
+    assert "Show the webcam recording" in page(admin, processed)
+    shown = admin.client.get(f"/admin/sessions/{processed.session_id}/webcam")
+    assert shown.status_code == 200
+    assert (
+        "This is the participant's webcam video" in shown.text and "<video controls" in shown.text
+    )
+    assert f"/admin/sessions/{processed.session_id}/webcam.webm" in shown.text
+
+
+def test_the_webcam_file_supports_seeking_and_is_for_admins_only(
+    admin: Admin, processed: Synthetic
+) -> None:
+    video = put_video(webcam_file(processed), codec="libvpx")
+    url = f"/admin/sessions/{processed.session_id}/webcam.webm"
+    part = admin.client.get(url, headers={"Range": "bytes=10-59"})
+    assert part.status_code == 206 and part.headers["content-type"] == "video/webm"
+    assert part.content == video.read_bytes()[10:60]
+    assert anonymous(admin).get(url).status_code == 401
+    assert (
+        anonymous(admin)
+        .get(f"/admin/sessions/{processed.session_id}/webcam", follow_redirects=False)
+        .status_code
+        == 303
+    )
+
+
+def test_a_deleted_or_missing_webcam_recording_is_not_served(
+    admin: Admin, processed: Synthetic, migrated_engine: Engine
+) -> None:
+    url = f"/admin/sessions/{processed.session_id}/webcam.webm"
+    assert admin.client.get(url).status_code == 404  # never assembled
+    put_video(webcam_file(processed), codec="libvpx")
+    with DbSession(migrated_engine) as db:
+        from datetime import UTC, datetime
+
+        db.get_one(SessionRow, processed.session_id).raw_video_deleted_at = datetime.now(UTC)
+        db.commit()
+    assert admin.client.get(url).status_code == 404
+    assert admin.client.get(f"/admin/sessions/{processed.session_id}/webcam").status_code == 404
+    assert "was deleted on" in page(admin, processed) and "Show the webcam recording" not in page(
+        admin, processed
+    )

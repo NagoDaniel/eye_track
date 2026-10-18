@@ -15,7 +15,7 @@ from app.events import parse_events
 from app.logging import configure_logging
 from app.models import Job, JobKind
 from app.models import Session as SessionRow
-from app.pipeline_names import STAGE_NAMES
+from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import derived_dir, events_path
@@ -24,6 +24,7 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
 from worker.pipeline.plots import plot_moving_dot, png_bytes
+from worker.pipeline.replay import ReplayError, render_replay
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -169,6 +170,33 @@ def import_session_command(
             raise typer.Exit(1) from exc
         db.commit()
     typer.echo(f"Imported session {sid}. Process it again with: python cli.py process {sid}")
+
+
+@app.command("render-debug")
+def render_debug_command(
+    session_id: str = typer.Argument(..., help="A processed session."),
+) -> None:
+    """Render the debug replay video of a session here and now (PLAN §12.2).
+
+    The video contains the participant's webcam video: it is written next to the session's other
+    derived files and is only served to a logged-in admin."""
+    sid = _session_id(session_id)
+    config = settings()
+    with open_session() as db:
+        row = db.get(SessionRow, sid)
+        if row is None:
+            typer.echo(f"error: session {sid} does not exist", err=True)
+            raise typer.Exit(1)
+        study_id = row.study_id
+    try:
+        summary = render_replay(config.data_root, study_id, sid, PipelineConfig())
+    except ReplayError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    target = derived_dir(config.data_root, study_id, sid) / "debug" / REPLAY_FILE
+    size = f"{summary.frames} frames ({summary.seconds:.1f} s), {summary.bytes / 1e6:.1f} MB"
+    typer.echo(f"Wrote {target}: {size}")
+    typer.echo("Warning: the video contains the participant's webcam video (personal data).")
 
 
 def _default_dot_path() -> Path:

@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.events import assemble_events, parse_events
 from app.models import Chunk, Session, Study
-from app.pipeline_names import PLOT_CAPTIONS, STAGE_DESCRIPTIONS, STAGE_NAMES
-from app.reprocess import jobs_of, rerun_refusal
+from app.pipeline_names import PLOT_CAPTIONS, REPLAY_FILE, STAGE_DESCRIPTIONS, STAGE_NAMES
+from app.reprocess import jobs_of, render_refusal, rerun_refusal
 from app.schemas import EventRecord
 from app.service_errors import NotFoundError
-from app.storage import STREAMS, chunk_path, derived_dir
+from app.storage import STREAMS, chunk_path, derived_dir, webcam_path
 
 MAX_EVENTS_SHOWN = 1000
 
@@ -143,6 +143,17 @@ def session_detail(
         "plots": plots_on_disk(data_root, study.id, session_id),
         "jobs": job_rows(db, session_id),
         "rerun_refused": rerun_refusal(db, session),
+        "replay": (derived_dir(data_root, study.id, session_id) / "debug" / REPLAY_FILE).is_file(),
+        "render_refused": render_refusal(
+            db,
+            session,
+            (derived_dir(data_root, study.id, session_id) / "gaze_a.parquet").is_file(),
+        ),
+        "webcam_available": session.raw_video_deleted_at is None
+        and webcam_path(data_root, study.id, session_id).is_file(),
+        "webcam_deleted_at": session.raw_video_deleted_at.isoformat()
+        if session.raw_video_deleted_at
+        else None,
         "chunks": {name: s["count"] for name, s in streams.items()},
         "streams": streams,
         "events": events,
@@ -228,6 +239,7 @@ def job_rows(db: DbSession, session_id: uuid.UUID) -> list[dict[str, Any]]:
         rows.append(
             {
                 "id": job.id,
+                "kind": job.kind.value,
                 "status": job.status.value,
                 "attempts": job.attempts,
                 "from_stage": job.args.get("from_stage"),

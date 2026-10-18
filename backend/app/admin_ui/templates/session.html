@@ -76,13 +76,13 @@
 </table>
 {% if session.jobs %}
 <table>
-  <thead><tr><th class="num">Job</th><th>Status</th><th>From stage</th><th>Queued</th><th>Finished</th></tr></thead>
+  <thead><tr><th class="num">Job</th><th>What</th><th>Status</th><th>From stage</th><th>Queued</th><th>Finished</th></tr></thead>
   <tbody>
   {% for j in session.jobs %}
     <tr{% if j.status == "failed" %} class="gap"{% endif %}>
-      <td class="num">{{ j.id }}</td><td>{{ j.status }}</td><td>{{ j.from_stage or j.only or "start" }}</td><td>{{ j.created_at }}</td><td>{{ j.finished_at or "-" }}</td>
+      <td class="num">{{ j.id }}</td><td>{{ "debug replay" if j.kind == "render_debug" else "processing" }}</td><td>{{ j.status }}</td><td>{{ j.from_stage or j.only or ("-" if j.kind == "render_debug" else "start") }}</td><td>{{ j.created_at }}</td><td>{{ j.finished_at or "-" }}</td>
     </tr>
-    {% if j.status == "failed" and j.log %}<tr><td colspan="5"><details open><summary class="error">Why it failed</summary><pre>{{ j.log }}</pre></details></td></tr>{% endif %}
+    {% if j.status == "failed" and j.log %}<tr><td colspan="6"><details open><summary class="error">Why it failed</summary><pre>{{ j.log }}</pre></details></td></tr>{% endif %}
   {% endfor %}
   </tbody>
 </table>
@@ -99,6 +99,32 @@
 {% endfor %}
 {% else %}
 <p class="muted">No plots yet.</p>
+{% endif %}
+
+<h2>Debug replay and webcam recording</h2>
+<p class="error"><strong>Both show the participant's webcam video.</strong> They are made and shown only on request, only a logged-in admin can open them, and every time one is opened it is logged.</p>
+<h3>Debug replay video</h3>
+{% if session.replay %}
+<p class="muted">The stimulus video with the raw (orange), smoothed (blue) and drift-corrected (green) gaze, the fixations, the webcam with the landmarks, and a timeline of pauses, lost faces and fullscreen exits. Drawn from the data of the last processing; render it again after re-running a stage.</p>
+<video controls preload="metadata" style="width: 100%; max-width: 60rem; background: #000;" src="/admin/sessions/{{ session.id }}/debug/replay.mp4"></video>
+{% else %}
+<p class="muted">Not rendered yet.</p>
+{% endif %}
+{% if session.render_refused %}
+<p class="muted">Cannot be rendered now: {{ session.render_refused }}.</p>
+{% endif %}
+<form method="post" action="/admin/sessions/{{ session.id }}/render-debug">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit"{% if session.render_refused %} disabled{% endif %}>{{ "Render it again" if session.replay else "Render the debug replay" }}</button>
+  <span class="muted">Takes about as long as the playback of the video; the worker does it.</span>
+</form>
+<h3>Webcam recording</h3>
+{% if session.webcam_available %}
+<p><a href="/admin/sessions/{{ session.id }}/webcam">Show the webcam recording</a> <span class="muted">(opens a page that plays the participant's video, with a warning)</span></p>
+{% elif session.webcam_deleted_at %}
+<p class="muted">The raw webcam video was deleted on {{ session.webcam_deleted_at }}.</p>
+{% else %}
+<p class="muted">The webcam recording has not been assembled (the session has not been processed).</p>
 {% endif %}
 
 <h2>Chunks per stream</h2>

@@ -96,6 +96,27 @@ test("a full dummy session is completed and its events reach the server", async 
   const again = await jobFinished(admin, session.id, jobId);
   expect(again.status).toBe("processed");
   expect(again.jobs.find((j) => j.id === jobId)?.status).toBe("done");
+
+  // The debug replay is rendered on request by the worker and played by the admin; the webcam
+  // recording is shown on request. Both are participant video: admins only, with range requests.
+  expect(await (await admin.request.get(`/admin/sessions/${session.id}/debug/replay.mp4`)).status()).toBe(404);
+  const render = await admin.request.post(`/admin/api/sessions/${session.id}/render-debug`, { headers: admin.headers });
+  expect(render.status(), await render.text()).toBe(201);
+  const rendered = await jobFinished(admin, session.id, ((await render.json()) as { job_id: number }).job_id);
+  expect(rendered.jobs.find((j) => j.kind === "render_debug")?.status, JSON.stringify(rendered.jobs)).toBe("done");
+  const replayUrl = `/admin/sessions/${session.id}/debug/replay.mp4`;
+  const part = await admin.request.get(replayUrl, { headers: { Range: "bytes=0-1023" } });
+  expect(part.status()).toBe(206);
+  expect(part.headers()["content-type"]).toBe("video/mp4");
+  const webcamPage = await admin.request.get(`/admin/sessions/${session.id}/webcam`);
+  expect(webcamPage.status()).toBe(200);
+  expect(await webcamPage.text()).toContain("This is the participant's webcam video");
+  const webcam = await admin.request.get(`/admin/sessions/${session.id}/webcam.webm`, { headers: { Range: "bytes=0-1023" } });
+  expect(webcam.status()).toBe(206);
+  const stranger = await playwrightRequest.newContext({ baseURL: test.info().project.use.baseURL, ignoreHTTPSErrors: true });
+  expect((await stranger.get(replayUrl)).status()).toBe(401);
+  expect((await stranger.get(`/admin/sessions/${session.id}/webcam.webm`)).status()).toBe(401);
+  await stranger.dispose();
   expect(session.events_error).toBeNull();
   // Complete raw data: every stream has chunks and none has a gap (PLAN §14).
   for (const stream of STREAMS) {

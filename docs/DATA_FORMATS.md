@@ -25,6 +25,7 @@ studies/{study_id}/sessions/{session_id}/
     fixations_a.parquet              the fixations of the playback phase (below)
     quality.json                     the session quality report and inclusion decision (below)
     debug/*.png                      debug plots (below)
+    debug/replay.mp4                 the debug replay video, only when rendered on request (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -166,7 +167,7 @@ Written when the session is created and rewritten (atomically) when it completes
 
 `created` (session made) → `consented` (consent recorded) → `recording` (first chunk accepted) → `uploaded` (`/complete` found no missing chunk and queued the `process_session` job) → `processing` (the worker runs the stages) → `processed` (the quality report exists) or `failed` (a stage raised; the job's log names the stage). `withdrawn` exists in the database but nothing sets it yet.
 
-`/complete` queues the job once per session (a repeated `/complete` does not queue another) and not for a session without any chunk (flag `empty`). A processed or failed session can be processed again from any stage: a `process_session` job with `from_stage` or `only` in its args (the CLI and the admin page do this). A worker that dies mid-job leaves the session `processing`; the next worker start puts the job back in the queue and the session back to `uploaded`, or fails both after `JOB_MAX_ATTEMPTS` (DECISIONS milestone 3 item 14).
+`/complete` queues the job once per session (a repeated `/complete` does not queue another) and not for a session without any chunk (flag `empty`). Job kinds: `process_session` (the stages, above) and `render_debug` (the replay video; it does not change the session's status). A session can have only one open job of either kind at a time. A processed or failed session can be processed again from any stage: a `process_session` job with `from_stage` or `only` in its args (the CLI and the admin page do this). A worker that dies mid-job leaves the session `processing`; the next worker start puts the job back in the queue and the session back to `uploaded`, or fails both after `JOB_MAX_ATTEMPTS` (DECISIONS milestone 3 item 14).
 
 The worker sets these session flags (and removes them when a later run no longer finds the problem), next to the ones of the participant app: `sync_short`, `sync_weak_peak`, `sync_lag_at_limit`, `sync_drift_high`, `sync_residual_high`, `sync_drift_unknown`, `sync_coarse_only` (see `sync.json`) and `calibration_failed` (see `calibration_a.json`). `sessions.quality` holds `quality.json`.
 

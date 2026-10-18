@@ -19,6 +19,7 @@ from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ingest import ChunkRecord
 from worker.pipeline.quality import QUALITY_FILE
+from worker.pipeline.replay import render_replay
 from worker.pipeline.runner import Context, is_pipeline_flag, pipeline_flags
 
 log = logging.getLogger("worker")
@@ -110,3 +111,26 @@ def _finish(
             kept = [f for f in session.flags if not is_pipeline_flag(f)]
             session.flags = kept + [f for f in flags if f not in kept]
         db.commit()
+
+
+def make_render_debug(
+    factory: sessionmaker[Session], settings: Settings, config: PipelineConfig | None = None
+) -> Callable[[Job], str]:
+    """The handler for `render_debug` jobs (PLAN §12.2): draw the debug replay of a processed
+    session. Args: `session_id`. The session's status is not touched; a failure fails the job."""
+    pipeline_config = config or PipelineConfig()
+
+    def handle(job: Job) -> str:
+        raw = job.args.get("session_id")
+        if not isinstance(raw, str):
+            raise ValueError("render_debug needs a session_id in its args")
+        session_id = uuid.UUID(raw)
+        with factory() as db:
+            session = db.get(SessionRow, session_id)
+            if session is None:
+                raise LookupError(f"session {session_id} does not exist")
+            study_id = session.study_id
+        summary = render_replay(settings.data_root, study_id, session_id, pipeline_config)
+        return f"replay rendered: {summary.frames} frames, {summary.bytes} bytes"
+
+    return handle

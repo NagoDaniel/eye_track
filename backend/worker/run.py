@@ -17,7 +17,7 @@ from app.jobs import claim_next, mark_done, mark_failed, recover_stale_running
 from app.logging import bind_context, configure_logging
 from app.models import Job, JobKind, WorkerHeartbeat
 from app.settings import Settings
-from worker.handlers import make_process_session
+from worker.handlers import make_process_session, make_render_debug
 
 log = logging.getLogger("worker")
 
@@ -26,7 +26,10 @@ Handler = Callable[[Job], str]
 
 
 def make_handlers(factory: sessionmaker[Session], settings: Settings) -> dict[JobKind, Handler]:
-    return {JobKind.PROCESS_SESSION: make_process_session(factory, settings)}
+    return {
+        JobKind.PROCESS_SESSION: make_process_session(factory, settings),
+        JobKind.RENDER_DEBUG: make_render_debug(factory, settings),
+    }
 
 
 def beat(db: Session, worker_id: str, now: datetime) -> None:

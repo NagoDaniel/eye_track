@@ -105,7 +105,7 @@ export interface SessionDetail {
   events_total: number;
   events_error: string | null;
   quality: Record<string, unknown> | null;
-  jobs: { id: number; status: string; from_stage: string | null }[];
+  jobs: { id: number; kind: string; status: string; from_stage: string | null }[];
   plots: { name: string }[];
 }
 
