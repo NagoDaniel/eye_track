@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     data_root: Path = Path("/data")
     models_root: Path = Path("/models")
+    # MediaPipe Face Landmarker for the server-side landmarks (PLAN §8.3); baked into the image.
+    face_landmarker_model: Path = Path("/opt/mediapipe/face_landmarker.task")
 
     api_workers: int = 2
     worker_concurrency: int = 1
@@ -54,6 +56,9 @@ class Settings(BaseSettings):
     worker_heartbeat_interval_s: float = 30.0
     worker_heartbeat_max_age_s: float = 90.0
     worker_poll_interval_s: float = 2.0
+    # A job found `running` when a worker starts (its worker died) is requeued until it has been
+    # started this many times, then marked failed (DECISIONS, milestone 3 item 14).
+    job_max_attempts: int = Field(default=3, ge=1)
 
     @field_validator("secret_key", "postgres_password")
     @classmethod

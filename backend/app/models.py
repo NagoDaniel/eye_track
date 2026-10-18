@@ -70,6 +70,7 @@ class JobKind(enum.Enum):
     PROCESS_SESSION = "process_session"
     ANALYZE_VIDEO = "analyze_video"
     COMPARE_PIPELINES = "compare_pipelines"
+    RENDER_DEBUG = "render_debug"
 
 
 class JobStatus(enum.Enum):

@@ -83,3 +83,11 @@ def browser_features_path(root: Path, study_id: int, session_id: uuid.UUID) -> P
 
 def stimulus_frames_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
     return raw_dir(root, study_id, session_id) / "stimulus_frames.jsonl"
+
+
+def webcam_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
+    return raw_dir(root, study_id, session_id) / "webcam.webm"
+
+
+def derived_dir(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
+    return session_dir(root, study_id, session_id) / "derived"

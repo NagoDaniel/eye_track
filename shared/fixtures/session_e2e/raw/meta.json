@@ -1,0 +1,78 @@
+{
+  "id": "70406890-76b8-4aae-9ffc-b80a4230afe1",
+  "study_id": 1,
+  "participant_code": "AB0315",
+  "created_at": "2026-10-16T20:09:17.267960+00:00",
+  "status": "uploaded",
+  "consent_version": "v1",
+  "consent_at": "2026-10-16T20:09:17.489749+00:00",
+  "is_debug": false,
+  "flags": [
+    "calibration_gate_failed"
+  ],
+  "client_info": {
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "platform": "MacIntel",
+    "hardware_concurrency": 10,
+    "screen": {
+      "width": 1280,
+      "height": 720
+    },
+    "device_pixel_ratio": 1,
+    "time_origin": 1792181357112,
+    "wall_clock_ms": 1792181357496
+  },
+  "config": {
+    "playlist": [
+      "1"
+    ],
+    "calibration": {
+      "points": 13,
+      "dot_duration_ms": 700,
+      "margin": 0.06
+    },
+    "validation": {
+      "points": 5,
+      "before_video": true,
+      "between_videos": true,
+      "after_last_video": true
+    },
+    "calibration_gate": {
+      "enabled": true,
+      "max_mean_error_norm": 0.1,
+      "max_point_error_norm": 0.18,
+      "min_valid_frames_per_dot": 5,
+      "max_attempts": 1,
+      "on_fail": "continue_flagged"
+    },
+    "playback": {
+      "allow_pause": false,
+      "require_fullscreen": true
+    },
+    "recording": {
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "chunk_ms": 2000
+    },
+    "quality": {
+      "min_face_ratio_warn": 0.8,
+      "max_face_ratio_warn": 1.25,
+      "brightness_min": 0.25,
+      "brightness_max": 0.85,
+      "face_ratio_min": 0.045,
+      "face_ratio_max": 0.16,
+      "max_yaw_deg": 20.0,
+      "max_pitch_deg": 20.0
+    },
+    "inclusion": {
+      "max_validation_error_norm": 0.12,
+      "min_valid_fraction": 0.7
+    },
+    "retention": {
+      "raw_video_days_after_processing": null
+    },
+    "consent_version": "v1",
+    "debug_allowed": false
+  }
+}

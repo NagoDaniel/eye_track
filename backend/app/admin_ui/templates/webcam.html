@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Webcam recording{% endblock %}
+{% block width %}60rem{% endblock %}
+{% block body %}
+<p><a href="/admin/sessions/{{ session_id }}">Back to the session</a></p>
+<h1>Webcam recording</h1>
+<p class="error" role="alert"><strong>This is the participant's webcam video.</strong> It shows a person. Open it only for the
+  purpose of the study (checking a recording problem), do not copy it, and do not share the link: it only works for a logged-in admin.</p>
+<video controls preload="metadata" style="width: 100%; max-width: 50rem; background: #000;" src="/admin/sessions/{{ session_id }}/webcam.webm"></video>
+<p class="muted">The recording as the participant's browser made it (remuxed so that it can be searched). Session <code>{{ session_id }}</code>.</p>
+{% endblock %}

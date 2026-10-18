@@ -104,6 +104,9 @@ export interface SessionDetail {
   events: SessionEvent[];
   events_total: number;
   events_error: string | null;
+  quality: Record<string, unknown> | null;
+  jobs: { id: number; kind: string; status: string; from_stage: string | null }[];
+  plots: { name: string }[];
 }
 
 export async function sessionsOf(admin: Admin, studyId: number): Promise<SessionDetail[]> {
@@ -117,4 +120,34 @@ export async function sessionsOf(admin: Admin, studyId: number): Promise<Session
     details.push((await detail.json()) as SessionDetail);
   }
   return details;
+}
+
+/** Statuses a session ends in once the worker has dealt with it (PLAN §8). */
+export const SETTLED = ["processed", "failed"];
+
+/** Wait until the worker has finished every session of the study, then return them. */
+export async function settledSessionsOf(admin: Admin, studyId: number): Promise<SessionDetail[]> {
+  const deadline = Date.now() + 240_000;
+  for (;;) {
+    const sessions = await sessionsOf(admin, studyId);
+    if (sessions.every((s) => SETTLED.includes(s.status))) return sessions;
+    if (Date.now() > deadline) {
+      throw new Error(`sessions not processed in time: ${sessions.map((s) => s.status).join(", ")}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+/** Wait until a processing job (by id) has finished, then return the session. */
+export async function jobFinished(admin: Admin, sessionId: string, jobId: number): Promise<SessionDetail> {
+  const deadline = Date.now() + 240_000;
+  for (;;) {
+    const detail = await admin.request.get(`/admin/api/sessions/${sessionId}`);
+    expect(detail.status()).toBe(200);
+    const session = (await detail.json()) as SessionDetail;
+    const job = session.jobs.find((j) => j.id === jobId);
+    if (job !== undefined && ["done", "failed"].includes(job.status)) return session;
+    if (Date.now() > deadline) throw new Error(`job ${jobId} did not finish in time`);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
 }

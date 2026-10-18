@@ -128,3 +128,33 @@ def test_job_defaults_and_admin_username_unique(engine: Engine) -> None:
         db.add(AdminUser(username="a", password_hash="h2"))
         with pytest.raises(IntegrityError):
             db.flush()
+
+
+def test_job_kinds_are_checked_and_render_debug_is_one_of_them(engine: Engine) -> None:
+    upgrade(engine)
+    with DbSession(engine) as db:
+        db.add(Job(kind=JobKind.RENDER_DEBUG, args={"session_id": "x"}))
+        db.flush()
+        with pytest.raises((IntegrityError, DataError)):
+            db.execute(text("insert into jobs (kind, args, status, attempts, log) "
+                            "values ('bogus', '{}', 'queued', 0, '')"))  # fmt: skip
+        db.rollback()
+
+
+def test_downgrading_to_the_first_revision_drops_replay_jobs_and_the_kind(engine: Engine) -> None:
+    upgrade(engine)
+    with DbSession(engine) as db:
+        db.add(Job(kind=JobKind.PROCESS_SESSION, args={}))
+        db.add(Job(kind=JobKind.RENDER_DEBUG, args={}))
+        db.commit()
+    downgrade(engine, "0001")
+    with DbSession(engine) as db:
+        assert db.execute(text("select kind from jobs")).scalars().all() == ["process_session"]
+        with pytest.raises((IntegrityError, DataError)):
+            db.execute(text("insert into jobs (kind, args, status, attempts, log) "
+                            "values ('render_debug', '{}', 'queued', 0, '')"))  # fmt: skip
+        db.rollback()
+    upgrade(engine)  # and up again
+    with DbSession(engine) as db:
+        db.add(Job(kind=JobKind.RENDER_DEBUG, args={}))
+        db.commit()

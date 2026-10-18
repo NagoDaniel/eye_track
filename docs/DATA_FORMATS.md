@@ -1,6 +1,6 @@
 # Data formats
 
-What the system writes to disk and sends over the wire, as of Milestone 2. Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
+What the system writes to disk and sends over the wire, as of Milestone 3 (ingest). Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
 
 ## Files under `DATA_ROOT` (default `./data`, `/data` in the containers)
 
@@ -13,12 +13,51 @@ studies/{study_id}/sessions/{session_id}/
     events.jsonl                     assembled from the events chunks when the session completes
     browser_features.jsonl           assembled from the features chunks (only if there are some)
     stimulus_frames.jsonl            assembled from the stimulus_frames chunks (only if there are some)
+    webcam.webm                      the webcam chunks concatenated and remuxed (written by ingest)
     meta.json                        session row + config snapshot
+  derived/
+    webcam_frames.parquet            one row per webcam frame, from ingest (below)
+    landmarks.parquet                server-side MediaPipe landmarks of every webcam frame (below)
+    features_a.parquet               Pipeline A features of every webcam frame (below)
+    sync.json                        webcam frame time to client time (below)
+    calibration_a.json               the fitted calibration model of Pipeline A (below)
+    gaze_a.parquet                   the gaze of every webcam frame (below)
+    fixations_a.parquet              the fixations of the playback phase (below)
+    quality.json                     the session quality report and inclusion decision (below)
+    stages.json                      per stage: status (ok, skipped, failed), seconds, summary, error; written after every stage
+    debug/*.png                      debug plots (below)
+    debug/replay.mp4                 the debug replay video, only when rendered on request (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
 
-Not written yet: `webcam.webm` (the concatenated and remuxed webcam chunks) and everything under `derived/` (Milestone 3).
+`webcam.webm`, `events.jsonl`, `browser_features.jsonl` and `stimulus_frames.jsonl` are pure functions of the chunks. The ingest stage (`backend/worker/pipeline/ingest.py`) checks the chunks against the `chunks` table (every seq from 0 to the highest is there, size and sha256 match), then writes the files that are missing and refuses (error, nothing overwritten) when one that exists differs from what the chunks give. `webcam.webm` is always rewritten (atomically): `ffmpeg -c copy -fflags +genpts` into a real file, so the result has a duration and a seek index (cues), which the MediaRecorder stream lacks. Everything else under `derived/` comes with the later stages of Milestone 3.
+
+### `derived/webcam_frames.parquet` (ingest)
+
+One row per video packet of `raw/webcam.webm`, which is one per shown frame. The frame rate is variable; never assume it is constant.
+
+| column | type | meaning |
+|---|---|---|
+| `index` | int64 | 0-based frame number |
+| `pts` | float64 | presentation time in seconds from the start of the recording |
+
+Snappy-compressed. The ingest summary also reports whether the pts are strictly increasing; the server-side landmark stage (`landmarks.parquet`) records the pts of the frames it decodes and is the reference for those.
+
+### `derived/landmarks.parquet` (landmarks stage, PLAN §8.3)
+
+One row per decoded frame of `raw/webcam.webm`, from the real MediaPipe Face Landmarker (Python, VIDEO mode, full resolution, blendshapes and transformation matrix on, up to 2 faces looked for and the first one kept, as in the browser). Code: `backend/worker/pipeline/landmarks.py`.
+
+| column | type | meaning |
+|---|---|---|
+| `index` | int64 | 0-based frame number in decoding order |
+| `pts` | float64 | presentation time in seconds (equals `webcam_frames.parquet`) |
+| `face` | bool | a face was found |
+| `lm` | fixed-size list of 1434 float32 | 478 landmarks x (x, y, z), flattened, normalised image coordinates; the mesh index `i` is at `3i..3i+2`, so the iris rings are 468 to 477. Null without a face. |
+| `matrix` | fixed-size list of 16 float64 | facial transformation matrix, row-major, translation (cm) in indices 3, 7, 11. Null without a face. |
+| `blink_l`, `blink_r` | float32 | `eyeBlinkLeft` / `eyeBlinkRight` blendshape scores. Null without a face. |
+
+Schema metadata: `width` and `height` of the decoded frames (strings). Timestamps handed to MediaPipe are the pts in whole milliseconds, moved up by 1 ms where two frames would share one. The result of a frame depends slightly on the frames before it (the model tracks), and on the decoder's colour conversion: PyAV and OpenCV differ by about 0.01 in normalised units on the same clip, like the browser's output.
 
 ## Streams and chunks
 
@@ -127,7 +166,26 @@ Written when the session is created and rewritten (atomically) when it completes
 
 ## Session status
 
-`created` (session made) → `consented` (consent recorded) → `recording` (first chunk accepted) → `uploaded` (`/complete` found no missing chunk). `processing`, `processed`, `failed` and `withdrawn` exist in the database but nothing sets them yet. Completing a session does not enqueue a job until Milestone 3.
+`created` (session made) → `consented` (consent recorded) → `recording` (first chunk accepted) → `uploaded` (`/complete` found no missing chunk and queued the `process_session` job) → `processing` (the worker runs the stages) → `processed` (the quality report exists) or `failed` (a stage raised; the job's log names the stage). `withdrawn` exists in the database but nothing sets it yet.
+
+`/complete` queues the job once per session (a repeated `/complete` does not queue another) and not for a session without any chunk (flag `empty`). Job kinds: `process_session` (the stages, above) and `render_debug` (the replay video; it does not change the session's status). A session can have only one open job of either kind at a time. A processed or failed session can be processed again from any stage: a `process_session` job with `from_stage` or `only` in its args (the CLI and the admin page do this). A worker that dies mid-job leaves the session `processing`; the next worker start puts the job back in the queue and the session back to `uploaded`, or fails both after `JOB_MAX_ATTEMPTS` (DECISIONS milestone 3 item 14).
+
+The worker sets these session flags (and removes them when a later run no longer finds the problem), next to the ones of the participant app: `sync_short`, `sync_weak_peak`, `sync_lag_at_limit`, `sync_drift_high`, `sync_residual_high`, `sync_drift_unknown`, `sync_coarse_only` (see `sync.json`) and `calibration_failed` (see `calibration_a.json`). `sessions.quality` holds `quality.json`.
+
+## Session archive (`cli.py export-session` / `import-session`, PLAN §12.3)
+
+A ZIP that makes a field problem reproducible on a development machine (`backend/app/session_archive.py`):
+
+```
+meta.json      the session row and study-config snapshot (the session's raw/meta.json)
+chunks.json    the session's rows of the chunks table: [{"stream", "seq", "size", "sha256"}, ...]
+raw/...        the raw files without meta.json (chunks, assembled streams, webcam.webm)
+derived/...    everything the stages wrote
+```
+
+`--no-raw-video` leaves out `raw/webcam.webm` and `raw/chunks/webcam/`; `chunks.json` still lists those chunks. Import refuses paths outside `raw/` and `derived/`, checks every chunk file against `chunks.json` (a missing webcam chunk is allowed), creates the study (`imported-<id>`) from the config snapshot if its id is not there, and creates the session with an unusable upload token. The status is `processed` when `derived/quality.json` exists, else `uploaded`; `raw_video_deleted_at` is set when there is no webcam. An existing session needs `--force`: the archive is extracted and verified in a staging directory first, and only then is the existing session replaced; if anything fails the old session stays as it was.
+
+`cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
 
 ## Participant code
 

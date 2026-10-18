@@ -4,10 +4,13 @@ Set TEST_DATABASE_URL to use an existing server; otherwise a throwaway container
 Fails loudly if neither is available.
 """
 
+import os
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, text
@@ -73,3 +76,23 @@ def migrated_engine(engine: Engine) -> Engine:
 
     upgrade(engine)
     return engine
+
+
+@pytest.fixture(scope="session")
+def face_model(request: pytest.FixtureRequest) -> Path:
+    """The MediaPipe Face Landmarker model (`shared/models.json`, sha256 checked).
+
+    `FACE_LANDMARKER_MODEL` (set in the backend image) is used when it points to a file; otherwise
+    the model is downloaded once into pytest's cache. Fails loudly when neither works.
+    """
+    configured = os.environ.get("FACE_LANDMARKER_MODEL")
+    if configured and Path(configured).is_file():
+        return Path(configured)
+    shared = Path(__file__).resolve().parents[2] / "shared"
+    sys.path.insert(0, str(shared))
+    import download_model
+
+    assert request.config.cache is not None
+    cache = request.config.cache.mkdir("models")
+    download_model.fetch(download_model.DEFAULT_MANIFEST, ["face_landmarker"], cache)
+    return cache / "face_landmarker.task"

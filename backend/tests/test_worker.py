@@ -1,5 +1,9 @@
 import json
 import logging
+import os
+import signal
+import subprocess
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -11,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db import make_session_factory
 from app.jobs import enqueue
 from app.models import Job, JobKind, JobStatus, WorkerHeartbeat
+from tests.dbutil import BACKEND
 from worker.healthcheck import heartbeat_is_fresh
 from worker.run import Heartbeat, beat, process_one
 
@@ -142,3 +147,71 @@ def test_main_rejects_concurrency_other_than_one(
     with pytest.raises(SystemExit, match="WORKER_CONCURRENCY must be 1"):
         main()
     logging.getLogger().handlers.clear()
+
+
+def _worker_env(engine: Engine) -> dict[str, str]:
+    url = engine.url
+    assert url.host and url.port and url.username and url.password and url.database
+    return {
+        **os.environ,
+        "SECRET_KEY": "k" * 40,
+        "POSTGRES_HOST": url.host,
+        "POSTGRES_PORT": str(url.port),
+        "POSTGRES_USER": url.username,
+        "POSTGRES_PASSWORD": url.password,
+        "POSTGRES_DB": url.database,
+        "WORKER_CONCURRENCY": "1",
+        "WORKER_POLL_INTERVAL_S": "0.1",
+        "JOB_MAX_ATTEMPTS": "3",
+        "LOG_LEVEL": "INFO",
+    }
+
+
+def test_main_recovers_stale_jobs_at_start_and_stops_on_sigterm(migrated_engine: Engine) -> None:
+    """A worker killed mid-job leaves `running` rows (R2); the next worker deals with them."""
+    f = factory(migrated_engine)
+    with f() as db:
+        for attempts in (1, 3):  # one more try left, and none
+            job = enqueue(db, JobKind.PROCESS_SESSION, {})
+            job.status = JobStatus.RUNNING
+            job.attempts = attempts
+        db.commit()
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "worker.run"],
+        cwd=BACKEND,
+        env=_worker_env(migrated_engine),
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    problem = None
+    jobs: dict[int, Job] = {}
+    deadline = time.monotonic() + 30
+    while problem is None:
+        with f() as db:
+            jobs = {j.id: j for j in db.query(Job).all()}
+        if jobs and all(j.status is JobStatus.FAILED for j in jobs.values()):
+            break
+        if proc.poll() is not None:
+            problem = f"the worker exited early with code {proc.returncode}"
+        elif time.monotonic() > deadline:
+            problem = "the stale jobs were not dealt with within 30 s"
+        else:
+            time.sleep(0.2)
+    proc.send_signal(signal.SIGTERM)
+    try:
+        _, stderr = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _, stderr = proc.communicate()
+        problem = problem or "the worker did not stop within 30 s of SIGTERM"
+    assert problem is None, f"{problem}\nworker log:\n{stderr}"
+
+    # Job 1 was requeued and claimed again (attempt 2); it has no session_id, so the real
+    # process_session handler refuses it. Job 2 had used all attempts and failed as "worker died".
+    assert proc.returncode == 0, stderr
+    assert jobs[1].attempts == 2 and "needs a session_id" in jobs[1].log
+    assert jobs[2].attempts == 3 and "worker died" in jobs[2].log
+    lines = [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
+    assert any(r["msg"] == "stale jobs recovered" for r in lines)
+    assert lines[-1]["msg"] == "worker stopped"

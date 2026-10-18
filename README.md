@@ -88,6 +88,10 @@ All commands run in the project directory on the server.
 | Status | `docker compose ps` |
 | Logs (JSON lines) | `docker compose logs -f api` (also `worker`, `proxy`, `db`) |
 | Create an admin | `docker compose exec api python cli.py create-admin --username <name>` |
+| Process a session again | `docker compose exec api python cli.py process <session id> [--from-stage sync \| --only gaze] [--keep-intermediates]` (stages: ingest, landmarks, features, sync, calibration, gaze, quality, plots) |
+| Export / import a session | `docker compose exec api python cli.py export-session <session id> --out /data/s.zip [--no-raw-video]`, then `python cli.py import-session s.zip [--force]` on a development instance. The archive contains the participant's webcam video unless `--no-raw-video` is given. |
+| Render the debug replay video | `docker compose exec api python cli.py render-debug <session id>`, or the button on the session page in the admin. **The video contains the participant's webcam video**; only logged-in admins can play it. |
+| Check the moving-dot pilot | `docker compose exec api python cli.py moving-dot-report <session id> [--plot /data/dot.png]` (exit status 0: pass, 2: fail) |
 | Stop / start | `docker compose stop` / `docker compose up -d` |
 | Pipeline B model weights | `./scripts/fetch_models.sh` (default: ResNet-50) or `./scripts/fetch_models.sh l2cs_mobileone_s0` |
 
@@ -104,7 +108,7 @@ Log in at `https://<your domain>/admin/login`.
 1. **Videos**: upload the stimulus MP4 (title + file). H.264 with a constant frame rate is best; other files are accepted with a warning. A video that a study or an existing session uses cannot be deleted.
 2. **Studies**: create a study with a name, a short code (letters, digits, `-`, `_`; 3 to 32 characters), the mode, the videos (tick them in the table and number them in the order they play) and, if you want, other settings as JSON (every key is optional, defaults are in PLAN §4.1). The study page shows the participant link `https://<your domain>/s/<code>`; adding `?p=AB0315` prefills the participant code.
 3. **Participants** open the link, enter their code (first two letters of the name, birth month, birth day), accept the consent text, and follow the screens: a camera check (the face must be found, alone, lit and at a sensible distance for 3 seconds), instructions, fullscreen, 13 calibration dots, 5 validation dots, the videos with a validation between and after, and the upload. The webcam is recorded from the fullscreen step to the end of the last validation. A calibration that is clearly off is repeated (up to `calibration_gate.max_attempts`), then the session continues flagged `calibration_gate_failed` or ends, depending on `calibration_gate.on_fail`.
-4. **Sessions**: lists every session with its status, flags and chunk counts per stream; the detail page shows gaps in the uploaded chunks and the events received.
+4. **Sessions**: lists every session with its status, whether it is included in the analysis (and why not), flags and chunk counts per stream. The detail page shows the **quality report** (valid gaze, validation error with and without drift correction, calibration, sync, webcam rate, face lost, fullscreen exits), the **stage table** with a *Re-run from here* button per stage (the worker runs it again; one job per session at a time), the processing jobs with the reason of a failure, the **debug plots** (only logged-in admins can open them), then the gaps in the uploaded chunks and the events received.
 
 ### Debug mode (researchers)
 

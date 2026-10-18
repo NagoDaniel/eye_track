@@ -34,6 +34,8 @@ COPY backend/app ./app
 COPY backend/worker ./worker
 # worker/pipeline/features_a.py reads /shared/landmark_subset.json (same layout as the repository)
 COPY shared/landmark_subset.json /shared/landmark_subset.json
+# the ground truth of the moving-dot video, for `cli.py moving-dot-report`
+COPY e2e/fixtures/moving_dot_path.json /shared/moving_dot_path.json
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

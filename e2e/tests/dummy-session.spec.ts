@@ -6,7 +6,7 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 
 import { createHash } from "node:crypto";
 
-import { type Admin, createStudy, login, sessionsOf, uploadVideo } from "./admin";
+import { type Admin, createStudy, jobFinished, login, settledSessionsOf, uploadVideo } from "./admin";
 import { runSession, runUntilDot } from "./participant";
 
 const PARTICIPANT = "AB0315";
@@ -36,9 +36,12 @@ test("the admin can play the uploaded video", async () => {
 
 const STREAMS = ["webcam", "features", "events", "stimulus_frames"] as const;
 // The fake camera cannot look where the dots are, so the browser gate fails and the server flags
-// the session; no other flag is expected in a normal run.
+// the session; the worker adds its own flags (sync_*, calibration_failed). No other flag is
+// expected in a normal run.
 const GATE_FLAG = "calibration_gate_failed";
-const otherFlags = (flags: string[]): string[] => flags.filter((f) => f !== GATE_FLAG);
+const PIPELINE_FLAG = /^(sync_|calibration_failed$)/;
+const otherFlags = (flags: string[]): string[] =>
+  flags.filter((f) => f !== GATE_FLAG && !PIPELINE_FLAG.test(f));
 
 function indexOfType(types: string[], type: string, from = 0): number {
   const i = types.indexOf(type, from);
@@ -51,12 +54,69 @@ test("a full dummy session is completed and its events reach the server", async 
   await page.goto(`/s/e2e-full?p=${PARTICIPANT}`);
   await runSession(page);
 
-  const [session, ...others] = await sessionsOf(admin, studyId);
+  // The worker picks the session up when /complete queues it (PLAN §8); wait for it.
+  const [session, ...others] = await settledSessionsOf(admin, studyId);
   expect(others).toEqual([]);
   expect(session).toBeDefined();
   if (session === undefined) return;
-  expect(session.status).toBe("uploaded");
+  expect(session.status).toBe("processed");
   expect(otherFlags(session.flags)).toEqual([]);
+  // The quality report is stored with the session: every stage ran and the inclusion is decided.
+  const quality = session.quality as { stages: Record<string, unknown>; inclusion: { included: boolean } };
+  expect(Object.keys(quality.stages).sort()).toEqual(
+    ["calibration", "features", "gaze", "ingest", "landmarks", "plots", "quality", "sync"],
+  );
+  expect(typeof quality.inclusion.included).toBe("boolean");
+
+  // The admin's session page shows the report, the stage table and the plots (PLAN §12.2), the
+  // plots are served as images to the logged-in admin only, and a stage can be run again.
+  const sessionPage = await admin.request.get(`/admin/sessions/${session.id}`);
+  expect(sessionPage.status()).toBe(200);
+  const inspector = await sessionPage.text();
+  expect(inspector).toContain("Quality report");
+  expect(inspector.match(/Re-run from here/g)).toHaveLength(8);
+  const shown = [...inspector.matchAll(/<img class="plot" src="([^"]+)"/g)].map((m) => m[1] ?? "");
+  expect(shown.map((src) => src.split("/").pop())).toEqual(
+    expect.arrayContaining(["calibration.png", "sync.png", "signals.png", "gaze.png"]),
+  );
+  for (const src of shown) {
+    const image = await admin.request.get(src);
+    expect(image.status(), src).toBe(200);
+    expect(image.headers()["content-type"]).toBe("image/png");
+  }
+  const anonymous = await playwrightRequest.newContext({ baseURL: test.info().project.use.baseURL, ignoreHTTPSErrors: true });
+  expect((await anonymous.get(shown[0] ?? "")).status()).toBe(401);
+  await anonymous.dispose();
+  const rerun = await admin.request.post(`/admin/api/sessions/${session.id}/rerun`, {
+    headers: admin.headers,
+    data: { from_stage: "quality" },
+  });
+  expect(rerun.status(), await rerun.text()).toBe(201);
+  const { job_id: jobId } = (await rerun.json()) as { job_id: number };
+  const again = await jobFinished(admin, session.id, jobId);
+  expect(again.status).toBe("processed");
+  expect(again.jobs.find((j) => j.id === jobId)?.status).toBe("done");
+
+  // The debug replay is rendered on request by the worker and played by the admin; the webcam
+  // recording is shown on request. Both are participant video: admins only, with range requests.
+  expect(await (await admin.request.get(`/admin/sessions/${session.id}/debug/replay.mp4`)).status()).toBe(404);
+  const render = await admin.request.post(`/admin/api/sessions/${session.id}/render-debug`, { headers: admin.headers });
+  expect(render.status(), await render.text()).toBe(201);
+  const rendered = await jobFinished(admin, session.id, ((await render.json()) as { job_id: number }).job_id);
+  expect(rendered.jobs.find((j) => j.kind === "render_debug")?.status, JSON.stringify(rendered.jobs)).toBe("done");
+  const replayUrl = `/admin/sessions/${session.id}/debug/replay.mp4`;
+  const part = await admin.request.get(replayUrl, { headers: { Range: "bytes=0-1023" } });
+  expect(part.status()).toBe(206);
+  expect(part.headers()["content-type"]).toBe("video/mp4");
+  const webcamPage = await admin.request.get(`/admin/sessions/${session.id}/webcam`);
+  expect(webcamPage.status()).toBe(200);
+  expect(await webcamPage.text()).toContain("This is the participant's webcam video");
+  const webcam = await admin.request.get(`/admin/sessions/${session.id}/webcam.webm`, { headers: { Range: "bytes=0-1023" } });
+  expect(webcam.status()).toBe(206);
+  const stranger = await playwrightRequest.newContext({ baseURL: test.info().project.use.baseURL, ignoreHTTPSErrors: true });
+  expect((await stranger.get(replayUrl)).status()).toBe(401);
+  expect((await stranger.get(`/admin/sessions/${session.id}/webcam.webm`)).status()).toBe(401);
+  await stranger.dispose();
   expect(session.events_error).toBeNull();
   // Complete raw data: every stream has chunks and none has a gap (PLAN §14).
   for (const stream of STREAMS) {
@@ -121,8 +181,8 @@ test("uploads survive a dropped connection", async ({ page }) => {
   }, 8_000);
   await runSession(page);
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(otherFlags(session?.flags ?? [])).toEqual([]);
   for (const info of Object.values(session?.streams ?? {})) expect(info.missing).toEqual([]);
   for (const stream of STREAMS) expect(session?.chunks[stream]).toBeGreaterThan(0);
@@ -140,8 +200,10 @@ test("a reloaded session can resume its upload and is flagged interrupted", asyn
   await page.getByRole("button", { name: "Resume upload" }).click();
   await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible({ timeout: 30_000 });
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  // It never recorded anything (the reload came before the camera started): there is no webcam
+  // to process, and the worker says so instead of pretending.
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("failed");
   expect(session?.flags).toContain("interrupted");
   expect(session?.events_error).toBeNull();
   expect(session?.events_total).toBeGreaterThan(0);
@@ -161,8 +223,8 @@ test("a reload while the webcam chunks wait in the browser still ends with the f
   await page.getByRole("button", { name: "Resume upload" }).click();
   await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible({ timeout: 60_000 });
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(session?.flags).toContain("interrupted");
   for (const stream of STREAMS) {
     expect(session?.streams[stream]?.missing, `gaps in ${stream}`).toEqual([]);
@@ -187,9 +249,12 @@ test("debug mode: the overlay shows, S skips the calibration, the session is a d
   await page.keyboard.press("s");
   await runSession(page);
 
-  const [session] = await sessionsOf(admin, studyId);
-  expect(session?.status).toBe("uploaded");
+  const [session] = await settledSessionsOf(admin, studyId);
+  expect(session?.status).toBe("processed");
   expect(session?.is_debug).toBe(true);
+  expect((session?.quality as { inclusion: { reasons: string[] } }).inclusion.reasons).toContain(
+    "debug_session",
+  );
   const skips = session?.events.filter((e) => e.type === "debug_skip") ?? [];
   expect(skips.map((e) => e.data.target)).toEqual(["calibration"]);
   const clicked = session?.events.filter(

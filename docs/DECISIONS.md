@@ -14,6 +14,209 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 review fixes: calibration samples, stage file, import
+- Plan section: §8.6, §12.2, §12.3
+- Decision: (1) The calibration trains on the *usable* frames of a dot (a face, no blink, finite features), not on the plan's `valid` frames (§8.6). `valid` is a property of the fitted model's output (it needs predictions inside the screen margin and the face-geometry checks), so it cannot select the samples the model is fitted on. The gaze stage applies `valid` as the plan says. (2) The per-stage status, duration, summary and error are also kept in `derived/stages.json`, written after every stage, so a failed stage leaves a trace (`quality.json` is only written when the quality stage runs). (3) `import-session --force` verifies the archive in a staging directory before it touches the existing session; a failure puts the old session back. (4) `cli.py process` refuses a session with an open job or in a state the admin "run again" also refuses. (5) The moving-dot "within threshold" share uses the configured limit (`dot_max_median_error_norm`) instead of a literal.
+- Reason: findings of the plan-reviewer subagent (R1, R2, R4, R6, R8) on `m3-pipeline-a`.
+- Approved by: Nágó Dániel
+
+## 2026-10-18 — Milestone 3 pilot result (H1) and deferred tuning
+- Plan section: §14 (Milestone 3 "done when"), §8.6, §8.8, §12.4
+- Decision: the acceptance run (two real-webcam sessions on the moving-dot video, see PROGRESS "H1 result") meets the criterion of DECISIONS 2026-10-16 item 9 (median error at most 0.15 of the viewport diagonal, at least 80 % valid): 0.098 and 0.046, 98 % valid. Observations, none acted on yet (human, 2026-10-18: "continue with the development plan, fine-tune the models for better precision later"):
+  1. Vertical accuracy is worse than horizontal: the iris moves 0.04 to 0.05 eye widths vertically across the screen against 0.19 to 0.24 horizontally.
+  2. Session A (glasses, three calibration attempts, 153 s before the video) is noisier than B (no glasses): frame-to-frame jitter in the validation points 93 against 31 px. The per-frame landmark noise is the same (iris y frame-to-frame sd 0.0047 against 0.0041), so glasses are one possible cause among posture and fatigue; two sessions cannot tell.
+  3. Both sessions show the same +160 ms gaze lag behind the dot (human latency, or a fixed latency in the webcam or display chain; not separated).
+  4. The drift correction of §8.8 (mean offset of 5 validation points, interpolated) does not help on the moving dot: B 92 to 115 px, A 197 to 190 px, although the validation error itself improves (A 0.074 to 0.042, B 0.056 to 0.050). The offset mixes drift with the compression at those five positions. Both columns are kept; use the uncorrected ones until a better rule exists.
+  5. Offline checks on the same two sessions: the 10-feature ridge beats every smaller set tried (iris average with yaw and pitch, with roll, with openness, iris only, left/right iris with yaw and pitch) on validation error and on the moving dot in both sessions; linear beats degree 2 by a wide margin in the cross-validation (A 177 against 235 px, B 116 against 201 px).
+  6. The browser gate and the server's validation agree (B: 0.069 and 0.040 against 0.072 and 0.040).
+- Tuning candidates for later (they need more pilot sessions, with and without glasses, ideally from other participants): the drift rule, the vertical axis (more calibration points near the top and bottom, repeated dots), the gaze lag, the smoother and quality thresholds (DECISIONS 2026-10-16).
+- Reason: record the acceptance evidence and the decision to continue with the plan.
+- Approved by: Nágó Dániel
+
+## 2026-10-18 — Milestone 3 T15: debug replay video and webcam playback
+- Plan section: §12.2, §10; DECISIONS 2026-10-14 item 3, milestone 3 item 17
+- Decision:
+  1. **Job kind `render_debug`** (migration `0002`: the `job_kind` CHECK now lists it; the downgrade deletes replay jobs and restores the old list). The worker's handler draws `derived/debug/replay.mp4` and leaves the session status alone. One open job of either kind per session at a time: a render and a re-run exclude each other (both rewrite files the other reads). Rendering needs a processed session with gaze; the button says why when it is off.
+  2. **What the film shows:** see DATA_FORMATS. Drawn at 30 fps along the client clock for the stretches with a video on screen; raw, smoothed and drift-corrected gaze (the plan names raw and smoothed; the corrected one is added because the pilot is about the validation error), fixation rings, webcam with landmarks, timeline bar. Pipeline B is left out until M5. The webcam inset is optional (not drawn when the recording is gone), the stimulus video is not (the replay says to upload it again when missing: imported sessions need it).
+  3. **Participant video is marked and gated:** the file's banner says it contains participant video; the replay and the webcam recording are served only to a logged-in admin (401 otherwise), never cached, with range requests so they can be searched, and every access is logged (`participant video served to an admin`, with the session id). The webcam recording has its own page that shows a warning and plays `raw/webcam.webm`; it is not embedded in the session page. A session whose raw video was deleted (`raw_video_deleted_at`) answers 404.
+  4. `cli.py render-debug <id>` renders here and now and prints the warning.
+  5. Looked at frames of the recorded session by eye and made the text readable (a darkened panel behind it).
+- Reason: details the plan leaves open for the replay.
+- Approved by: plan; details plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T14: admin session inspector
+- Plan section: §12.2, §6 (admin), §10; DECISIONS 2026-10-14 item 2
+- Decision:
+  1. **The session page** (`/admin/sessions/{id}`) gets: the quality report (headline numbers and the validation blocks, the whole `quality.json` in a collapsed block), the stage table (what each stage does, last duration, summary, "Re-run from here"), the last five processing jobs (a failed job shows its log), and the debug plots as images. The sessions list gets an "Included" column and the participant results page an inclusion line with a link to the report (as DECISIONS 2026-10-14 said later milestones would).
+  2. **Re-run** queues a `process_session` job with `from_stage` (the worker does the work; nothing runs in the api process): `POST /admin/sessions/{id}/rerun` (form, CSRF token) and `POST /admin/api/sessions/{id}/rerun` (JSON `{from_stage}`, CSRF header). Allowed for uploaded, processed or failed sessions with no queued or running job for them (409 otherwise); an unknown stage is 422. "Re-run from here" on `ingest` is "process again from the start".
+  3. **Plots are served only to a logged-in admin** by `GET /admin/sessions/{id}/debug/{name}`, where `name` must be one of the five known plot names (no directory listing, no other file can be reached), `Cache-Control: no-store`. They are not under the public `/media` route.
+  4. **Stage and plot names live in `app/pipeline_names.py`** (a light module) so the api process does not import the pipeline (MediaPipe, matplotlib); the runner and the plots take them from there.
+  5. The webcam recording and the debug replay video are not on the page yet (T15).
+- Reason: details the plan leaves open for the inspector.
+- Approved by: plan; details plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T13: debug plots
+- Plan section: §12.2
+- Decision:
+  1. **Plots are the last stage (`plots`)** after `quality`, so they can use the quality report; the stage list is now ingest, landmarks, features, sync, calibration, gaze, quality, plots. The runner writes the stage results into `quality.json` after a run that included `quality` or `plots`.
+  2. **A plot that cannot be drawn does not fail the session.** Missing inputs mean skipped (with the reason, and the old picture is removed); an exception is logged and recorded in the stage summary (`errors`) but the other plots are still drawn and the session stays `processed`. The data is fine without the picture, and the plan's "flag it and move on" is met by the record in `quality.json`; no session flag is added.
+  3. **`calibration.png` fits every attempt again** (`fit_attempt`, extracted from `fit_calibration`) so that failed attempts can be drawn, and draws the validation points that followed each attempt with that attempt's model. Pipeline B is not drawn (M5).
+  4. **Added:** the moving-dot plot (path against gaze) through `cli.py moving-dot-report --plot`, as the pilot check's picture (DECISIONS milestone 3 item 9); not a stage.
+  5. Looked at the plots of the recorded session by eye and changed what was wrong: the sync panel for one window showed numeric noise (now a note), calibration predictions far outside the screen were cut off without notice (now counted), and wild raw predictions squashed the gaze plot (now the axes show half a screen around the screen).
+- Reason: details the plan leaves open for the debug plots.
+- Approved by: plan; details plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T12: CLI
+- Plan section: §11.4, §12.3, §12.4
+- Decision:
+  1. **`cli.py process <id> [--from-stage S | --only S] [--keep-intermediates]`** runs the pipeline in the CLI process through the same handler as the worker (status, flags and the report in the database are handled alike) and prints the stage timings. It does not go through the queue; the admin button (T14) will. The "intermediate" file is the concatenated webcam before the remux, kept in `derived/intermediates/`.
+  2. **`export-session` / `import-session`** (layout in DATA_FORMATS): the plan's `raw/`, `derived/` and `meta.json` plus `chunks.json` (the chunk table rows ingest needs). Added `--no-raw-video` (like `backup.sh`) and a printed warning when the video is included. Stimulus videos are not in the archive: re-upload them on the development instance if the debug replay (T15) is wanted. Import creates a missing study from the config snapshot and moves the id sequence past it.
+  3. **`moving-dot-report <id> [--path F] [--video-id V] [--json]`** is the Milestone 3 pilot check with DECISIONS item 9's criterion (median error at most 0.15 of the viewport diagonal and at least 80 % valid playback frames; both are `PipelineConfig` values `dot_max_median_error_norm`, `dot_min_valid_fraction`). Exit status 0 pass, 2 fail. It reports uncorrected and drift-corrected errors (median, mean, 90th percentile), the errors during the dot's pauses and movements apart, and the gaze lag (the shift of the dot's path that fits best; positive means the gaze is behind). Its ground truth `moving_dot_path.json` is copied into the backend image as `/shared/moving_dot_path.json`.
+  4. `cli.py` gets `settings()` (renamed from `_settings`) and `session_factory()` so tests can point it at a test database.
+- Reason: details the plan leaves open for the CLI.
+- Approved by: plan; details plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T11: stage runner, job handler, enqueue at /complete
+- Plan section: §6, §8, §13
+- Decision:
+  1. **`/complete` queues `process_session`** (reverses DECISIONS 1b scope item 2, as planned): once per session, on the first completion only, and not for a session without chunks (`empty`). A session that never recorded the webcam (the participant reloaded before the camera started) is queued, fails in the ingest stage with "webcam: there are no chunks" and ends `failed`; that is loud, and the e2e test expects exactly this.
+  2. **Stages and order:** ingest, landmarks, features, sync, calibration, gaze, quality (`worker/pipeline/runner.py`). A run can start at a stage (`from_stage`) or run one (`only`); the stages before keep the summary from the last run that included them (read back from `quality.json`). Each stage's duration and summary are in `quality.json` under `stages`.
+  3. **Failure:** a stage that raises stops the run (`StageFailed`, naming the stage); the earlier stages' files stay. A failed calibration is not a failure: the gaze stage is skipped and its old files are removed (they are derived, so stale ones would mislead), the quality stage excludes the session.
+  4. **Session state:** the handler sets `processing` before the stages (so a dead worker is recognised), then `processed` when the quality report exists, `failed` on an exception. `only` of an early stage on a never-processed session leaves it `uploaded` (no report yet). The pipeline owns the flags `sync_*` and `calibration_failed`: they are recomputed from `sync.json` and `calibration_a.json` at the end of every run, so a later good run removes them.
+  5. **The handler gets its own database sessions** and holds none while the stages run (they take minutes); the chunk table rows for ingest are read before.
+  6. `sessions.quality` stores the whole `quality.json` (PostgreSQL JSONB does not keep the order of keys; the file does).
+  7. e2e (`scripts/e2e.sh`, `scripts/e2e_check_derived.py`): after the Playwright tests the script waits for the queue to empty, then checks every derived file of each session that recorded: exists, columns as in DATA_FORMATS, one row per webcam frame, the stages in `quality.json`; exactly one job may fail, for the missing webcam.
+- Reason: wiring the stages to the job queue and the participant API as the plan says (§6, §8).
+- Approved by: plan; details plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T10: quality report and inclusion
+- Plan section: §8.10, §4.1, §12.1
+- Decision:
+  1. **Fixations from valid or interpolated samples (T9 item 4) confirmed** by Nágó Dániel ("you can keep it how you've done it").
+  2. **Inclusion rule** (the plan names the thresholds but not the quantities): the validation error is the mean `error_norm` over the validation blocks with data, uncorrected (the corrected value is reported too); the valid fraction is over the frames with a video on screen (a pause counts as playback). A session with no validation data is left out (`no_validation_data`: the accuracy cannot be checked), and so is a debug session (PLAN §12.1: excluded from analysis by default). Sync flags are reported only.
+  3. **Face-lost episodes** come from the server's own detections (a stretch of frames without a face of at least 500 ms, the browser's debounce), not from the browser's events, which are counted separately; both are in the report.
+  4. **Face size flags** (`min_face_ratio_warn`, `max_face_ratio_warn`, reserved for M3 by DECISIONS 2026-10-16): the share of playback frames outside the band, where the band is those multipliers times the median face ratio during the calibration dots (the device check frames are not recorded).
+  5. **Stalls:** a `video_stall` with media time 0 belongs to the video's start (the initial `waiting`) and is counted separately.
+  6. New named values in `PipelineConfig`: `quality_face_lost_min_ms` (500) and `quality_frame_gap_ms` (100).
+- Reason: details the plan leaves open.
+- Approved by: item 1 Nágó Dániel; the rest plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T9: fixations and the gaze table
+- Plan section: §7, §8.2, §8.9
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **`x_vid`, `y_vid` come from the smoothed gaze** (`x_sm`, `y_sm`), the column the analysis will use; the raw `x_px` has no video coordinates. The content rectangle is the one of the last `viewport_change` event (null when no video is shown).
+  2. **Extra columns** in `gaze_a.parquet`: `interpolated`, and the drift-corrected `x_px_dc`, `y_px_dc`, `x_sm_dc`, `y_sm_dc`, `x_vid_dc`, `y_vid_dc` (the plan asks for "drift_corrected gaze columns" without naming them). Null when no validation block gave data; with a single block the correction is that block's constant offset (DECISIONS milestone 3 item 7), although the plan says "if several blocks exist".
+  3. **Phase:** `calibration` / `validation` for the span from the first to the last event of a run of those dots, `playback` while a video is on screen, else `other`. Frames in a pause or stall are `playback` with a null `stim_time`.
+  4. **Fixations use the smoothed samples that are valid or interpolated**, not only the valid ones the plan names: interpolation exists to bridge short gaps, and a blink inside a fixation must not split it. A run ends at a frame without a smoothed value, a change of video or a change of viewport size. The dispersion limit uses the viewport width at the start of the run.
+  5. **Duration** of a fixation is the time between its first and last sample (so a 100 ms minimum needs four 30 fps frames). The dispersion is the sum of the x and y ranges (I-DT as published).
+  6. Fixation centroids are given in px and video coordinates, both uncorrected and drift-corrected; the analysis (Milestone 4) chooses.
+  7. New named values in `PipelineConfig`: `fix_dispersion_width_fraction` 0.05, `fix_precision_factor` 2, `fix_min_duration_ms` 100 (all from the plan).
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T8: validation and drift
+- Plan section: §8.8
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Blocks scored:** the validation blocks from the calibration attempt that was used onwards. An earlier failed attempt's block is not scored (its calibration is not the model that is applied). Blocks are labelled from the video events, not from the gate results (a study without the gate has none).
+  2. **Frames and predictions:** valid frames only, raw (unsmoothed) predictions, the same window as the training window (700 ms before to 100 ms after the click, `calib_window_*`).
+  3. **Precision** is the RMS of the distance between the predictions of frames that directly follow each other; pairs with a dropped or invalid frame in between are not used, so a point with no such pair has no precision. The block's precision is the mean over its points; the session's (for I-DT, DECISIONS milestone 3 item 8) the median over the blocks.
+  4. **Offset vector** of a block: the mean over its points of (median prediction minus target). Its time is the mean click time of the points with data. The correction subtracts the offset, so it removes the calibration's own constant bias too (the first block is included, as the plan says "each validation block").
+  5. **Corrected error** of a point: the error of its median prediction after subtracting the drift at its own click time (interpolated), so with several blocks it is not exactly zero, which is what shows whether a linear drift explains the error.
+  6. On the recorded session (fake camera, not looking at the dots) the pre-video block has predictions on screen but the block after the video has none: the model extrapolates far off screen when the head turns, and the validity rule (§8.7) leaves those frames out. The block then has `points_with_data` 0 and no drift entry.
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T7: prediction, validity and smoothing
+- Plan section: §8.7
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Process noise.** The plan asks that "a 300 px step settles within about 60 ms on synthetic data". "Settled" is read as DECISIONS milestone 3 item 6: within 10 % (30 px) of the new level from 60 ms after the step on (and, because the smoother sees the future, within 30 px of the old level until 60 ms before it). With 15 px of measurement noise the white-noise acceleration density `smooth_process_noise` = 3e7 px^2/s^3 gives 17 ms at 30 fps, 25 ms at 60 fps and 15 ms at 100 fps; it is also close to the value that reduces fixation noise most (RMS 15 px to about 10 px). Smaller values (1e6) are slower and noisier, larger ones (1e9) follow the noise. The measurement noise of 15 px is the synthetic test's, not a measured value of real webcam gaze (likely larger); retune `smooth_meas_std_px` and `smooth_process_noise` on pilot data (deferred, DECISIONS 2026-10-16).
+  2. **Gap length.** An invalid gap is interpolated when the valid samples on both sides are at most 150 ms apart (so three lost frames at 30 fps, 133 ms, are filled and four, 167 ms, are not); the same 150 ms separate segments.
+  3. **Interpolated samples count as measurements** in the smoother (the plan says "interpolate, then smooth"), with the same noise as real ones.
+  4. **Validity uses the viewport in force at the frame's time**, not the one of the calibration. The predictions stay in the coordinates the model was trained in; a viewport change after calibration (leaving fullscreen) is handled by the playback pause and by the `x_vid` mapping (T9), not here.
+  5. Speed: 10 minutes of frames (18 000) take 0.13 s to smooth in plain Python.
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T6: calibration fit
+- Plan section: §5.5, §5.6, §8.6
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Outlier rule.** "Beyond 2.5 MAD of the dot's median prediction" is: the distance of each sample's prediction to the dot's median prediction (per coordinate), compared with 2.5 times the median of those distances (an unscaled MAD of the 2-D scatter; for Gaussian scatter this drops about 1.5 % of the samples). A dot whose MAD is 0 drops nothing. After the rejection the model (degree, alpha, weights) is chosen again on the remaining samples, so the recorded cross-validation error belongs to the final data.
+  2. **CV error** is the browser's definition: mean over the left-out dots of the mean per-frame distance to the dot, in px. The alpha grid has one value per decade. Ties go to stronger regularisation, and between the two models to the plain linear one.
+  3. **Same feature vector as the browser** (the 10 columns of `featureVector`; head translation is not a regressor), as DECISIONS 2026-10-16 kept it.
+  4. **Failure is a result, not an exception** (as in item 15 of the scope entry): no calibration dots, more than 3 sparse dots, or no possible fit give `status: "failed"` and `calibration_a.json` without a model. Dots that were never clicked have no training window and count as sparse.
+  5. **The training window is not clipped to the dot's appearance.** The plan's window (700 ms before to 100 ms after the click) is used as written; with the plan's 1500 ms dots the click is at least 900 ms after the dot appears, so the window starts after the onset. In the e2e test (700 ms dots, instant clicks) the window starts before the dot appears; that data is for plumbing only.
+  6. `ridge.py` is a numpy version of the browser's ridge, tested against scikit-learn and against the browser's fixture `shared/fixtures/ridge_fit.json` (1e-6).
+  7. New named values in `PipelineConfig`: the two window lengths and the 5-frames/3-dots rule (plan), the alpha grid (plan), `calib_outlier_mad` 2.5 (plan).
+- Reason: details the plan leaves open for the calibration fit.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T5: sync and the stimulus-time map
+- Plan section: §8.2
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Signal.** "Horizontal iris position minus eye-corner midpoint, plus head yaw, z-scored" is read as two channels (the eye-local iris x, which already is that difference, averaged over both eyes; and yaw), each z-scored, correlated one by one, the two correlations averaged. Summing the two into one signal could cancel when they move in opposite directions; averaging the correlations cannot. Blinks and frames without a face are left out of both signals.
+  2. **Windows.** Consecutive windows of 60 s over the webcam pts, a rest under 30 s joins the last window (the 30 s is a new named value, `sync_min_window_s`). Each window's lag is searched within +-1000 ms of the whole-session lag. A window with a peak under 0.3 or at the edge of the search is left out of the fit.
+  3. **Fit.** scikit-learn's `HuberRegressor` (epsilon 1.35) on lag against pts; `b = 1 + slope/1000`. With fewer than two usable windows in a long session the slope is taken as 1 and the session gets `sync_drift_unknown`.
+  4. **Flags instead of failures.** A weak or edge result flags the session (`sync_weak_peak`, `sync_lag_at_limit`, ...); only a missing `recorder_start` event is an error. Without usable browser features or server frames the coarse map is used with `sync_coarse_only`.
+  5. **On the recorded session** the server and browser signals correlate at 0.998 with a lag of -4 ms: both models see the same frames, and the `recorder_start` event is logged at the moment the first recorded frame (pts 0) is made, so the coarse map is already right.
+  6. **Stimulus gaps** are found from the frames themselves (wall time advanced more than media time by over `stim_gap_tolerance_ms`, 50 ms, or media time went back), not from `video_pause`/`video_stall` events, so dropped frames and display jitter (the recorded session shows 33 or 50 ms steps for a 25 fps video) are not gaps. A video is on screen from its first presented frame to its `video_ended` event.
+  7. `sync_max_gap_ms` (150 ms), `sync_min_overlap_s` (1 s), `sync_min_window_s` (30 s) and `stim_gap_tolerance_ms` (50 ms) are new named values in `PipelineConfig` that the plan does not give.
+- Reason: details the plan leaves open for the sync stage.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T4: features table and the pipeline config
+- Plan section: §8.4, §1
+- Decision:
+  1. **`PipelineConfig`** (`backend/worker/pipeline/config.py`, DECISIONS milestone 3 item 10) now exists with the two blink thresholds (0.5 and the starting value 0.15 from milestone 2); later tasks add their fields. A stage takes it as an argument and records what it used (here as `config` in the Parquet metadata).
+  2. **The browser keeps its own copy of the blink thresholds** (`frontend/src/face/quickCalib.ts`): the browser gate is only a pass/fail check and the server's fit is authoritative (PLAN §5.6), so tuning the server value does not have to change what participants see. If the two should move together, say so and a shared definition goes into `shared/protocol.json`.
+  3. A frame without a face has all features null and `blink` false (it is invalid because it has no face).
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-18 — Milestone 3 T3: server-side landmarks
+- Plan section: §8.3
+- Decision:
+  1. **Decoder and colour.** Frames are decoded with PyAV and converted with its default `rgb24` conversion; no colour matrix is forced. On the face clip this differs from OpenCV's conversion by about 1/255 per pixel (at most 18) and the landmarks by about 0.01 normalised units, the same size as the browser-vs-Python difference seen in milestone 2. Not worth tuning; the sync (T5) and the calibration absorb it.
+  2. **Faces.** Up to 2 faces are looked for and the first is kept, as in the browser (`MAX_FACES`). A face without a transformation matrix or without the `eyeBlink` blendshapes is an error, not a silent "no face" (as in the browser, DECISIONS 2026-10-16).
+  3. **Model file.** `FACE_LANDMARKER_MODEL` (already set in the backend image) is the new setting `face_landmarker_model`. The tests use that file when it exists, otherwise they download the model once into pytest's cache with `shared/download_model.py` (sha256 checked), so CI needs no extra step but does need network.
+  4. **mypy.** `mediapipe` and `pyarrow` ship no types: `ignore_missing_imports` for those two packages only.
+- Reason: details the plan leaves open for the landmark stage.
+- Approved by: plan leaves open (flag if you object)
+
+## 2026-10-16 — Milestone 3 T2: ingest and the session fixture
+- Plan section: §7, §8.1, §13
+- Decision:
+  1. **The chunks are checked against the `chunks` table, not against the files.** `ingest()` takes the table's rows (stream, seq, size, sha256) as an argument, so the stage stays a function of its inputs and a chunk that changed on disk is found. The runner (T11) reads the rows from the database; `export-session` / `import-session` (T12) must carry them (as `chunks.json`, like the fixture).
+  2. **Per-frame pts are written to `derived/webcam_frames.parquet`** (`index`, `pts`), a file §7 does not list. The pts come from the packets of the remuxed file (cheap, no decoding); the landmark stage (T3) records the pts of the frames it actually decodes.
+  3. **Streams:** `webcam` and `events` must have chunks; `features` and `stimulus_frames` may be absent (a debug session can skip the video). A chunk that is not valid gzip, a line that is not a valid record, or an existing assembled file that differs makes ingest fail loudly (the session's job fails with the reason). The server already flags such sessions (`events_invalid` etc.) at `/complete`; ingest does not try to continue with part of a stream.
+  4. **Session fixture:** `shared/fixtures/session_e2e/` (3.0 MB: 23 chunks, the assembled JSONL files, `meta.json`, `chunks.json`) from one session of the e2e run (Chromium's fake camera playing `e2e/fixtures/face.mp4`; webcam VP9 854x480, 11.3 s, 314 feature records). `E2E_EXPORT_SESSION=<dir> make e2e` exports it and `scripts/make_session_fixture.py <dir>` writes the fixture. The gaze does not follow the dots, so it tests plumbing and the maths of each stage, not accuracy. It is 11 s long: sync's 60 s windows (T5) get the `sync_short` path on it.
+  5. Dependencies added: numpy, scipy, pandas, pyarrow, matplotlib, scikit-learn (approved), pandas-stubs (dev).
+- Reason: details the plan leaves open for the ingest stage.
+- Approved by: plan leaves open (item 4's size limit and item 5 approved by Nágó Dániel; flag the rest if you object)
+
+## 2026-10-16 — Milestone 3 scope and open choices
+- Plan section: §4, §5.6, §7, §8.1 to §8.10, §12.2, §12.3, §14
+- Decision:
+  1. **Session fixture.** A real MediaRecorder session (webcam chunks, features, events, stimulus frames) is captured from the e2e run (fake camera playing the human's face clip) by `scripts/make_session_fixture.py`. It is committed if it is 10 MB or less; if it is larger, the agent asks before committing.
+  2. **`landmarks.parquet` (§8.3)** holds per frame: `pts`, `face`, 478 x 3 float32 landmarks, `matrix[16]` (row-major), `blink_l`, `blink_r`. Not all 52 blendshapes.
+  3. **Attempts (§5.6, §8.6).** The server derives which calibration dots belong to which attempt from event order (calibration block, validation block, `calib_gate_result`); the dot events get no `attempt` field.
+  4. **`raw/webcam.webm` is written by ingest** although raw data is otherwise immutable (§1): it is a deterministic assembly of the immutable chunks, like `events.jsonl`. The chunks are never changed.
+  5. **`conf` (§7)** is 0 when invalid, 0.5 when interpolated, otherwise 1 minus a linear penalty for how far the raw prediction lies outside the viewport (0 at the edge, 1 at the 15 % limit).
+  6. **Smoother step response (§8.7):** "settled" means within 10 % (30 px) of a 300 px step, on synthetic data with measurement noise of 15 px; it settles within about 60 ms.
+  7. **Drift correction (§8.8):** linear interpolation of the offset vector between the mid-times of the validation blocks, constant before the first and after the last; with one block, constant. Applied to every phase. Degrees of visual angle are always null in M3 (stations were dropped in 1b).
+  8. **I-DT (§8.9):** dispersion = x-range plus y-range; "session validation precision" = median over the validation blocks.
+  9. **Moving-dot acceptance (§14):** median `error_norm` against the ground-truth path at most 0.15, at least 80 % valid playback samples, and the human looks at the debug replay.
+  10. **Pipeline thresholds** live in a `PipelineConfig` with the plan's defaults in code (not editable per study); the values used are written into each derived file.
+  11. **Sync (§8.2):** a named `sync_min_peak_correlation` (0.3) only flags the session, it never blocks. A session shorter than two 60 s windows uses one window and gets the flag `sync_short`.
+  12. **Quality flags and inclusion (§8.10, §4.1).** `min/max_face_ratio_warn` (reserved in M2) are multipliers of the median face ratio during the calibration phase. Inclusion uses the mean `error_norm` over all validation blocks (uncorrected; corrected values are reported too) and the valid fraction over playback only.
+  13. **scikit-learn is added** (it is in §3's list). Where it saves code (Huber fit, reference for ridge) it is used.
+  14. **Stale `running` jobs (R2):** at worker start, `running` jobs with `attempts` below `JOB_MAX_ATTEMPTS` (default 3) are requeued, the others are marked `failed` ("worker died"); the session status goes back to `uploaded` when requeued. Safe because `WORKER_CONCURRENCY` is fixed at 1 and the stages are idempotent.
+  15. **Calibration `failed` (§8.6)** is a data problem, not a crash: the later stages are skipped, no `gaze_a.parquet` is written, the session is `processed` with the flag `calibration_failed` and is excluded. Status `failed` is for crashes.
+  16. **Scope of §12.3 `[M1-M3]` items:** `export-session` / `import-session` are in M3 (T12). The Jupyter notebook and the admin diagnostics page move to Milestone 6.
+  17. **Debug replay job (§12.2):** a new job kind `render_debug` (migration; a small addition to the kinds in §4). The replay shows Pipeline A only in M3; Pipeline B joins in M5.
+  18. **Carry-overs stay in Milestone 6:** the total inflated cap per stream in `/complete` (M2 review major 2) and the vitest 4 upgrade (`npm audit`).
+- Reason: answers to the numbered questions of `/milestone-start 3`.
+- Approved by: Nágó Dániel ("you can get scikit. Others seem good, you can start", 2026-10-16; all recommendations accepted)
+
 ## 2026-10-16 — Milestone 2 review decisions and admin additions
 - Plan section: §4, §4.1, §5.4, §5.6, §6, §12.1
 - Decision:
