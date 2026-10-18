@@ -55,6 +55,21 @@ class PipelineConfig:
     calib_min_frames_per_dot: int = 5
     calib_max_sparse_dots: int = 3
 
+    # --- Prediction and smoothing (PLAN §8.7) ---
+    # A prediction is valid inside the viewport expanded by this share of its size on every side.
+    valid_viewport_margin: float = 0.15
+    # Invalid samples are interpolated when their valid neighbours are at most this far apart; a
+    # longer gap splits the smoother into segments.
+    smooth_max_interp_gap_ms: float = 150.0
+    # Constant-velocity Kalman model, x and y alike: the position measurement noise (px) and the
+    # white-noise acceleration density (px^2 / s^3). Tuned on synthetic data (PLAN §8.7, DECISIONS
+    # 2026-10-18 T7): with 15 px of measurement noise a 300 px step is within 30 px of its new level
+    # 17 ms after it at 30 fps (60 ms asked), and this q is where fixation noise is reduced most.
+    smooth_meas_std_px: float = 15.0
+    smooth_process_noise: float = 3.0e7
+    # Prior spread of the velocity at the start of a segment (px/s): effectively unknown.
+    smooth_initial_velocity_std: float = 2000.0
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the

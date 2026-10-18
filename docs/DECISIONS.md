@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T7: prediction, validity and smoothing
+- Plan section: §8.7
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Process noise.** The plan asks that "a 300 px step settles within about 60 ms on synthetic data". "Settled" is read as DECISIONS milestone 3 item 6: within 10 % (30 px) of the new level from 60 ms after the step on (and, because the smoother sees the future, within 30 px of the old level until 60 ms before it). With 15 px of measurement noise the white-noise acceleration density `smooth_process_noise` = 3e7 px^2/s^3 gives 17 ms at 30 fps, 25 ms at 60 fps and 15 ms at 100 fps; it is also close to the value that reduces fixation noise most (RMS 15 px to about 10 px). Smaller values (1e6) are slower and noisier, larger ones (1e9) follow the noise. The measurement noise of 15 px is the synthetic test's, not a measured value of real webcam gaze (likely larger); retune `smooth_meas_std_px` and `smooth_process_noise` on pilot data (deferred, DECISIONS 2026-10-16).
+  2. **Gap length.** An invalid gap is interpolated when the valid samples on both sides are at most 150 ms apart (so three lost frames at 30 fps, 133 ms, are filled and four, 167 ms, are not); the same 150 ms separate segments.
+  3. **Interpolated samples count as measurements** in the smoother (the plan says "interpolate, then smooth"), with the same noise as real ones.
+  4. **Validity uses the viewport in force at the frame's time**, not the one of the calibration. The predictions stay in the coordinates the model was trained in; a viewport change after calibration (leaving fullscreen) is handled by the playback pause and by the `x_vid` mapping (T9), not here.
+  5. Speed: 10 minutes of frames (18 000) take 0.13 s to smooth in plain Python.
+- Reason: details the plan leaves open.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T6: calibration fit
 - Plan section: §5.5, §5.6, §8.6
 - Decision (readings of what the plan leaves open; flag any you object to):

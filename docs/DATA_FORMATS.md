@@ -231,6 +231,16 @@ The per-session gaze model of Pipeline A, fitted on the calibration dots. Code: 
 - **`model`:** `StandardScaler` (population std, 0 replaced by 1), then for degree 2 the products `x_i * x_j` for `i <= j` after the original columns (scikit-learn's order), then ridge with an unpenalised intercept; `weights[0]` is x, `weights[1]` is y. The browser's `ridge.ts` and this file use the same definition and are tested against scikit-learn.
 - **`status: "failed"`** (`model` null, nothing else is run for the session): `no_calibration_dots`, `too_few_valid_frames` (more than 3 dots with fewer than 5 valid frames), or `fit_impossible`. A failed calibration is a data problem, not a crash; the session is then excluded (DECISIONS milestone 3 item 15).
 
+### Prediction, validity and smoothing (PLAN §8.7)
+
+Not files of their own: `backend/worker/pipeline/predict.py` and `smoothing.py` produce the columns that `gaze_a.parquet` (Milestone 3, T9) writes.
+
+- **`x_px`, `y_px`:** the calibration model applied to every frame with usable features (a face, no blink, every feature finite), in viewport CSS px; null/NaN for the other frames. The raw prediction is kept also when it lies outside the screen.
+- **`valid`:** the frame is usable and the prediction is inside the viewport expanded by 15 % of its width and height on every side (`valid_viewport_margin`). The viewport is the size of the last `viewport_change` event before the frame (the first one for earlier frames).
+- **Interpolation:** invalid samples between two valid ones whose times are at most 150 ms apart (`smooth_max_interp_gap_ms`; four lost frames at 30 fps are 167 ms, three are 133 ms) are filled by linear interpolation of x and y over time. They are marked `interpolated` and stay `valid = false`. Nothing is extrapolated before the first or after the last valid sample.
+- **Segments:** runs of valid and interpolated samples; a longer gap starts a new segment, and segments are smoothed independently.
+- **Smoothing (`x_sm`, `y_sm`):** a Rauch-Tung-Striebel (forward-backward Kalman) smoother per segment with a constant-velocity model, x and y independent, measurement noise 15 px, white-noise acceleration density 3e7 px^2/s^3, velocity at the start of a segment unknown (2000 px/s). Interpolated samples count as measurements. Not smoothed (NaN): samples in no segment.
+
 ### Client time to stimulus time (PLAN §8.2 step 5)
 
 Not a file: `backend/worker/pipeline/stimulus_map.py` maps client times to `(video_id, stim_time)` from `raw/stimulus_frames.jsonl` and the `video_load` / `video_ended` events (the frame records carry no video id). A time between two presented frames gets the media time linearly interpolated between them. `stim_time` is null in a gap: a step between two frames where the wall clock advanced more than 50 ms more than the media time (pause, stall) or the media time went back (seek); dropped frames advance both and are not gaps. A video is on screen from its first presented frame until its `video_ended` event (or one frame after its last frame); after its last frame only one frame duration is extrapolated. Outside a video both are null.
