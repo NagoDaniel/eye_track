@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T14: admin session inspector
+- Plan section: §12.2, §6 (admin), §10; DECISIONS 2026-10-14 item 2
+- Decision:
+  1. **The session page** (`/admin/sessions/{id}`) gets: the quality report (headline numbers and the validation blocks, the whole `quality.json` in a collapsed block), the stage table (what each stage does, last duration, summary, "Re-run from here"), the last five processing jobs (a failed job shows its log), and the debug plots as images. The sessions list gets an "Included" column and the participant results page an inclusion line with a link to the report (as DECISIONS 2026-10-14 said later milestones would).
+  2. **Re-run** queues a `process_session` job with `from_stage` (the worker does the work; nothing runs in the api process): `POST /admin/sessions/{id}/rerun` (form, CSRF token) and `POST /admin/api/sessions/{id}/rerun` (JSON `{from_stage}`, CSRF header). Allowed for uploaded, processed or failed sessions with no queued or running job for them (409 otherwise); an unknown stage is 422. "Re-run from here" on `ingest` is "process again from the start".
+  3. **Plots are served only to a logged-in admin** by `GET /admin/sessions/{id}/debug/{name}`, where `name` must be one of the five known plot names (no directory listing, no other file can be reached), `Cache-Control: no-store`. They are not under the public `/media` route.
+  4. **Stage and plot names live in `app/pipeline_names.py`** (a light module) so the api process does not import the pipeline (MediaPipe, matplotlib); the runner and the plots take them from there.
+  5. The webcam recording and the debug replay video are not on the page yet (T15).
+- Reason: details the plan leaves open for the inspector.
+- Approved by: plan; details plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T13: debug plots
 - Plan section: §12.2
 - Decision:

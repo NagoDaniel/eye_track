@@ -13,8 +13,93 @@
   <tr><th>Created</th><td>{{ session.created_at }}</td></tr>
   <tr><th>Consent</th><td>{% if session.consent_at %}{{ session.consent_version }} at {{ session.consent_at }}{% else %}none{% endif %}</td></tr>
   <tr><th>Client info</th><td><pre>{{ session.client_info | tojson(indent=2) }}</pre></td></tr>
-  <tr><th>Quality</th><td><pre>{{ session.quality | tojson(indent=2) }}</pre></td></tr>
 </table>
+
+{% macro num(v, fmt="%.3f") %}{{ fmt | format(v) if v is not none else "–" }}{% endmacro %}
+{% macro pct(v) %}{{ "%.0f %%" | format(v * 100) if v is not none else "–" }}{% endmacro %}
+
+<h2>Quality report</h2>
+{% if queued %}<p class="notice" role="status">Processing is queued; reload this page in a minute.</p>{% endif %}
+{% set q = session.quality_summary %}
+{% if q %}
+<p class="{{ 'ok' if q.inclusion.included else 'error' }}">
+  <strong>{{ "Included in the analysis" if q.inclusion.included else "Left out of the analysis" }}</strong>{% if q.inclusion.reasons %}: {{ q.inclusion.reasons | join(", ") }}{% endif %}
+</p>
+<table>
+  <tr><th>Valid gaze during playback</th><td>{{ pct(q.valid_fraction) }} of {{ q.playback_frames if q.playback_frames is not none else "–" }} frames
+    <span class="muted">(needs {{ pct(q.inclusion.criteria.min_valid_fraction) }})</span></td></tr>
+  <tr><th>Validation error</th><td>{{ num(q.validation_error_norm) }} of the screen diagonal, {{ num(q.validation_error_corrected_norm) }} after drift correction
+    <span class="muted">(at most {{ num(q.inclusion.criteria.max_validation_error_norm, "%.2f") }})</span></td></tr>
+  <tr><th>Calibration</th><td>{{ q.calibration_status }}{% if q.calibration_failed_reason %} ({{ q.calibration_failed_reason }}){% endif %}{% if q.cv_chosen %}, {{ q.cv_chosen }} model, cross-validation error {{ num(q.cv_error_norm) }} of the diagonal{% endif %}</td></tr>
+  <tr><th>Browser gate</th><td>{% for g in q.gate %}{{ g.block }} attempt {{ g.attempt }}: {% if g.skipped %}skipped{% elif g.passed %}passed{% else %}failed{% endif %} ({{ num(g.mean_error_norm) }}, {{ g.reason }}){% if not loop.last %}<br>{% endif %}{% else %}none logged{% endfor %}</td></tr>
+  <tr><th>Webcam</th><td>{{ num(q.webcam.fps_mean, "%.1f") }} frames/s, {{ q.webcam.gaps }} gaps over 100 ms (longest {{ num(q.webcam.max_gap_ms, "%.0f") }} ms), {{ num(q.webcam.duration_s, "%.1f") }} s</td></tr>
+  <tr><th>Face lost</th><td>{{ q.face_lost.episodes }} episode(s), {{ num((q.face_lost.total_ms or 0) / 1000, "%.1f") }} s in total</td></tr>
+  <tr><th>Fullscreen exits / stalls</th><td>{{ q.fullscreen_exits }} / {{ q.stalls }}</td></tr>
+  <tr><th>Sync</th><td>lag {{ num(q.sync_lag_ms, "%.0f") }} ms, correlation {{ num(q.sync_peak, "%.2f") }}{% if q.sync_flags %}, <span class="warning">{{ q.sync_flags | join(", ") }}</span>{% endif %}</td></tr>
+</table>
+{% if q.validation_blocks %}
+<table>
+  <thead><tr><th>Validation block</th><th class="num">Points with data</th><th class="num">Error (px)</th><th class="num">Error (screen diagonal)</th><th class="num">After drift correction</th><th class="num">Precision (px)</th></tr></thead>
+  <tbody>
+  {% for b in q.validation_blocks %}
+    <tr><td>{{ b.kind }}</td><td class="num">{{ b.points_with_data }} of {{ b.points | length }}</td><td class="num">{{ num(b.mean_error_px, "%.0f") }}</td><td class="num">{{ num(b.mean_error_norm) }}</td><td class="num">{{ num(b.mean_error_corrected_norm) }}</td><td class="num">{{ num(b.precision_px, "%.1f") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<details><summary>The whole report (quality.json)</summary><pre>{{ session.quality | tojson(indent=2) }}</pre></details>
+{% else %}
+<p class="muted">No quality report yet: the session has not been processed ({{ session.status }}).</p>
+{% endif %}
+
+<h2>Processing</h2>
+{% if session.rerun_refused %}<p class="muted">Cannot be run again now: {{ session.rerun_refused }}.</p>{% endif %}
+<table>
+  <thead><tr><th>Stage</th><th>What it does</th><th class="num">Last run (s)</th><th>Result</th><th></th></tr></thead>
+  <tbody>
+  {% for st in session.stages %}
+    <tr>
+      <td>{{ st.name }}</td>
+      <td class="muted">{{ st.description }}</td>
+      <td class="num">{{ num(st.seconds, "%.1f") if st.ran else "not run" }}</td>
+      <td>{% if st.skipped %}skipped: {{ st.skipped }}{% elif st.summary is not none %}<details><summary>summary</summary><pre>{{ st.summary | tojson(indent=1) }}</pre></details>{% endif %}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/sessions/{{ session.id }}/rerun">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="from_stage" value="{{ st.name }}">
+          <button type="submit"{% if session.rerun_refused %} disabled{% endif %}>Re-run from here</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if session.jobs %}
+<table>
+  <thead><tr><th class="num">Job</th><th>Status</th><th>From stage</th><th>Queued</th><th>Finished</th></tr></thead>
+  <tbody>
+  {% for j in session.jobs %}
+    <tr{% if j.status == "failed" %} class="gap"{% endif %}>
+      <td class="num">{{ j.id }}</td><td>{{ j.status }}</td><td>{{ j.from_stage or j.only or "start" }}</td><td>{{ j.created_at }}</td><td>{{ j.finished_at or "-" }}</td>
+    </tr>
+    {% if j.status == "failed" and j.log %}<tr><td colspan="5"><details open><summary class="error">Why it failed</summary><pre>{{ j.log }}</pre></details></td></tr>{% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Debug plots</h2>
+{% if session.plots %}
+<p class="muted">They show where the participant looked and how the pipeline fitted it, not their face. Only logged-in admins can open them.</p>
+{% for plot in session.plots %}
+<figure>
+  <figcaption><strong>{{ plot.caption }}</strong></figcaption>
+  <a href="/admin/sessions/{{ session.id }}/debug/{{ plot.name }}"><img class="plot" src="/admin/sessions/{{ session.id }}/debug/{{ plot.name }}" alt="{{ plot.caption }}" loading="lazy"></a>
+</figure>
+{% endfor %}
+{% else %}
+<p class="muted">No plots yet.</p>
+{% endif %}
 
 <h2>Chunks per stream</h2>
 <table>

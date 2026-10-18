@@ -11,6 +11,8 @@
 <table>
   <tr><th>Status</th><td>{{ s.status }}</td></tr>
   <tr><th>Flags</th><td>{{ s.flags | join(", ") }}</td></tr>
+  <tr><th>In the analysis</th><td>{% if s.included is none %}<span class="muted">not processed yet</span>{% elif s.included %}<span class="ok">included</span>{% else %}<span class="error">left out: {{ s.inclusion_reasons | join(", ") }}</span>{% endif %}
+    (<a href="/admin/sessions/{{ s.id }}">quality report and plots</a>)</td></tr>
   <tr><th>Created</th><td>{{ s.created_at }}</td></tr>
   <tr><th>Chunks</th><td>{% for name, n in s.chunks.items() %}{{ name }}: {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
   {% if s.missing_event_chunks %}

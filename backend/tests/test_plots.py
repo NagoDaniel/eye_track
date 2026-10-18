@@ -10,13 +10,13 @@ import pytest
 from matplotlib.figure import Figure
 
 import worker.pipeline.plots as plots
+from app.pipeline_names import PLOT_FILES
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from tests.synthetic_session import Synthetic, build
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import run_gaze
 from worker.pipeline.plots import (
     DEBUG_DIR,
-    PLOT_FILES,
     load_plot_data,
     png_bytes,
     rolling_mean,

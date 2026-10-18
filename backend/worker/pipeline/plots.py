@@ -53,7 +53,6 @@ from worker.pipeline.validation import validation_blocks
 log = logging.getLogger("pipeline")
 
 DEBUG_DIR = "debug"
-PLOT_FILES = ("calibration.png", "validation.png", "sync.png", "signals.png", "gaze.png")
 
 Floats = NDArray[np.float64]
 AnyFloats = NDArray[np.floating[Any]]  # for helpers that take any float array

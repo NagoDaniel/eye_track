@@ -6,7 +6,7 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 
 import { createHash } from "node:crypto";
 
-import { type Admin, createStudy, login, settledSessionsOf, uploadVideo } from "./admin";
+import { type Admin, createStudy, jobFinished, login, settledSessionsOf, uploadVideo } from "./admin";
 import { runSession, runUntilDot } from "./participant";
 
 const PARTICIPANT = "AB0315";
@@ -67,6 +67,35 @@ test("a full dummy session is completed and its events reach the server", async 
     ["calibration", "features", "gaze", "ingest", "landmarks", "plots", "quality", "sync"],
   );
   expect(typeof quality.inclusion.included).toBe("boolean");
+
+  // The admin's session page shows the report, the stage table and the plots (PLAN §12.2), the
+  // plots are served as images to the logged-in admin only, and a stage can be run again.
+  const sessionPage = await admin.request.get(`/admin/sessions/${session.id}`);
+  expect(sessionPage.status()).toBe(200);
+  const inspector = await sessionPage.text();
+  expect(inspector).toContain("Quality report");
+  expect(inspector.match(/Re-run from here/g)).toHaveLength(8);
+  const shown = [...inspector.matchAll(/<img class="plot" src="([^"]+)"/g)].map((m) => m[1] ?? "");
+  expect(shown.map((src) => src.split("/").pop())).toEqual(
+    expect.arrayContaining(["calibration.png", "sync.png", "signals.png", "gaze.png"]),
+  );
+  for (const src of shown) {
+    const image = await admin.request.get(src);
+    expect(image.status(), src).toBe(200);
+    expect(image.headers()["content-type"]).toBe("image/png");
+  }
+  const anonymous = await playwrightRequest.newContext({ baseURL: test.info().project.use.baseURL, ignoreHTTPSErrors: true });
+  expect((await anonymous.get(shown[0] ?? "")).status()).toBe(401);
+  await anonymous.dispose();
+  const rerun = await admin.request.post(`/admin/api/sessions/${session.id}/rerun`, {
+    headers: admin.headers,
+    data: { from_stage: "quality" },
+  });
+  expect(rerun.status(), await rerun.text()).toBe(201);
+  const { job_id: jobId } = (await rerun.json()) as { job_id: number };
+  const again = await jobFinished(admin, session.id, jobId);
+  expect(again.status).toBe("processed");
+  expect(again.jobs.find((j) => j.id === jobId)?.status).toBe("done");
   expect(session.events_error).toBeNull();
   // Complete raw data: every stream has chunks and none has a gap (PLAN §14).
   for (const stream of STREAMS) {

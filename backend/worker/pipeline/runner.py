@@ -33,9 +33,6 @@ from worker.pipeline.sync import SYNC_FILE, run_sync
 
 log = logging.getLogger("pipeline")
 
-STAGE_NAMES = (
-    "ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality", "plots",
-)  # fmt: skip
 # Session flags set by the pipeline (and removed again when a run no longer finds the problem).
 CALIBRATION_FAILED_FLAG = "calibration_failed"
 SYNC_FLAG_PREFIX = "sync_"

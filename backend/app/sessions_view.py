@@ -13,14 +13,23 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.events import assemble_events, parse_events
 from app.models import Chunk, Session, Study
+from app.pipeline_names import PLOT_CAPTIONS, STAGE_DESCRIPTIONS, STAGE_NAMES
+from app.reprocess import jobs_of, rerun_refusal
 from app.schemas import EventRecord
 from app.service_errors import NotFoundError
-from app.storage import STREAMS, chunk_path
+from app.storage import STREAMS, chunk_path, derived_dir
 
 MAX_EVENTS_SHOWN = 1000
 
 
+def inclusion_of(quality: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The inclusion decision stored in a session's quality report, if there is one."""
+    inclusion = None if quality is None else quality.get("inclusion")
+    return inclusion if isinstance(inclusion, dict) else None
+
+
 def _row(session: Session, study: Study) -> dict[str, Any]:
+    inclusion = inclusion_of(session.quality)
     return {
         "id": str(session.id),
         "study_id": study.id,
@@ -30,6 +39,8 @@ def _row(session: Session, study: Study) -> dict[str, Any]:
         "status": session.status.value,
         "flags": session.flags,
         "created_at": session.created_at.isoformat(),
+        "included": None if inclusion is None else inclusion.get("included"),
+        "inclusion_reasons": [] if inclusion is None else inclusion.get("reasons", []),
     }
 
 
@@ -127,6 +138,11 @@ def session_detail(
         "is_debug": session.is_debug,
         "client_info": session.client_info,
         "quality": session.quality,
+        "quality_summary": quality_summary(session.quality),
+        "stages": stage_rows(session.quality),
+        "plots": plots_on_disk(data_root, study.id, session_id),
+        "jobs": job_rows(db, session_id),
+        "rerun_refused": rerun_refusal(db, session),
         "chunks": {name: s["count"] for name, s in streams.items()},
         "streams": streams,
         "events": events,
@@ -134,3 +150,91 @@ def session_detail(
         "events_shown_max": MAX_EVENTS_SHOWN,
         "events_error": error,
     }
+
+
+def stage_rows(quality: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Every stage in order with what its last run recorded; a stage never run has no seconds."""
+    recorded = {} if quality is None else dict(quality.get("stages") or {})
+    rows = []
+    for name in STAGE_NAMES:
+        entry = recorded.get(name)
+        summary = None if entry is None else entry.get("summary")
+        skipped = isinstance(summary, dict) and "skipped" in summary
+        rows.append(
+            {
+                "name": name,
+                "description": STAGE_DESCRIPTIONS[name],
+                "ran": entry is not None,
+                "seconds": None if entry is None else entry.get("seconds"),
+                "skipped": summary["skipped"] if skipped and isinstance(summary, dict) else None,
+                "summary": summary,
+            }
+        )
+    return rows
+
+
+def quality_summary(quality: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The headline numbers of a quality report, ready to show; None without a report."""
+    if quality is None:
+        return None
+    playback = quality.get("playback") or {}
+    validation = quality.get("validation") or {}
+    calibration = quality.get("calibration") or {}
+    cv = calibration.get("cv") or {}
+    events = quality.get("events") or {}
+    lost = (
+        (quality.get("face_lost") or {}).get("playback")
+        or (quality.get("face_lost") or {}).get("all")
+        or {}
+    )
+    sync = quality.get("sync") or {}
+    return {
+        "inclusion": inclusion_of(quality) or {"included": None, "reasons": [], "criteria": {}},
+        "webcam": quality.get("webcam") or {},
+        "valid_fraction": playback.get("valid_fraction"),
+        "playback_frames": playback.get("frames"),
+        "face_lost": lost,
+        "fullscreen_exits": events.get("fullscreen_exits"),
+        "stalls": events.get("stalls"),
+        "calibration_status": calibration.get("status"),
+        "calibration_failed_reason": calibration.get("failed_reason"),
+        "cv_error_norm": cv.get("error_norm"),
+        "cv_chosen": cv.get("chosen"),
+        "validation_error_norm": validation.get("mean_error_norm"),
+        "validation_error_corrected_norm": validation.get("mean_error_corrected_norm"),
+        "validation_blocks": validation.get("blocks") or [],
+        "sync_flags": sync.get("flags") or [],
+        "sync_lag_ms": sync.get("lag_ms"),
+        "sync_peak": sync.get("peak"),
+        "gate": quality.get("browser_gate") or [],
+        "plots": (quality.get("stages") or {}).get("plots", {}).get("summary") or {},
+    }
+
+
+def plots_on_disk(data_root: Path, study_id: int, session_id: uuid.UUID) -> list[dict[str, str]]:
+    """The debug plots that exist for the session (only the known names, never a listing)."""
+    directory = derived_dir(data_root, study_id, session_id) / "debug"
+    return [
+        {"name": name, "caption": caption}
+        for name, caption in PLOT_CAPTIONS.items()
+        if (directory / name).is_file()
+    ]
+
+
+def job_rows(db: DbSession, session_id: uuid.UUID) -> list[dict[str, Any]]:
+    """The last processing jobs of a session, newest first; a failed one carries its log."""
+    rows = []
+    for job in jobs_of(db, session_id)[:5]:
+        rows.append(
+            {
+                "id": job.id,
+                "status": job.status.value,
+                "attempts": job.attempts,
+                "from_stage": job.args.get("from_stage"),
+                "only": job.args.get("only"),
+                "created_at": job.created_at.isoformat(),
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "log": job.log[-3000:],
+            }
+        )
+    return rows

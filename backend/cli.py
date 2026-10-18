@@ -15,6 +15,7 @@ from app.events import parse_events
 from app.logging import configure_logging
 from app.models import Job, JobKind
 from app.models import Session as SessionRow
+from app.pipeline_names import STAGE_NAMES
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import derived_dir, events_path
@@ -23,7 +24,6 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
 from worker.pipeline.plots import plot_moving_dot, png_bytes
-from worker.pipeline.runner import STAGE_NAMES
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 

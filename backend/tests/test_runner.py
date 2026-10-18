@@ -10,11 +10,11 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
+from app.pipeline_names import STAGE_NAMES
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.runner import (
-    STAGE_NAMES,
     STAGES,
     Context,
     StageFailed,
