@@ -287,7 +287,7 @@ def estimate_sync(
     )  # fmt: skip
 
 
-# --- The stage: files in, sync.json out -----------------------------------------------------------
+# --- The stage: files in, sync.json out ---
 
 CHANNELS = 2  # horizontal iris position (mean of both eyes) and head yaw
 
@@ -341,3 +341,11 @@ def run_sync(
         derived / SYNC_FILE, (json.dumps(result.as_dict(), indent=1) + "\n").encode()
     )
     return result
+
+
+def read_t_of_pts(path: Path) -> tuple[float, float]:
+    """`(a_ms, b)` of a `sync.json`: a webcam frame is at client time `a_ms + 1000 * b * pts`."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("version") != SYNC_VERSION:
+        raise SyncError(f"{path.name} has version {data.get('version')}, expected {SYNC_VERSION}")
+    return float(data["t_of_pts"]["a_ms"]), float(data["t_of_pts"]["b"])

@@ -41,6 +41,20 @@ class PipelineConfig:
     # Huber threshold of the drift fit in units of the robust scale (scikit-learn's default).
     sync_huber_epsilon: float = 1.35
 
+    # --- Calibration fit (PLAN §5.5, §8.6) ---
+    # The training window of a dot, relative to its click (excludes the saccade at the dot's onset).
+    calib_window_before_click_ms: float = 700.0
+    calib_window_after_click_ms: float = 100.0
+    # Regularisation grid of the leave-one-dot-out cross-validation: log grid 1e-3 to 1e3.
+    calib_alphas: tuple[float, ...] = (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
+    # Samples whose prediction is further than this many MADs from their dot's median prediction
+    # are dropped and the model is fitted again. The MAD is the median distance to that median.
+    calib_outlier_mad: float = 2.5
+    # The calibration failed when more than `calib_max_sparse_dots` dots have fewer than
+    # `calib_min_frames_per_dot` valid frames.
+    calib_min_frames_per_dot: int = 5
+    calib_max_sparse_dots: int = 3
+
     # --- Stimulus time (PLAN §8.2 step 5) ---
     # Two stimulus frames count as a gap (pause, stall) when the wall clock advanced this much more
     # than the media time between them. Dropped frames do not (both advance together). Not in the
@@ -48,4 +62,5 @@ class PipelineConfig:
     stim_gap_tolerance_ms: float = 50.0
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Plain JSON types (tuples as lists), for the files that record the values used."""
+        return {k: list(v) if isinstance(v, tuple) else v for k, v in asdict(self).items()}

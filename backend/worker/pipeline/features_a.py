@@ -174,6 +174,13 @@ FEATURES_FILE = "features_a.parquet"
 # Mesh indices of the 49-landmark subset, in the order of a feature record's `lm`.
 SUBSET_MESH_INDICES = sorted(SUBSET_POSITION, key=SUBSET_POSITION.__getitem__)
 
+# The regression input of the calibration (PLAN §8.4): both irises in the eye-local frame, eye
+# openness, head angles and face scale, in the order of the browser's `featureVector`.
+FEATURE_VECTOR_COLUMNS = (
+    "iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r",
+    "yaw", "pitch", "roll", "face_ratio",
+)  # fmt: skip
+
 # Float columns that are null in a frame without a face, in the order they are written.
 FEATURE_COLUMNS = (
     "iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r",

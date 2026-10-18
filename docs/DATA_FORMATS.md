@@ -20,6 +20,7 @@ studies/{study_id}/sessions/{session_id}/
     landmarks.parquet                server-side MediaPipe landmarks of every webcam frame (below)
     features_a.parquet               Pipeline A features of every webcam frame (below)
     sync.json                        webcam frame time to client time (below)
+    calibration_a.json               the fitted calibration model of Pipeline A (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
@@ -201,6 +202,34 @@ Maps the time of a webcam frame (`pts`, seconds) to the client clock `t` (ms): `
 - The signals are the horizontal iris position in the eye-local frame (mean of both eyes) and the head yaw, z-scored, from `features_a.parquet` and from the browser's `raw/browser_features.jsonl` (run through the same `frame_features`); frames without a face and blinks are left out; both are resampled to 100 Hz, gaps over 150 ms are not bridged.
 - `windows`: the same search in windows of 60 s (a rest shorter than 30 s joins the last one), each relative to the whole-session lag. `used` windows (peak at least 0.3 and not at the edge of the search) go into the Huber fit of lag against pts, which gives `a_ms` and `b`; `residual_ms` is a used window's distance from that line. A session with fewer than two full windows has one window, `b` is 1 and the lag is the offset.
 - `flags` (the stage never fails on a weak result; the caller puts them on the session): `sync_short` (less than two windows), `sync_weak_peak` (whole-session peak under 0.3), `sync_lag_at_limit` (best lag at the edge of the +-1000 ms search), `sync_drift_high` (`|b - 1|` over 0.001), `sync_residual_high` (a window more than 40 ms off the line), `sync_drift_unknown` (fewer than two usable windows in a long session), `sync_coarse_only` (no usable browser or server frames: the coarse map with lag 0, `peak` null).
+
+### `derived/calibration_a.json` (calibration stage, PLAN §8.6)
+
+The per-session gaze model of Pipeline A, fitted on the calibration dots. Code: `backend/worker/pipeline/calibration.py` (fit and model choice) and `ridge.py` (the regression, the Python twin of the browser's `ridge.ts`).
+
+```json
+{
+  "version": 1, "config": { "...": "every PipelineConfig value used" },
+  "status": "ok", "failed_reason": null,
+  "feature_columns": ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll", "face_ratio"],
+  "attempt_used": { "attempt": 2, "index": 1, "passed": true, "reason": "last_passed", "start_t": 31000.0 },
+  "attempts": [ { "attempt": 1, "index": 0, "passed": false, "gate_reason": "high_error", "dots": 13 } ],
+  "viewport": { "width": 1280.0, "height": 720.0 },
+  "dots": [ { "id": 0, "x": 640.0, "y": 360.0, "click_t": 2000.0, "valid_frames": 24, "kept_frames": 22 } ],
+  "samples": { "valid": 312, "kept": 301, "rejected": 11 },
+  "cv": { "linear": { "degree": 1, "alpha": 10.0, "error_px": 61.2 },
+          "quadratic": { "degree": 2, "alpha": 100.0, "error_px": 70.4 },
+          "chosen": "linear", "error_px": 61.2, "error_norm": 0.0414 },
+  "model": { "alpha": 10.0, "degree": 1, "means": [], "stds": [], "weights": [[], []], "intercepts": [0.0, 0.0] }
+}
+```
+
+- **Attempts** are the calibration blocks of the session in order (a run of calibration-phase dots; a retry after a failed browser gate is a new block), each with the browser's `before_video` `calib_gate_result` that follows it. The attempt fitted is the last one that passed that gate (`last_passed`), else the last one (`none_passed_used_last`); a single attempt is `only_attempt`. A dot's position is its last `calib_dot_show`, its click time the last `calib_dot_click`.
+- **Samples:** the frames of `features_a.parquet` with a face, no blink and every feature finite, from 700 ms before to 100 ms after the dot's click (client time through `sync.json`). `valid_frames` counts them; `kept_frames` those left after the outlier rejection. The regression input is the 10 `feature_columns`, the target the dot position in viewport px.
+- **Model choice:** leave-one-dot-out cross-validation over alpha in 1e-3 .. 1e3 (one value per decade) for the degree-2 model and the plain linear model; `error_px` is the mean over the left-out dots of the mean per-frame distance to the dot; the lower one wins, a tie goes to the linear model. `error_norm` divides by the viewport diagonal (null without a viewport). Both errors are kept.
+- **Outliers:** after a first fit, samples whose prediction is further than 2.5 MADs from their dot's median prediction (MAD = the median distance of that dot's predictions to their median) are dropped, and alpha, degree and the weights are chosen and fitted again on the rest.
+- **`model`:** `StandardScaler` (population std, 0 replaced by 1), then for degree 2 the products `x_i * x_j` for `i <= j` after the original columns (scikit-learn's order), then ridge with an unpenalised intercept; `weights[0]` is x, `weights[1]` is y. The browser's `ridge.ts` and this file use the same definition and are tested against scikit-learn.
+- **`status: "failed"`** (`model` null, nothing else is run for the session): `no_calibration_dots`, `too_few_valid_frames` (more than 3 dots with fewer than 5 valid frames), or `fit_impossible`. A failed calibration is a data problem, not a crash; the session is then excluded (DECISIONS milestone 3 item 15).
 
 ### Client time to stimulus time (PLAN §8.2 step 5)
 

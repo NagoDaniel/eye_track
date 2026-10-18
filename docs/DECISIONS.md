@@ -14,6 +14,19 @@ Format:
 
 ---
 
+## 2026-10-18 — Milestone 3 T6: calibration fit
+- Plan section: §5.5, §5.6, §8.6
+- Decision (readings of what the plan leaves open; flag any you object to):
+  1. **Outlier rule.** "Beyond 2.5 MAD of the dot's median prediction" is: the distance of each sample's prediction to the dot's median prediction (per coordinate), compared with 2.5 times the median of those distances (an unscaled MAD of the 2-D scatter; for Gaussian scatter this drops about 1.5 % of the samples). A dot whose MAD is 0 drops nothing. After the rejection the model (degree, alpha, weights) is chosen again on the remaining samples, so the recorded cross-validation error belongs to the final data.
+  2. **CV error** is the browser's definition: mean over the left-out dots of the mean per-frame distance to the dot, in px. The alpha grid has one value per decade. Ties go to stronger regularisation, and between the two models to the plain linear one.
+  3. **Same feature vector as the browser** (the 10 columns of `featureVector`; head translation is not a regressor), as DECISIONS 2026-10-16 kept it.
+  4. **Failure is a result, not an exception** (as in item 15 of the scope entry): no calibration dots, more than 3 sparse dots, or no possible fit give `status: "failed"` and `calibration_a.json` without a model. Dots that were never clicked have no training window and count as sparse.
+  5. **The training window is not clipped to the dot's appearance.** The plan's window (700 ms before to 100 ms after the click) is used as written; with the plan's 1500 ms dots the click is at least 900 ms after the dot appears, so the window starts after the onset. In the e2e test (700 ms dots, instant clicks) the window starts before the dot appears; that data is for plumbing only.
+  6. `ridge.py` is a numpy version of the browser's ridge, tested against scikit-learn and against the browser's fixture `shared/fixtures/ridge_fit.json` (1e-6).
+  7. New named values in `PipelineConfig`: the two window lengths and the 5-frames/3-dots rule (plan), the alpha grid (plan), `calib_outlier_mad` 2.5 (plan).
+- Reason: details the plan leaves open for the calibration fit.
+- Approved by: plan leaves open (flag if you object)
+
 ## 2026-10-18 — Milestone 3 T5: sync and the stimulus-time map
 - Plan section: §8.2
 - Decision (readings of what the plan leaves open; flag any you object to):
