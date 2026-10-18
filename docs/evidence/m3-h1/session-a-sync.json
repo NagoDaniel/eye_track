@@ -1,0 +1,46 @@
+{
+ "keys": [
+  "config",
+  "curve",
+  "flags",
+  "frames",
+  "lag_ms",
+  "peak",
+  "recorder_start_ms",
+  "residual_max_ms",
+  "t_of_pts",
+  "version",
+  "windows"
+ ],
+ "summary": {
+  "version": 1,
+  "recorder_start_ms": 71211.90000003576,
+  "lag_ms": -33.18105854978959,
+  "peak": 0.9970933834877265,
+  "residual_max_ms": 1.2701363229784945,
+  "windows": [
+   {
+    "pts_center": 30.0,
+    "lag_ms": -32.33091676796317,
+    "peak": 0.9969968231053822,
+    "used": true,
+    "residual_ms": 6.328989968551468e-06
+   },
+   {
+    "pts_center": 90.0,
+    "lag_ms": -33.94314856701366,
+    "peak": 0.9972852320680345,
+    "used": true,
+    "residual_ms": -1.2701363229784945
+   },
+   {
+    "pts_center": 136.4125000005,
+    "lag_ms": -32.937628731794376,
+    "peak": 0.9968538389821505,
+    "used": true,
+    "residual_ms": 3.721226050856785e-06
+   }
+  ],
+  "flags": []
+ }
+}

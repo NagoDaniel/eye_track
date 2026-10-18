@@ -1,0 +1,61 @@
+{
+ "video_id": "2",
+ "playback_frames": 654,
+ "valid_frames": 644,
+ "valid_fraction": 0.9847094801223242,
+ "uncorrected": {
+  "frames": 644,
+  "median_px": 92.29705471596134,
+  "median_norm": 0.045719468899333635,
+  "mean_px": 126.3642459819242,
+  "p90_px": 274.4119982054221,
+  "within_threshold": 0.9347826086956522,
+  "pauses": {
+   "frames": 461,
+   "median_px": 75.81215165399098,
+   "median_norm": 0.037553650226466,
+   "mean_px": 101.46022839204909,
+   "p90_px": 182.01793480309192,
+   "within_threshold": 0.9761388286334056
+  },
+  "movements": {
+   "frames": 183,
+   "median_px": 175.58053784137888,
+   "median_norm": 0.08697405311438365,
+   "mean_px": 189.1005963039594,
+   "p90_px": 346.57127714396756,
+   "within_threshold": 0.8306010928961749
+  }
+ },
+ "drift_corrected": {
+  "frames": 644,
+  "median_px": 114.8666325575065,
+  "median_norm": 0.05689933932286047,
+  "mean_px": 138.51864725427373,
+  "p90_px": 250.23481197935934,
+  "within_threshold": 0.9316770186335404,
+  "pauses": {
+   "frames": 461,
+   "median_px": 94.06685685464487,
+   "median_norm": 0.04659614274430654,
+   "mean_px": 114.86394381007413,
+   "p90_px": 213.875040450594,
+   "within_threshold": 0.9783080260303688
+  },
+  "movements": {
+   "frames": 183,
+   "median_px": 190.71094881848646,
+   "median_norm": 0.094468922330209,
+   "mean_px": 198.10781822572736,
+   "p90_px": 353.044154722274,
+   "within_threshold": 0.8142076502732241
+  }
+ },
+ "gaze_lag_ms": 160.0,
+ "criteria": {
+  "max_median_error_norm": 0.15,
+  "min_valid_fraction": 0.8
+ },
+ "passes": true,
+ "reasons": []
+}

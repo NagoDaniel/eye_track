@@ -11,7 +11,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 1a Infrastructure | done (accepted and merged 2026-10-12) | m1a-infrastructure | task record and review are in git history (`41e299d`) |
 | 1b Skeleton app | done (accepted and merged 2026-10-15) | m1b-skeleton-app | PR #2; task record and review fixes in git history (`745c48c`) |
 | 2 Recording and sync data | done (accepted and merged 2026-10-16) | m2-recording | reviewed by the plan-reviewer, fixes done except the items under "Open problems"; `make e2e` produces complete raw data (webcam WebM, features, stimulus frames, events) |
-| 3 Pipeline A | all 15 tasks done; H1 (real webcam, moving dot) passed 2026-10-18; in review | m3-pipeline-a | not pushed yet; `make lint`, `make test` (650 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
+| 3 Pipeline A | all 15 tasks done; H1 (real webcam, moving dot) passed 2026-10-18; review fixes done, waiting for acceptance and merge | m3-pipeline-a | not pushed yet; `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
 | 4 Analysis | not started | | |
 | 5 Pipeline B and comparison | not started | | |
 | 6 Hardening for pilot | not started | | |
@@ -64,7 +64,8 @@ Sync on the real recordings (`derived/sync.json`): A (153 s, the first real use 
 
 Findings (details in DECISIONS "Milestone 3 pilot result"): vertical gaze is the weak axis; A is worse but the glasses cannot be told apart from posture and fatigue with two sessions; the +160 ms lag is the same in both; the mean-offset drift correction does not help on this test; a smaller feature set is worse than the 10 features; the linear calibration model beats the quadratic one. The browser gate and the server's validation agree. Tuning is deferred (human, 2026-10-18).
 
-## Review of Milestone 3 (plan-reviewer, 2026-10-18): proposed fixes, NOT approved
+## Review of Milestone 3 (plan-reviewer, 2026-10-18): fixes
+Approved by Nágó Dániel on 2026-10-18 and **done**: R1, R2, R3 (`docs/evidence/m3-h1/`), R4, R6, R8. **Dropped by the human:** R5, R7, R9 and the minor items below (replay loaded on every page view, participant-video access not logged, M6 retention follow-up).
 Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backend, 474 frontend) and `make e2e` all passed in the reviewer's own run. The full report is in the conversation of 2026-10-18; these are the tasks it asks for. Approve, change or drop them by number.
 
 | # | Severity | Task | Test |

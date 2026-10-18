@@ -24,6 +24,7 @@ studies/{study_id}/sessions/{session_id}/
     gaze_a.parquet                   the gaze of every webcam frame (below)
     fixations_a.parquet              the fixations of the playback phase (below)
     quality.json                     the session quality report and inclusion decision (below)
+    stages.json                      per stage: status (ok, skipped, failed), seconds, summary, error; written after every stage
     debug/*.png                      debug plots (below)
     debug/replay.mp4                 the debug replay video, only when rendered on request (below)
 ```
@@ -182,7 +183,7 @@ raw/...        the raw files without meta.json (chunks, assembled streams, webca
 derived/...    everything the stages wrote
 ```
 
-`--no-raw-video` leaves out `raw/webcam.webm` and `raw/chunks/webcam/`; `chunks.json` still lists those chunks. Import refuses paths outside `raw/` and `derived/`, checks every chunk file against `chunks.json` (a missing webcam chunk is allowed), creates the study (`imported-<id>`) from the config snapshot if its id is not there, and creates the session with an unusable upload token. The status is `processed` when `derived/quality.json` exists, else `uploaded`; `raw_video_deleted_at` is set when there is no webcam. An existing session needs `--force`, which deletes it first.
+`--no-raw-video` leaves out `raw/webcam.webm` and `raw/chunks/webcam/`; `chunks.json` still lists those chunks. Import refuses paths outside `raw/` and `derived/`, checks every chunk file against `chunks.json` (a missing webcam chunk is allowed), creates the study (`imported-<id>`) from the config snapshot if its id is not there, and creates the session with an unusable upload token. The status is `processed` when `derived/quality.json` exists, else `uploaded`; `raw_video_deleted_at` is set when there is no webcam. An existing session needs `--force`: the archive is extracted and verified in a staging directory first, and only then is the existing session replaced; if anything fails the old session stays as it was.
 
 `cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
 
