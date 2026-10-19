@@ -91,3 +91,8 @@ def webcam_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
 
 def derived_dir(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
     return session_dir(root, study_id, session_id) / "derived"
+
+
+def analysis_run_dir(root: Path, study_id: int, video_id: int, run_id: str) -> Path:
+    """Where one `analyze_video` run writes its outputs (PLAN §7, §9)."""
+    return root / "analysis" / str(study_id) / str(video_id) / run_id

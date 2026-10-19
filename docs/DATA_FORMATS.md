@@ -205,6 +205,24 @@ Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`,
 
 `rect` coords are `[x0, y0, x1, y1]` with x1 > x0, y1 > y0; `polygon` has at least 3 `[x, y]` points (concave allowed). Both lists default to empty; ids are unique within their list; `end` is after `start`. An AOI is active from `start` up to but excluding `end`. A point on the border is inside. The hit tolerance grows the shape by a distance (round corners).
 
+## `analysis/{study_id}/{video_id}/{run_id}/run.json` (PLAN §9)
+
+One `analyze_video` run (`backend/worker/analysis/run.py`). `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
+
+| key | meaning |
+|---|---|
+| `version`, `kind` | 1, `analyze_video` |
+| `run_id`, `study_id`, `video_id` | |
+| `status`, `error`, `started_at`, `finished_at` | ISO 8601 UTC |
+| `git_hash` | `git describe --always --dirty` of the build (`GIT_SHA` build argument); `null` when the image was built without it |
+| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `plain` / `drift_corrected`, heatmap window, sigma floor, grid, segment length, AOI tolerance k, synchrony window) |
+| `included` | `{session_id, participant_code, ...}` per session analysed (later stages add their numbers) |
+| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json`), `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
+| `outputs` | files written, relative to the run directory |
+| `results` | numbers the stages report |
+
+Sessions that never finished uploading and withdrawn ones are not listed. One participant code counts once: its latest included session.
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.
