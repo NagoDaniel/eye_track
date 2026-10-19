@@ -231,6 +231,10 @@ For stimulus frame `k` (media time `s = k / fps`) the density uses the valid sam
 
 `density.npz`: `density` float32 `(frames, 36, 64)` (row = y from the top, column = x; cell centres at `(i + 0.5) / 64`, `(j + 0.5) / 36` of the video), and scalars `fps`, `sigma`, `scale` (the density drawn fully hot), `window_s`.
 
+### `static/NNN_<id>.png` (PLAN §9.2)
+
+Written by `backend/worker/analysis/heatmap_static.py`, one picture per time segment, numbered in segment order (the id is made file-name safe). The segments are the `segments` of the video's `aois.json`, or consecutive windows of `segment_default_s` (10) seconds over the whole video, the last one shorter; a segment is cut at the end of the video and one that starts after it is dropped. The density is the one of the dynamic heatmap (same sigma, equal weight per participant) over all samples of the participant in the segment, drawn over the video frame at the segment's middle. Each picture has its own colour scale (the 99th percentile of its non-zero densities).
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.
