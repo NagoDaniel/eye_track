@@ -1,4 +1,5 @@
-"""Helpers shared by the server-rendered admin pages (no JavaScript: the proxy's CSP forbids it).
+"""Helpers shared by the server-rendered admin pages. They work without JavaScript (the video page
+adds the AOI editor as a script from `/admin/static`: the proxy's CSP forbids inline scripts).
 
 Pages redirect to the login form when nobody is logged in. State-changing forms carry a hidden
 `csrf_token` field that is checked against the session, like the logout form.

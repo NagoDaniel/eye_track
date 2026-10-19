@@ -39,6 +39,12 @@ def make_run(
         (run_dir / name).parent.mkdir(parents=True, exist_ok=True)
         (run_dir / name).write_bytes(data)
         record.outputs.append(name)
-    record.results["synchrony"] = {"nss_by_participant": {code: 0.5 for code in codes}}
+    record.results["synchrony"] = {
+        "windows": 5,
+        "windows_with_two_or_more": 3,
+        "mean_dispersion": 0.125,
+        "mean_nss": 0.5,
+        "nss_by_participant": {code: 0.5 for code in codes},
+    }
     record.finish(run_dir, error=error)
     return run_id

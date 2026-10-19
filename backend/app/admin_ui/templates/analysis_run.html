@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Analysis run{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block body %}
+<p><a href="/admin/analysis">All analysis runs</a></p>
+<h1>Analysis run <code>{{ record.run_id }}</code></h1>
+<table>
+  <tr><th>Study</th><td>{% if study %}<a href="/admin/studies/{{ study.id }}">{{ study.name }}</a> ({{ study.code }}){% else %}{{ record.study_id }}{% endif %}</td></tr>
+  <tr><th>Video</th><td>{% if video %}<a href="/admin/videos/{{ video.id }}">{{ video.title }}</a>{% else %}{{ record.video_id }}{% endif %}</td></tr>
+  <tr><th>Status</th><td>{% if record.status == "done" %}<span class="ok">done</span>{% elif record.status == "failed" %}<span class="error">failed</span>{% else %}{{ record.status }}{% endif %}</td></tr>
+  <tr><th>Started</th><td>{{ record.started_at }}</td></tr>
+  <tr><th>Finished</th><td>{{ record.finished_at or "–" }}</td></tr>
+  <tr><th>Code version</th><td>{% if record.git_hash %}<code>{{ record.git_hash }}</code>{% else %}<span class="warning">not recorded (the image was built without GIT_SHA)</span>{% endif %}</td></tr>
+  <tr><th>Gaze</th><td>{{ record.parameters.gaze_columns }}</td></tr>
+  <tr><th>AOI tolerance k</th><td>{{ record.parameters.aoi_tolerance_k }}</td></tr>
+  {% if record.results.sigma %}<tr><th>Heatmap sigma</th><td>{{ "%.4f"|format(record.results.sigma.value) }} of the video width, from {{ record.results.sigma.sessions_used }} session(s){% if record.results.sigma.floored %} (raised to the lower limit {{ record.parameters.sigma_min }}){% endif %}</td></tr>{% endif %}
+</table>
+{% if record.error %}<p class="error" role="alert">Failed: {{ record.error }}</p>{% endif %}
+
+<p><a href="{{ base }}/download.zip">Download everything (ZIP)</a>
+  {% for name in csv_files %} · <a href="{{ base }}/files/{{ name }}">{{ name }}</a>{% endfor %}
+  · <a href="{{ base }}/files/run.json">run.json</a></p>
+
+<h2>Participants</h2>
+<table>
+  <thead><tr><th>Participant</th><th>Session</th><th class="num">Samples</th><th class="num">Fixations</th><th class="num">Accuracy (px)</th></tr></thead>
+  <tbody>
+  {% for p in record.included %}
+    <tr>
+      <td><a href="/admin/participants/{{ record.study_id }}/{{ p.participant_code }}">{{ p.participant_code }}</a></td>
+      <td><a href="/admin/sessions/{{ p.session_id }}"><code>{{ p.session_id[:8] }}</code></a></td>
+      <td class="num">{{ p.get("samples", "–") }}</td><td class="num">{{ p.get("fixations", "–") }}</td>
+      <td class="num">{{ "%.0f"|format(p.accuracy_px) if p.get("accuracy_px") is not none else "–" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Nobody was included.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if record.excluded %}
+<h3>Left out</h3>
+<table>
+  <thead><tr><th>Participant</th><th>Session</th><th>Why</th></tr></thead>
+  <tbody>
+  {% for e in record.excluded %}
+    <tr><td>{{ e.participant_code }}</td><td><a href="/admin/sessions/{{ e.session_id }}"><code>{{ e.session_id[:8] }}</code></a></td><td>{{ e.reasons | join(", ") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if has_heatmap %}
+<h2>Dynamic heatmap</h2>
+<video controls preload="metadata" src="{{ base }}/files/heatmap.mp4" style="width: 100%; max-height: 32rem; background: #000"></video>
+{% endif %}
+{% if static_pictures %}
+<h2>Heatmaps per segment</h2>
+{% for name in static_pictures %}
+<figure><img class="plot" src="{{ base }}/files/{{ name }}" alt="{{ name }}"><figcaption class="muted">{{ name }}</figcaption></figure>
+{% endfor %}
+{% endif %}
+{% if has_synchrony %}
+<h2>Attentional synchrony</h2>
+{% set sync = record.results.synchrony %}
+{% if sync %}<p class="muted">{{ sync.windows_with_two_or_more }} of {{ sync.windows }} windows have two or more participants with gaze.
+  {% if sync.mean_dispersion is not none %}Mean dispersion {{ "%.3f"|format(sync.mean_dispersion) }} video widths.{% endif %}
+  {% if sync.mean_nss is not none %}Mean NSS {{ "%.2f"|format(sync.mean_nss) }}.{% endif %}</p>{% endif %}
+<img class="plot" src="{{ base }}/files/synchrony.png" alt="Attentional synchrony over the video">
+{% endif %}
+{% if aoi_rows %}
+<h2>AOI metrics</h2>
+<table>
+  <thead><tr>{% for h in aoi_rows[0].keys() %}<th{% if not loop.first and loop.index > 2 %} class="num"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in aoi_rows %}
+    <tr>{% for v in row.values() %}<td{% if loop.index > 2 %} class="num"{% endif %}>{{ v }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if aoi_rows | length >= 200 %}<p class="muted">The first 200 rows; the CSV has all of them.</p>{% endif %}
+{% elif record.results.aoi_metrics and record.results.aoi_metrics.skipped %}
+<h2>AOI metrics</h2>
+<p class="muted">Skipped: {{ record.results.aoi_metrics.skipped }}. Draw areas on the <a href="/admin/videos/{{ record.video_id }}">video page</a> and run the analysis again.</p>
+{% endif %}
+{% endblock %}

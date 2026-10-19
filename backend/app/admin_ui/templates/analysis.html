@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Analysis{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block body %}
+<h1>Analysis</h1>
+<p class="muted">An analysis takes the included sessions of a study that watched one video and writes
+  heatmaps, AOI metrics and attentional synchrony. The worker does it in the background; it can take
+  about as long as the video.</p>
+{% if queued %}<p class="ok" role="status">Queued. The run shows up below when the worker starts it.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/analysis">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Study
+    <select name="study_id" required>
+      {% for s in studies %}<option value="{{ s.id }}">{{ s.name }} ({{ s.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <label>Video
+    <select name="video_id" required>
+      {% for v in videos %}<option value="{{ v.id }}">{{ v.title }} (id {{ v.id }})</option>{% endfor %}
+    </select>
+  </label>
+  <label>Gaze
+    <select name="gaze_columns">
+      <option value="plain">as measured (default)</option>
+      <option value="drift_corrected">drift-corrected between the validation blocks</option>
+    </select>
+  </label>
+  <label>AOI tolerance k (shapes grow by k times each participant's accuracy; 0 for none)
+    <input name="aoi_tolerance_k" type="number" step="0.1" min="0" value="0">
+  </label>
+  <button type="submit"{% if not studies or not videos %} disabled{% endif %}>Start analysis</button>
+</form>
+
+<h2>Runs</h2>
+<table>
+  <thead>
+    <tr><th>Run</th><th>Study</th><th>Video</th><th>Status</th><th class="num">Included</th><th class="num">Left out</th><th>Gaze</th><th class="num">k</th></tr>
+  </thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td>{% if r.has_record %}<a href="/admin/analysis/{{ r.study_id }}/{{ r.video_id }}/{{ r.run_id }}"><code>{{ r.run_id }}</code></a>{% else %}<code>{{ r.run_id }}</code>{% endif %}</td>
+      <td>{{ study_names.get(r.study_id, r.study_id) }}</td>
+      <td>{{ video_names.get(r.video_id, r.video_id) }}</td>
+      <td>{% if r.status == "done" %}<span class="ok">done</span>{% elif r.status == "failed" %}<span class="error" title="{{ r.error }}">failed: {{ (r.error or "")[:80] }}</span>{% else %}{{ r.status }}{% endif %}</td>
+      <td class="num">{{ r.included }}</td>
+      <td class="num">{{ r.excluded }}</td>
+      <td>{{ r.gaze_columns }}</td>
+      <td class="num">{{ r.aoi_tolerance_k }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8">No runs yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

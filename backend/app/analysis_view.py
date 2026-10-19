@@ -5,11 +5,13 @@ started with the CLI have no job row; a queued run has a job row and no director
 listed.
 """
 
+import csv
 import json
 import os
 import re
 import tempfile
 import zipfile
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -132,3 +134,39 @@ def list_runs(
         if run_id not in found:
             found[run_id] = _from_job(job)
     return sorted(found.values(), key=lambda r: r["run_id"], reverse=True)
+
+
+def read_csv_rows(path: Path, limit: int | None = None) -> list[dict[str, str]]:
+    """The rows of an output CSV as dicts (at most `limit`); an empty list when there is no file."""
+    if not path.is_file():
+        return []
+    with path.open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        return list(islice(reader, limit))
+
+
+def participant_analysis(
+    db: Db, root: Path, study_id: int, participant_code: str
+) -> list[dict[str, Any]]:
+    """For each video, the latest finished run of the study that included the participant: their
+    AOI metrics and mean NSS (DECISIONS 2026-10-14 and 2026-10-19)."""
+    found: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for run in list_runs(db, root, study_id):
+        if run["status"] != "done" or run["video_id"] in seen or not run["has_record"]:
+            continue
+        record = read_run(root, run["study_id"], run["video_id"], run["run_id"])
+        if participant_code not in {i["participant_code"] for i in record["included"]}:
+            continue
+        seen.add(run["video_id"])
+        run_dir = run_directory(root, run["study_id"], run["video_id"], run["run_id"])
+        wide = read_csv_rows(run_dir / "aoi_metrics_wide.csv")
+        nss = (record["results"].get("synchrony") or {}).get("nss_by_participant") or {}
+        found.append({
+            "video_id": run["video_id"],
+            "run_id": run["run_id"],
+            "started_at": record["started_at"],
+            "aoi_rows": [r for r in wide if r["participant_code"] == participant_code],
+            "nss_mean": nss.get(participant_code),
+        })  # fmt: skip
+    return found
