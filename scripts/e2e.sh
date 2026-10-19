@@ -78,7 +78,7 @@ def sh(script: str) -> str:
     return run("exec", "-T", "api", "sh", "-c", script)
 
 dirs = sh("ls -d /data/studies/*/sessions/*/raw").split()
-assert len(dirs) == 5, dirs
+assert len(dirs) == 6, dirs
 recorded = 0
 complete = []  # recorded sessions that played the video (candidates for E2E_EXPORT_SESSION)
 for raw in dirs:
@@ -129,7 +129,7 @@ for raw in dirs:
     print(f"{raw.split('/')[-2][:8]}: {len(features)} feature records ({with_face} with a face), "
           f"{len(frames)} stimulus frames, webcam {probe['codec_name']} {probe['width']}x{probe['height']} "
           f"{last_pts:.1f} s (features span {span:.1f} s)")
-assert recorded == 4, recorded
+assert recorded == 5, recorded
 print(f"{len(dirs)} sessions, {recorded} with a complete recording")
 
 # The worker processes every completed session (PLAN §8, §13): wait for the queue to empty, then
