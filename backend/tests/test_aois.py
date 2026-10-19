@@ -3,10 +3,20 @@
 import math
 from typing import Any
 
+import numpy as np
 import pytest
 from pydantic import TypeAdapter
 
-from app.aois import Aoi, AoiFile, PolygonAoi, RectAoi, aoi_active, aoi_contains, parse_aoi_file
+from app.aois import (
+    Aoi,
+    AoiFile,
+    PolygonAoi,
+    RectAoi,
+    aoi_active,
+    aoi_contains,
+    aoi_contains_many,
+    parse_aoi_file,
+)
 from app.service_errors import InvalidError
 
 PLAN_EXAMPLE: dict[str, Any] = {
@@ -117,3 +127,24 @@ def test_active_interval_is_closed_at_start_open_at_end() -> None:
     r = rect([0, 0, 1, 1], start=2.0, end=4.0)
     assert not aoi_active(r, 1.99) and aoi_active(r, 2.0) and aoi_active(r, 3.9)
     assert not aoi_active(r, 4.0)
+
+
+@pytest.mark.parametrize("tolerance", [0.0, 0.03, 0.1])
+def test_the_array_hit_test_equals_the_scalar_one(tolerance: float) -> None:
+    shapes = [
+        rect([0.2, 0.3, 0.6, 0.7]),
+        polygon([[0.1, 0.2], [0.5, 0.2], [0.5, 0.9], [0.1, 0.9]]),
+        polygon([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.6, 1.0], [0.6, 0.5], [0.4, 0.5],
+                 [0.4, 1.0], [0.0, 1.0]]),
+        polygon([[0.3, 0.3], [0.9, 0.5], [0.5, 0.9]]),
+    ]  # fmt: skip
+    rng = np.random.default_rng(3)
+    x, y = rng.uniform(-0.2, 1.2, 400), rng.uniform(-0.2, 1.2, 400)
+    # points exactly on borders and corners
+    x = np.append(x, [0.2, 0.6, 0.1, 0.5, 0.5, 0.4, 0.6])
+    y = np.append(y, [0.3, 0.7, 0.5, 0.9, 0.2, 0.8, 0.5])
+    for shape in shapes:
+        expected = [
+            aoi_contains(shape, float(a), float(b), tolerance) for a, b in zip(x, y, strict=True)
+        ]
+        assert aoi_contains_many(shape, x, y, tolerance).tolist() == expected

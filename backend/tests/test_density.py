@@ -35,7 +35,7 @@ def gaze(accuracy_px: float | None, width_px: float | None) -> SessionGaze:
     return SessionGaze(
         session_id=uuid.uuid4(),
         participant_code="P",
-        samples=Samples(empty, empty, empty, empty),
+        samples=Samples(empty, empty, empty, empty, empty),
         fixations=Fixations(empty, empty, empty, empty, empty, empty, empty),
         accuracy_px=accuracy_px,
         video_width_px=width_px,
@@ -116,7 +116,7 @@ def test_sigma_has_a_floor() -> None:
 
 def test_samples_are_sliced_by_media_time_whatever_their_order() -> None:
     stim = np.array([3.0, 1.0, 2.0, 5.0, 4.0])
-    s = Samples(np.arange(5.0), stim, stim / 10, np.zeros(5))
+    s = Samples(np.arange(5.0), stim, stim / 10, np.zeros(5), np.zeros(5))
     ordered = by_stim_time(s)
     x, _ = ordered.window(2.0, 4.0)  # both ends included
     np.testing.assert_allclose(x, [0.2, 0.3, 0.4])

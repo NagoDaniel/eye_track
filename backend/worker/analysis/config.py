@@ -19,6 +19,10 @@ class AnalysisConfig:
     # Smoothed gaze as it is, or with the drift correction of §8.8 (DECISIONS 2026-10-19 item 2).
     gaze_columns: GazeColumns = "plain"
 
+    # Time a sample stands for: until the next webcam frame, at most this long (a longer gap is a
+    # break in the recording, not looking). Not in the plan.
+    sample_max_dt_ms: float = 100.0
+
     # --- Dynamic heatmap (PLAN §9.1) ---
     # Samples within this many seconds either side of a stimulus frame's time are used.
     heatmap_window_s: float = 0.5

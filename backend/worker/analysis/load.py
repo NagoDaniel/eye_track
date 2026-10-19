@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from app.events import parse_events
 from app.storage import derived_dir, events_path
-from worker.analysis.config import GazeColumns
+from worker.analysis.config import AnalysisConfig, GazeColumns
 from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.stimulus_map import VideoRectTimeline
@@ -33,6 +33,7 @@ class Samples:
     stim_time: Floats  # seconds of media time
     x: Floats
     y: Floats
+    dt_s: Floats  # the time each sample stands for, in seconds
 
 
 @dataclass(frozen=True)
@@ -85,10 +86,11 @@ def load_session(
     session_id: uuid.UUID,
     participant_code: str,
     video_id: int,
-    gaze_columns: GazeColumns,
+    config: AnalysisConfig,
 ) -> SessionGaze:
     """Raises FileNotFoundError when a derived file is missing."""
     derived = derived_dir(root, study_id, session_id)
+    gaze_columns = config.gaze_columns
     suffix = "_dc" if gaze_columns == "drift_corrected" else ""
     wanted = str(video_id)
 
@@ -98,7 +100,11 @@ def load_session(
     t_ms, stim = _floats(gaze["t"]), _floats(gaze["stim_time"])
     x, y = _floats(gaze[f"x_vid{suffix}"]), _floats(gaze[f"y_vid{suffix}"])
     keep = on_video & valid & np.isfinite(stim) & np.isfinite(x) & np.isfinite(y)
-    samples = Samples(t_ms[keep], stim[keep], x[keep], y[keep])
+    # Each sample stands for the time to the next webcam frame, capped (a gap is not looking).
+    step = np.append(np.diff(t_ms), np.nan)
+    step = np.where(np.isfinite(step), step, np.nanmedian(np.diff(t_ms)) if len(t_ms) > 1 else 0.0)
+    dt_s = np.minimum(step, config.sample_max_dt_ms) / 1000.0
+    samples = Samples(t_ms[keep], stim[keep], x[keep], y[keep], dt_s[keep])
 
     fix = pq.read_table(derived / FIXATIONS_FILE)
     fix_on_video = np.array([v == wanted for v in fix["video_id"].to_pylist()], dtype=np.bool_)

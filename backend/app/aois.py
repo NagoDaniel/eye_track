@@ -7,6 +7,8 @@ the admin saves and what the analysis reads, so the two cannot disagree (PLAN §
 import math
 from typing import Annotated, Any, Literal
 
+import numpy as np
+from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.service_errors import InvalidError
@@ -123,3 +125,33 @@ def aoi_contains(aoi: RectAoi | PolygonAoi, x: float, y: float, tolerance: float
         return True
     edges = zip(points, points[1:] + points[:1], strict=True)
     return any(_segment_distance(x, y, a[0], a[1], b[0], b[1]) <= tolerance for a, b in edges)
+
+
+def aoi_contains_many(
+    aoi: RectAoi | PolygonAoi,
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    tolerance: float = 0.0,
+) -> NDArray[np.bool_]:
+    """`aoi_contains` for arrays of points (the same definition, for the analysis)."""
+    if isinstance(aoi, RectAoi):
+        x0, y0, x1, y1 = aoi.coords
+        dx = np.maximum(np.maximum(x0 - x, 0.0), x - x1)
+        dy = np.maximum(np.maximum(y0 - y, 0.0), y - y1)
+        return np.asarray(np.hypot(dx, dy) <= tolerance)
+    points = aoi.coords
+    inside = np.zeros(len(x), dtype=np.bool_)
+    near = np.zeros(len(x), dtype=np.bool_)
+    for (ax, ay), (bx, by) in zip(points, points[1:] + points[:1], strict=True):
+        if ay != by:  # a horizontal edge is never crossed by a horizontal ray
+            crosses = (ay > y) != (by > y)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                left_of_edge = x < ax + (y - ay) * (bx - ax) / (by - ay)
+            inside ^= crosses & left_of_edge
+        ex, ey = bx - ax, by - ay
+        length2 = ex * ex + ey * ey
+        u: NDArray[np.float64] = np.zeros(len(x))
+        if length2 != 0:
+            u = np.clip(((x - ax) * ex + (y - ay) * ey) / length2, 0.0, 1.0)
+        near |= np.hypot(x - (ax + u * ex), y - (ay + u * ey)) <= tolerance
+    return inside | near

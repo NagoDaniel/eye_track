@@ -235,6 +235,19 @@ For stimulus frame `k` (media time `s = k / fps`) the density uses the valid sam
 
 Written by `backend/worker/analysis/heatmap_static.py`, one picture per time segment, numbered in segment order (the id is made file-name safe). The segments are the `segments` of the video's `aois.json`, or consecutive windows of `segment_default_s` (10) seconds over the whole video, the last one shorter; a segment is cut at the end of the video and one that starts after it is dropped. The density is the one of the dynamic heatmap (same sigma, equal weight per participant) over all samples of the participant in the segment, drawn over the video frame at the segment's middle. Each picture has its own colour scale (the 99th percentile of its non-zero densities).
 
+### `aoi_metrics_long.csv` and `aoi_metrics_wide.csv` (PLAN §9.3)
+
+Only written when the video has AOIs. Code: `backend/worker/analysis/aoi_metrics.py`. Per included participant and AOI, over the time the AOI exists (`start` to `end`, cut at the end of the video); coordinates are video-normalized and the shape is grown by `aoi_tolerance_k` times the participant's own validation accuracy (in video units: px over the content rectangle's width; no growth when the accuracy is unknown). The long file has the columns `participant_code, aoi_id, metric, value`; the wide file has one row per participant and AOI and one column per metric. An empty value means "not defined" (no fixation hit the AOI).
+
+| metric | meaning |
+|---|---|
+| `dwell_fixation_s` | time of the fixations whose centroid is in the shape; a fixation that starts before or ends after the AOI counts for the part inside the active time |
+| `dwell_sample_s` | time of the valid samples in the shape; a sample stands for the time to the next webcam frame, at most `sample_max_dt_ms` (100) |
+| `share_active` | `dwell_sample_s` over the AOI's active time (empty when the AOI starts after the video ends) |
+| `time_to_first_fixation_s` | from the AOI's start to the start of the first hitting fixation (0 when it was already there); empty when none |
+| `fixation_count` | number of hitting fixations |
+| `revisits` | entries minus one (at least 0); an entry is a run of consecutive hitting fixations among the fixations in the active time |
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.
