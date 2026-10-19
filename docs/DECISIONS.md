@@ -14,6 +14,17 @@ Format:
 
 ---
 
+## 2026-10-19 — Milestone 4 scope and open choices
+- Plan section: §4, §6, §9, §14
+- Decision:
+  1. **Done when** (the plan has none for M4): `analyze_video` on at least 2 real processed sessions writes every §9.1 to §9.4 output and `run.json`; admin starts a run, views it and downloads the ZIP (e2e); the human sees the heat follow the dot (H2).
+  2. **Gaze columns:** a run option chooses plain or drift-corrected (`_dc`) gaze; default plain. Recorded in `run.json`. Model and tracking tuning is deferred (DECISIONS 2026-10-18).
+  3. **Heatmap sigma (§9.1):** the simple reading. One isotropic sigma in video-normalized units: the median over included sessions of the validation accuracy in px divided by the width of the video content rectangle, at least 0.03.
+  4. **One unit per participant:** several included sessions of one participant code for the same video give one unit, the latest session; the others are listed in `run.json` as excluded (`superseded`). (Item 4 of the answer was left empty; the recommendation was taken because the rest was approved. Say if you object.)
+  5. Recommendations accepted for: one colour scale per video (99th percentile of all frames' densities); static heatmap over the frame at the segment's middle; AOI metric definitions (dwell overlap with the active interval, entry-based revisits, time to first fixation from the AOI start, empty when never hit); tolerance k uses each participant's own accuracy in the units of item 3; synchrony uses the coordinate-wise group median, aspect-corrected distance, NSS from the z-scored leave-one-out density on the 64x36 grid, exported per window and as a per-participant mean; no new DB table for runs (job row with `run_id` in its args plus `run.json`); `GIT_SHA` build argument, `null` in `run.json` when missing; backend test on the real processed `session_e2e` copied as 3 participants with known offsets; participant results page shows AOI metrics and NSS mean from the latest run, no per-participant heatmap; worker concurrency stays 1, render time is measured first.
+- Reason: answers to the numbered questions of `/milestone-start 4`.
+- Approved by: Nágó Dániel (2026-10-19; items 1, 2, 3 and the rest approved)
+
 ## 2026-10-18 — Milestone 3 review fixes: calibration samples, stage file, import
 - Plan section: §8.6, §12.2, §12.3
 - Decision: (1) The calibration trains on the *usable* frames of a dot (a face, no blink, finite features), not on the plan's `valid` frames (§8.6). `valid` is a property of the fitted model's output (it needs predictions inside the screen margin and the face-geometry checks), so it cannot select the samples the model is fitted on. The gaze stage applies `valid` as the plan says. (2) The per-stage status, duration, summary and error are also kept in `derived/stages.json`, written after every stage, so a failed stage leaves a trace (`quality.json` is only written when the quality stage runs). (3) `import-session --force` verifies the archive in a staging directory before it touches the existing session; a failure puts the old session back. (4) `cli.py process` refuses a session with an open job or in a state the admin "run again" also refuses. (5) The moving-dot "within threshold" share uses the configured limit (`dot_max_median_error_norm`) instead of a literal.
