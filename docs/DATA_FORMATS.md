@@ -248,6 +248,15 @@ Only written when the video has AOIs. Code: `backend/worker/analysis/aoi_metrics
 | `fixation_count` | number of hitting fixations |
 | `revisits` | entries minus one (at least 0); an entry is a run of consecutive hitting fixations among the fixations in the active time |
 
+### `synchrony.csv`, `synchrony_nss.csv`, `synchrony.png` (PLAN §9.4)
+
+Code: `backend/worker/analysis/synchrony.py`. Windows of `synchrony_window_ms` (200) from 0 to the end of the video, `[start, start + 200 ms)`, the last one partial. In each window every included participant with valid samples has a median position (coordinate-wise). A window needs at least two such participants; otherwise `dispersion` and NSS are empty.
+
+- `dispersion`: the mean distance of the participants' medians to their coordinate-wise group median, in units of the video's width (the vertical distance is multiplied by height over width). 0 = all look at the same place.
+- NSS: for a participant, the leave-one-out group density (the other participants' densities of the heatmap, same sigma, summed) is z-scored over the 64x36 grid and averaged at the participant's samples in the window (a sample outside the video counts at the nearest edge cell). Positive = looking where the others look.
+
+`synchrony.csv`: `window_start_s, window_end_s, participants` (with samples), `dispersion`, `nss_mean` (mean over the participants that have an NSS). `synchrony_nss.csv`: `participant_code, window_start_s, nss`. `synchrony.png`: both series over the video's timeline. The per-participant mean NSS is in `run.json` under `results`.
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.
