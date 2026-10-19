@@ -33,6 +33,7 @@ Approved by Nágó Dániel on 2026-10-19 (choices in DECISIONS 2026-10-19, "Mile
 | T10 | todo. ZIP export of a run. `app/api/admin_analysis.py` | §6 | ZIP holds every run file; 401 anonymous, 200 admin | no |
 | T11 | todo. Admin analysis pages (start with CSRF, run list, run detail) and the participant page results. templates, `participants_view.py` | §6, §9 | API tests for auth, CSRF, listing; page tests | no |
 | T12 | todo. E2E: start an analysis in admin, wait for the job, download the ZIP. `e2e/tests/` | §13 | Playwright | no |
+| T14 | **done** (2026-10-19, requested by the human, DECISIONS 2026-10-19). Visual AOI editor on the admin video page. `admin_ui/static/aoi_editor.js`, `_aoi_editor.html`, `main.py` | §9.3, §15 | Playwright: draw, move, edit, save, reload, hand edits (`make e2e`); video page test | no (try it) |
 | T13 | todo. `DATA_FORMATS.md` for `aois.json`, `run.json` and every output; researcher notes on writing AOIs | §7, §9.3 | docs | no |
 
 **Done when (PLAN §14 gives none; agreed):** `analyze_video` on at least 2 real processed sessions writes every §9.1 to §9.4 output and `run.json`; admin can start a run, view it and download the ZIP (T12); the human sees the heat follow the dot (**H2:** two or three moving-dot sessions in one study, a run in admin, look at the heatmap video and the synchrony plot).

@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-19 — Milestone 4: visual AOI editor in the admin video page
+- Plan section: §9.3, §15
+- Decision: the admin video page gets a visual AOI editor (draw rectangles and polygons on a video frame, drag to move or reshape, set start and end from the slider, edit time segments). The PLAN (§15) leaves an AOI drawing tool out of scope "unless requested"; the human requested it on 2026-10-19. The textarea with the JSON stays the form field and the source of truth (the editor reads and writes it; the server validates it on save, `app/aois.py`), so the page still works without JavaScript. The script is `backend/app/admin_ui/static/aoi_editor.js`, served at `/admin/static/` by the API, because the proxy's CSP (`script-src 'self'`) forbids inline scripts. Tested with Playwright in `make e2e` (`e2e/tests/aoi-editor.spec.ts`).
+- Reason: typing normalized coordinates is error-prone.
+- Approved by: Nágó Dániel (2026-10-19)
+
 ## 2026-10-19 — Milestone 4 scope and open choices
 - Plan section: §4, §6, §9, §14
 - Decision:

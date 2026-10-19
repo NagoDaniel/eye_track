@@ -2,9 +2,11 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine, text
 
 from app.api.admin import router as admin_router
@@ -22,6 +24,8 @@ from app.settings import Settings
 log = logging.getLogger("app.access")
 
 HEALTH_PATH = "/api/health"
+
+ADMIN_STATIC = Path(__file__).resolve().parent / "admin_ui" / "static"
 
 
 def create_app(settings: Settings | None = None, engine: Engine | None = None) -> FastAPI:
@@ -80,6 +84,8 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     def admin_error(_request: Request, exc: AdminError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
 
+    # Scripts of the admin pages: the proxy's CSP allows same-origin scripts only.
+    app.mount("/admin/static", StaticFiles(directory=ADMIN_STATIC), name="admin-static")
     app.include_router(admin_router)
     app.include_router(participant_router)
     app.include_router(admin_studies_router)
