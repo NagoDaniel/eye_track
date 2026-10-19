@@ -16,6 +16,7 @@ from typing import Any, BinaryIO
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from app.aois import parse_aoi_file
 from app.models import Study, Video
 from app.service_errors import ConflictError, InvalidError, NotFoundError, TooLargeError
 from app.storage import atomic_write_bytes, atomic_writer, video_aois_path, video_dir, video_path
@@ -158,6 +159,7 @@ def parse_aois(raw: str) -> dict[str, Any] | None:
         raise InvalidError(f"aois is not valid JSON: {exc}") from exc
     if not isinstance(value, dict):
         raise InvalidError("aois must be a JSON object")
+    parse_aoi_file(value)
     return value
 
 
@@ -166,7 +168,10 @@ def update_video(
 ) -> Video:
     """Set title and AOIs; `aois.json` mirrors the database value (PLAN §7)."""
     video = get_video(db, video_id)
-    video.title = _clean_title(title)
+    title = _clean_title(title)
+    if aois is not None:
+        parse_aoi_file(aois)
+    video.title = title
     video.aois = aois
     path = video_aois_path(data_root, video_id)
     if aois is None:

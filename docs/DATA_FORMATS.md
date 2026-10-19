@@ -187,6 +187,24 @@ derived/...    everything the stages wrote
 
 `cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
 
+## `videos/{id}/aois.json` (PLAN §9.3)
+
+Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`, 422 with the reason); unknown keys are refused. Coordinates are video-normalized (0 to 1 over the content rectangle), times are stimulus media seconds.
+
+```json
+{
+  "segments": [{"id": "intro", "start": 0.0, "end": 32.5}],
+  "aois": [
+    {"id": "code_panel", "label": "Code", "start": 12.0, "end": 95.0,
+     "shape": "rect", "coords": [0.55, 0.10, 0.98, 0.90]},
+    {"id": "dancers", "label": "Dancers", "start": 0.0, "end": 180.0,
+     "shape": "polygon", "coords": [[0.1, 0.2], [0.5, 0.2], [0.5, 0.9], [0.1, 0.9]]}
+  ]
+}
+```
+
+`rect` coords are `[x0, y0, x1, y1]` with x1 > x0, y1 > y0; `polygon` has at least 3 `[x, y]` points (concave allowed). Both lists default to empty; ids are unique within their list; `end` is after `start`. An AOI is active from `start` up to but excluding `end`. A point on the border is inside. The hit tolerance grows the shape by a distance (round corners).
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.

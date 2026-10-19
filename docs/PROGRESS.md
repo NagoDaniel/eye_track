@@ -21,7 +21,7 @@ Approved by Nágó Dániel on 2026-10-19 (choices in DECISIONS 2026-10-19, "Mile
 
 | # | Task | PLAN | Tests | Human |
 |---|---|---|---|---|
-| T1 | todo. AOI schema (pydantic, one definition) for `segments` and `aois` (`rect`, `polygon`), checked when the admin saves; hit test with tolerance. `app/aois.py`, `app/videos.py` | §9.3, §4 | AOI hit tests (§13): rect and polygon edges, concave polygon, tolerance growth, active-time limits; admin save rejects bad AOIs | no |
+| T1 | **done** (2026-10-19). AOI schema (pydantic, one definition) for `segments` and `aois` (`rect`, `polygon`), checked when the admin saves; hit test with tolerance. `app/aois.py`, `app/videos.py` | §9.3, §4 | AOI hit tests (§13): rect and polygon edges, concave polygon, tolerance growth, active-time limits; admin save rejects bad AOIs | no |
 | T2 | todo. `AnalysisConfig` with every §9 number; git hash recorded at image build. `worker/analysis/config.py`, `Dockerfile`, `Makefile`, `scripts/setup.sh` | §1, §9 | defaults equal the plan; hash present in the image | no |
 | T3 | todo. Run skeleton: session selection, `run_id`, run directory, `run.json`, loaders for samples and fixations on the video. `worker/analysis/run.py`, `select.py`, `load.py` | §9 | real Postgres: included, excluded, superseded and not-watched cases give the right reasons; `run.json` schema | no |
 | T4 | todo. Density core: sum of Gaussians, sigma from median validation accuracy (floor 0.03), equal weight per participant, 64x36 grid. `worker/analysis/density.py` | §9.1 | synthetic: known Gaussian location, 10:1 sample counts get equal mass, sigma floor | no |
