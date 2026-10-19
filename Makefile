@@ -1,5 +1,8 @@
 .PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e
 
+# Recorded in each analysis run (PLAN §9); empty outside a git checkout.
+export GIT_SHA := $(shell git describe --always --dirty --abbrev=40 2>/dev/null)
+
 COMPOSE_DEV = docker compose -f docker-compose.yml -f compose.dev.yml
 
 # Development stack on http://localhost:8080 (PLAN §11.5). Needs a `.env` with real secrets.

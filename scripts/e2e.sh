@@ -6,6 +6,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# Recorded in each analysis run (PLAN §9); empty outside a git checkout.
+GIT_SHA="$(git describe --always --dirty --abbrev=40 2>/dev/null || true)"
+export GIT_SHA
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 work=$(mktemp -d /tmp/eyetrack-e2e.XXXXXX)  # /tmp is shared with Docker Desktop on macOS; /var/folders is not

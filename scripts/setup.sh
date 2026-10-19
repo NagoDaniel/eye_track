@@ -258,6 +258,9 @@ fi
 
 # ------------------------------------------------------ 4. start
 
+# Recorded in each analysis run (PLAN §9); empty when this is not a git checkout.
+GIT_SHA="$(git -C "$ROOT" describe --always --dirty --abbrev=40 2>/dev/null || true)"
+export GIT_SHA
 info "Building and starting the stack (this can take several minutes the first time)"
 if ! compose up -d --build --wait --wait-timeout "$WAIT_TIMEOUT_S"; then
   compose ps -a >&2 || true
