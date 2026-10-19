@@ -223,6 +223,14 @@ One `analyze_video` run (`backend/worker/analysis/run.py`). `run_id` is `YYYYMMD
 
 Sessions that never finished uploading and withdrawn ones are not listed. One participant code counts once: its latest included session.
 
+### `heatmap.mp4` and `density.npz` (PLAN §9.1)
+
+Written by `backend/worker/analysis/heatmap_video.py` into the run directory. `heatmap.mp4` is the stimulus video (same frames, size cropped to even sides, frame rate) with the group density drawn on it: H.264, yuv420p, faststart; hotter is warmer (Turbo colour map) and more opaque, up to `heatmap_alpha_max`. One colour scale serves the whole video: the `heatmap_scale_percentile` (99) of the non-zero densities of all frames is fully hot. With `heatmap_dots` on, one white dot per participant is drawn at the median of their samples in the window.
+
+For stimulus frame `k` (media time `s = k / fps`) the density uses the valid samples of every included participant with `stim_time` in `[s - heatmap_window_s, s + heatmap_window_s]` (video-normalized coordinates, from the plain or the drift-corrected columns as the run says). A participant's density is the mean of Gaussians at their samples, so each participant weighs the same; the group density is their sum. The Gaussian is isotropic in video-normalized units with `sigma` = the median over included sessions of the mean validation accuracy in px divided by the width of the video's content rectangle on that participant's screen, at least `sigma_min` (DECISIONS 2026-10-19 item 3).
+
+`density.npz`: `density` float32 `(frames, 36, 64)` (row = y from the top, column = x; cell centres at `(i + 0.5) / 64`, `(j + 0.5) / 36` of the video), and scalars `fps`, `sigma`, `scale` (the density drawn fully hot), `window_s`.
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.

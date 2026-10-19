@@ -30,6 +30,10 @@ class AnalysisConfig:
     # One colour scale per video: this percentile of the non-zero densities of all frames
     # (DECISIONS 2026-10-19 item 5).
     heatmap_scale_percentile: float = 99.0
+    # Opacity of the hottest colour; colder places are more transparent. Not in the plan.
+    heatmap_alpha_max: float = 0.65
+    # Also draw one dot per participant (the median of their samples in the window).
+    heatmap_dots: bool = False
 
     # --- Static heatmaps (PLAN §9.2) ---
     # Time windows when `aois.json` has no segments.

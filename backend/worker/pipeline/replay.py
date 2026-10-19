@@ -118,6 +118,7 @@ class FrameReader:
         if not self._capture.isOpened():
             raise ReplayError(f"{path.name} cannot be opened as a video")
         self.fps = float(self._capture.get(cv2.CAP_PROP_FPS)) or 25.0
+        self.frame_count = int(self._capture.get(cv2.CAP_PROP_FRAME_COUNT))
         self._position = 0  # the index of the frame the next `read` returns
         self._last: Frame | None = None
         self._last_index = -1
