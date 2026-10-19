@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from app.analysis_runs import RUN_FILE, new_run_id
 from app.storage import analysis_run_dir
 from tests.test_analysis_select import info
 from worker.analysis.config import AnalysisConfig
-from worker.analysis.run import DONE, FAILED, RUN_FILE, RUNNING, new_run_id, start_run
+from worker.analysis.run import DONE, FAILED, RUNNING, start_run
 from worker.analysis.select import Excluded, Selection
 
 

@@ -6,25 +6,18 @@ that died is visible. Outputs sit next to it in `analysis/{study_id}/{video_id}/
 """
 
 import json
-import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.analysis_runs import RUN_FILE
 from app.storage import analysis_run_dir, atomic_write_bytes
 from worker.analysis.config import AnalysisConfig, git_hash
 from worker.analysis.select import Selection
 
-RUN_FILE = "run.json"
 RUN_VERSION = 1
 RUNNING, DONE, FAILED = "running", "done", "failed"
-
-
-def new_run_id(now: datetime | None = None) -> str:
-    """Sorts by time; the random tail keeps two runs in the same second apart."""
-    stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-    return f"{stamp}-{secrets.token_hex(3)}"
 
 
 @dataclass

@@ -29,7 +29,7 @@ Approved by Nágó Dániel on 2026-10-19 (choices in DECISIONS 2026-10-19, "Mile
 | T6 | **done** (2026-10-19). Static heatmaps per segment. `worker/analysis/heatmap_static.py` | §9.2 | one valid PNG per segment; default 10 s windows cover the video | no |
 | T7 | **done** (2026-10-19). AOI metrics, long and wide CSV, tolerance k. `worker/analysis/aoi_metrics.py` | §9.3 | hand-computed values incl. straddling fixations, never-hit AOI, k > 0 | no |
 | T8 | **done** (2026-10-19). Attentional synchrony (dispersion, NSS), CSV and PNG. `worker/analysis/synchrony.py` | §9.4 | identical participants give 0; known spread; NSS high at peak, negative for outlier; fewer than 2 participants gives NaN | no |
-| T9 | todo. `analyze_video` handler and CLI `analyze`. `worker/handlers.py`, `worker/run.py`, `cli.py` | §9, §12.3 | real fixture: `session_e2e` processed for real, copied as 3 participants with known gaze offsets, full run; handler on real Postgres; failing run keeps finished outputs | no |
+| T9 | **done** (2026-10-19). `analyze_video` handler and CLI `analyze`. `worker/handlers.py`, `worker/run.py`, `cli.py` | §9, §12.3 | real fixture: `session_e2e` processed for real, copied as 3 participants with known gaze offsets, full run; handler on real Postgres; failing run keeps finished outputs | no |
 | T10 | todo. ZIP export of a run. `app/api/admin_analysis.py` | §6 | ZIP holds every run file; 401 anonymous, 200 admin | no |
 | T11 | todo. Admin analysis pages (start with CSRF, run list, run detail) and the participant page results. templates, `participants_view.py` | §6, §9 | API tests for auth, CSRF, listing; page tests | no |
 | T12 | todo. E2E: start an analysis in admin, wait for the job, download the ZIP. `e2e/tests/` | §13 | Playwright | no |

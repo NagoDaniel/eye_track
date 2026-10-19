@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 import typer
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.analysis_runs import OPEN_JOBS, analysis_jobs, new_run_id
 from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
@@ -20,7 +21,7 @@ from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import derived_dir, events_path
-from worker.handlers import make_process_session
+from worker.handlers import make_analyze_video, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
@@ -204,6 +205,53 @@ def render_debug_command(
     size = f"{summary.frames} frames ({summary.seconds:.1f} s), {summary.bytes / 1e6:.1f} MB"
     typer.echo(f"Wrote {target}: {size}")
     typer.echo("Warning: the video contains the participant's webcam video (personal data).")
+
+
+@app.command("analyze")
+def analyze_command(
+    study_id: int = typer.Argument(..., help="The study."),
+    video_id: int = typer.Argument(..., help="The video to analyse."),
+    drift_corrected: bool = typer.Option(
+        False, "--drift-corrected", help="Use the drift-corrected gaze (default: as measured)."
+    ),
+    tolerance_k: float = typer.Option(
+        0.0, "--tolerance-k", min=0.0, help="Grow the AOIs by k times each participant's accuracy."
+    ),
+) -> None:
+    """Analyse one video across the included sessions of a study here and now (PLAN §9).
+
+    Writes heatmaps, AOI metrics and synchrony into `analysis/{study}/{video}/{run}/`."""
+    config = settings()
+    with open_session() as db:
+        busy = [j for j in analysis_jobs(db, study_id, video_id) if j.status in OPEN_JOBS]
+    if busy:
+        typer.echo("error: an analysis of this video in this study is already queued or running",
+                   err=True)  # fmt: skip
+        raise typer.Exit(1)
+    run_id = new_run_id()
+    args: dict[str, object] = {
+        "study_id": study_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "gaze_columns": "drift_corrected" if drift_corrected else "plain",
+        "aoi_tolerance_k": tolerance_k,
+    }
+    handler = make_analyze_video(session_factory(), config)
+    run_dir = config.data_root / "analysis" / str(study_id) / str(video_id) / run_id
+    try:
+        handler(Job(kind=JobKind.ANALYZE_VIDEO, args=args))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        if (run_dir / "run.json").exists():
+            typer.echo(f"The run record is {run_dir / 'run.json'}", err=True)
+        raise typer.Exit(1) from exc
+    record = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    typer.echo(f"Run {run_id}: {record['status']}, {len(record['included'])} participants")
+    for left in record["excluded"]:
+        typer.echo(f"  left out {left['participant_code']}: {', '.join(left['reasons'])}")
+    typer.echo(f"Wrote {run_dir}:")
+    for name in record["outputs"]:
+        typer.echo(f"  {name}")
 
 
 def _default_dot_path() -> Path:

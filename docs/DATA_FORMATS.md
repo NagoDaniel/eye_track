@@ -207,7 +207,7 @@ Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`,
 
 ## `analysis/{study_id}/{video_id}/{run_id}/run.json` (PLAN §9)
 
-One `analyze_video` run (`backend/worker/analysis/run.py`). `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
+One `analyze_video` run (`backend/worker/analysis/run.py`), started from the admin or with `docker compose exec api python cli.py analyze <study_id> <video_id> [--drift-corrected] [--tolerance-k K]`. The directory holds `run.json` and the files below; a stage that fails leaves the finished stages' files in place and the run `failed`. A session whose gaze cannot be read is listed in `excluded` (`gaze_unreadable: ...`), one without a valid sample on the video as `no_valid_samples`; a run with nobody left fails (`no included sessions`). `results` has the sigma used and, per stage, its summary and seconds. `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
 
 | key | meaning |
 |---|---|
