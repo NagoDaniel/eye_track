@@ -92,6 +92,24 @@ def test_tolerance_grows_the_shape_for_samples_and_fixations() -> None:
     assert grown["dwell_sample_s"] == pytest.approx(3.5)  # + the 5 samples 0.05 right of the edge
 
 
+def test_the_tolerance_is_the_same_distance_on_screen_vertically_and_horizontally() -> None:
+    # The samples at y 0.65 are 0.05 right of the rectangle (x 0.6); a 16:9 video is 0.5625 as high
+    # as wide, so 0.06 video widths reach 0.06 / 0.5625 = 0.107 of the height upwards.
+    above = aoi("above", [0.2, 0.2, 0.6, 0.6])
+    p = participant()
+    assert aoi_metrics_of(p, above, 0.06, 10.0, aspect=16 / 9)["dwell_sample_s"] == pytest.approx(
+        3.5
+    )
+    low = Samples(
+        np.array([5000.0]), np.array([5.0]), np.array([0.4]), np.array([0.69]), np.array([0.1])
+    )
+    q = SessionGaze(uuid.uuid4(), "Q", low, p.fixations, 60.0, 1000.0)
+    assert aoi_metrics_of(q, above, 0.06, 10.0, aspect=16 / 9)["dwell_sample_s"] == pytest.approx(
+        0.1
+    )
+    assert aoi_metrics_of(q, above, 0.06, 10.0, aspect=1.0)["dwell_sample_s"] == 0.0  # 0.09 > 0.06
+
+
 def test_a_fixation_only_counts_when_its_centroid_is_inside() -> None:
     near = aoi("n", [0.45, 0.2, 0.9, 0.6])  # 0.4 is 0.05 left of this one
     assert aoi_metrics_of(participant(), near, 0.0, 10.0)["fixation_count"] == 0

@@ -112,18 +112,32 @@ def _inside_polygon(x: float, y: float, points: list[list[float]]) -> bool:
     return inside
 
 
-def aoi_contains(aoi: RectAoi | PolygonAoi, x: float, y: float, tolerance: float = 0.0) -> bool:
-    """Whether the point is in the shape grown by `tolerance` (a distance, so corners are round).
-    Points on the border count as inside."""
+def _scaled_coords(aoi: RectAoi | PolygonAoi, aspect: float) -> list[Any]:
+    """The shape with y in units of the video's width (height over width times y), so a tolerance
+    in video widths is the same distance on screen in every direction."""
     if isinstance(aoi, RectAoi):
         x0, y0, x1, y1 = aoi.coords
+        return [x0, y0 / aspect, x1, y1 / aspect]
+    return [[px, py / aspect] for px, py in aoi.coords]
+
+
+def aoi_contains(
+    aoi: RectAoi | PolygonAoi, x: float, y: float, tolerance: float = 0.0, aspect: float = 1.0
+) -> bool:
+    """Whether the point is in the shape grown by `tolerance` (a distance, so corners are round).
+    Points on the border count as inside. `tolerance` is in video widths and `aspect` is the
+    video's width over its height: the growth is then the same on screen horizontally and
+    vertically (with the default 1 the two axes are treated alike)."""
+    coords = _scaled_coords(aoi, aspect)
+    y = y / aspect
+    if isinstance(aoi, RectAoi):
+        x0, y0, x1, y1 = coords
         dx = max(x0 - x, 0.0, x - x1)
         dy = max(y0 - y, 0.0, y - y1)
         return math.hypot(dx, dy) <= tolerance
-    points = aoi.coords
-    if _inside_polygon(x, y, points):
+    if _inside_polygon(x, y, coords):
         return True
-    edges = zip(points, points[1:] + points[:1], strict=True)
+    edges = zip(coords, coords[1:] + coords[:1], strict=True)
     return any(_segment_distance(x, y, a[0], a[1], b[0], b[1]) <= tolerance for a, b in edges)
 
 
@@ -132,17 +146,19 @@ def aoi_contains_many(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
     tolerance: float = 0.0,
+    aspect: float = 1.0,
 ) -> NDArray[np.bool_]:
     """`aoi_contains` for arrays of points (the same definition, for the analysis)."""
+    coords = _scaled_coords(aoi, aspect)
+    y = y / aspect
     if isinstance(aoi, RectAoi):
-        x0, y0, x1, y1 = aoi.coords
+        x0, y0, x1, y1 = coords
         dx = np.maximum(np.maximum(x0 - x, 0.0), x - x1)
         dy = np.maximum(np.maximum(y0 - y, 0.0), y - y1)
         return np.asarray(np.hypot(dx, dy) <= tolerance)
-    points = aoi.coords
     inside = np.zeros(len(x), dtype=np.bool_)
     near = np.zeros(len(x), dtype=np.bool_)
-    for (ax, ay), (bx, by) in zip(points, points[1:] + points[:1], strict=True):
+    for (ax, ay), (bx, by) in zip(coords, coords[1:] + coords[:1], strict=True):
         if ay != by:  # a horizontal edge is never crossed by a horizontal ray
             crosses = (ay > y) != (by > y)
             with np.errstate(divide="ignore", invalid="ignore"):

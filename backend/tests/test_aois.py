@@ -129,8 +129,26 @@ def test_active_interval_is_closed_at_start_open_at_end() -> None:
     assert not aoi_active(r, 4.0)
 
 
+def test_the_tolerance_is_the_same_distance_on_screen_in_both_directions() -> None:
+    r = rect([0.2, 0.3, 0.6, 0.7])
+    # A video twice as wide as high: a tolerance of 0.1 video widths is 0.1 of the width
+    # horizontally and 0.2 of the height vertically.
+    assert aoi_contains(r, 0.69, 0.5, 0.1, aspect=2.0) and not aoi_contains(r, 0.71, 0.5, 0.1, 2.0)
+    assert aoi_contains(r, 0.4, 0.89, 0.1, aspect=2.0) and not aoi_contains(r, 0.4, 0.91, 0.1, 2.0)
+    # without the aspect both directions grow by the same fraction
+    assert aoi_contains(r, 0.4, 0.79, 0.1) and not aoi_contains(r, 0.4, 0.81, 0.1)
+    # polygons: the same rule, measured to the edges
+    square = polygon([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    assert aoi_contains(square, 0.5, 1.19, 0.1, aspect=2.0)
+    assert not aoi_contains(square, 0.5, 1.21, 0.1, aspect=2.0)
+    assert aoi_contains(square, 1.09, 0.5, 0.1, aspect=2.0)
+    xs, ys = np.array([0.5, 0.5, 1.09, 1.11]), np.array([1.19, 1.21, 0.5, 0.5])
+    assert aoi_contains_many(square, xs, ys, 0.1, 2.0).tolist() == [True, False, True, False]
+
+
+@pytest.mark.parametrize("aspect", [1.0, 16 / 9])
 @pytest.mark.parametrize("tolerance", [0.0, 0.03, 0.1])
-def test_the_array_hit_test_equals_the_scalar_one(tolerance: float) -> None:
+def test_the_array_hit_test_equals_the_scalar_one(tolerance: float, aspect: float) -> None:
     shapes = [
         rect([0.2, 0.3, 0.6, 0.7]),
         polygon([[0.1, 0.2], [0.5, 0.2], [0.5, 0.9], [0.1, 0.9]]),
@@ -145,6 +163,7 @@ def test_the_array_hit_test_equals_the_scalar_one(tolerance: float) -> None:
     y = np.append(y, [0.3, 0.7, 0.5, 0.9, 0.2, 0.8, 0.5])
     for shape in shapes:
         expected = [
-            aoi_contains(shape, float(a), float(b), tolerance) for a, b in zip(x, y, strict=True)
+            aoi_contains(shape, float(a), float(b), tolerance, aspect)
+            for a, b in zip(x, y, strict=True)
         ]
-        assert aoi_contains_many(shape, x, y, tolerance).tolist() == expected
+        assert aoi_contains_many(shape, x, y, tolerance, aspect).tolist() == expected

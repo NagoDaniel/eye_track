@@ -203,7 +203,7 @@ Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`,
 }
 ```
 
-`rect` coords are `[x0, y0, x1, y1]` with x1 > x0, y1 > y0; `polygon` has at least 3 `[x, y]` points (concave allowed). Both lists default to empty; ids are unique within their list; `end` is after `start`. An AOI is active from `start` up to but excluding `end`. A point on the border is inside. The hit tolerance grows the shape by a distance (round corners).
+`rect` coords are `[x0, y0, x1, y1]` with x1 > x0, y1 > y0; `polygon` has at least 3 `[x, y]` points (concave allowed). Both lists default to empty; ids are unique within their list; `end` is after `start`. An AOI is active from `start` up to but excluding `end`. A point on the border is inside. The hit tolerance grows the shape by a distance (round corners); the analysis gives it in video widths and corrects the vertical direction by the video's aspect ratio, so the growth is the same on screen both ways.
 
 ## `analysis/{study_id}/{video_id}/{run_id}/run.json` (PLAN §9)
 
@@ -237,7 +237,7 @@ Written by `backend/worker/analysis/heatmap_static.py`, one picture per time seg
 
 ### `aoi_metrics_long.csv` and `aoi_metrics_wide.csv` (PLAN §9.3)
 
-Only written when the video has AOIs. Code: `backend/worker/analysis/aoi_metrics.py`. Per included participant and AOI, over the time the AOI exists (`start` to `end`, cut at the end of the video); coordinates are video-normalized and the shape is grown by `aoi_tolerance_k` times the participant's own validation accuracy (in video units: px over the content rectangle's width; no growth when the accuracy is unknown). The long file has the columns `participant_code, aoi_id, metric, value`; the wide file has one row per participant and AOI and one column per metric. An empty value means "not defined" (no fixation hit the AOI).
+Only written when the video has AOIs. Code: `backend/worker/analysis/aoi_metrics.py`. Per included participant and AOI, over the time the AOI exists (`start` to `end`, cut at the end of the video); coordinates are video-normalized and the shape is grown by `aoi_tolerance_k` times the participant's own validation accuracy, as a distance on screen (the accuracy in px, the same horizontally and vertically, with round corners; no growth when the accuracy is unknown). The long file has the columns `participant_code, aoi_id, metric, value`; the wide file has one row per participant and AOI and one column per metric. An empty value means "not defined" (no fixation hit the AOI).
 
 | metric | meaning |
 |---|---|

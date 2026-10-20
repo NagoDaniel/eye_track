@@ -11,8 +11,9 @@ An AOI exists from its `start` up to its `end` (cut at the end of the video). Wi
 - **fixation count** (`fixation_count`) and **revisits** (`revisits`): an entry is a run of
   consecutive hitting fixations, revisits are the entries after the first.
 
-The shape is grown by the tolerance (k times the participant's validation accuracy, DECISIONS
-2026-10-19 item 5). Coordinates are video-normalized.
+The shape is grown by the tolerance: k times the participant's validation accuracy, as a distance on
+screen, the same in every direction (DECISIONS 2026-10-19 item 5 and 2026-10-20). Coordinates are
+video-normalized.
 """
 
 import csv
@@ -48,7 +49,7 @@ class AoiRow:
 
 
 def tolerance_for(session: SessionGaze, k: float) -> float:
-    """k times the participant's validation accuracy in video units; 0 when it is unknown."""
+    """k times the participant's validation accuracy in video widths; 0 when it is unknown."""
     accuracy = session.accuracy_norm
     return 0.0 if accuracy is None else k * accuracy
 
@@ -59,9 +60,14 @@ def _entries(hits: Sequence[bool]) -> int:
 
 
 def aoi_metrics_of(
-    session: SessionGaze, aoi: RectAoi | PolygonAoi, tolerance: float, duration_s: float
+    session: SessionGaze,
+    aoi: RectAoi | PolygonAoi,
+    tolerance: float,
+    duration_s: float,
+    aspect: float = 1.0,
 ) -> Metrics:
-    """The metrics of one participant for one AOI. `duration_s` is the length of the video."""
+    """The metrics of one participant for one AOI. `duration_s` is the length of the video,
+    `tolerance` is in video widths and `aspect` the video's width over its height."""
     lo, hi = aoi.start, min(aoi.end, duration_s)
     active = hi - lo
     empty: Metrics = {m: 0.0 for m in METRICS}
@@ -72,13 +78,13 @@ def aoi_metrics_of(
 
     s = session.samples
     in_time = (s.stim_time >= lo) & (s.stim_time < hi)
-    inside = aoi_contains_many(aoi, s.x, s.y, tolerance)
+    inside = aoi_contains_many(aoi, s.x, s.y, tolerance, aspect)
     dwell_samples = float(s.dt_s[in_time & inside].sum())
 
     f = session.fixations
     overlap = np.maximum(0.0, np.minimum(f.stim_end, hi) - np.maximum(f.stim_start, lo))
     overlapped = overlap > 0
-    hit = overlapped & aoi_contains_many(aoi, f.x, f.y, tolerance)
+    hit = overlapped & aoi_contains_many(aoi, f.x, f.y, tolerance, aspect)
     length = f.stim_end - f.stim_start
     with np.errstate(divide="ignore", invalid="ignore"):
         share_of_fixation = np.where(length > 0, overlap / length, 1.0)
@@ -100,13 +106,14 @@ def aoi_metrics(
     aois: Sequence[RectAoi | PolygonAoi],
     k: float,
     duration_s: float,
+    aspect: float = 1.0,
 ) -> list[AoiRow]:
     """Every participant (in the given order) against every AOI (in file order)."""
     return [
         AoiRow(
             s.participant_code,
             aoi.id,
-            aoi_metrics_of(s, aoi, tolerance_for(s, k), duration_s),
+            aoi_metrics_of(s, aoi, tolerance_for(s, k), duration_s, aspect),
         )
         for s in sessions
         for aoi in aois

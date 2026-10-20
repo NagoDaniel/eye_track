@@ -14,6 +14,14 @@ Format:
 
 ---
 
+## 2026-10-20 — Milestone 4 review: AOI tolerance corrected for the aspect ratio, deviations recorded
+- Plan section: §9.3, §9.1, §9.2
+- Decision (review of Milestone 4, fixes R3 and R8; approved by Nágó Dániel on 2026-10-20):
+  1. **AOI tolerance** (item 5 of 2026-10-19 said "the units of item 3", which grew shapes by the same fraction in x and y, so vertically only 0.56 of the intended distance for 16:9): the tolerance is k times the participant's accuracy in px as a distance on screen, the same in every direction. In code the vertical direction is divided by the video's width over height (`aoi_contains(..., aspect)`).
+  2. Choices the first version did not record: frames of the stimulus video are decoded with OpenCV and piped to an ffmpeg subprocess (H.264), not decoded with PyAV as §9.1 names (the replay of Milestone 3 does the same); static heatmaps have one colour scale per picture (the dynamic one has one per video, item 5); static segments are half-open `[start, end)` so a sample on a shared boundary counts once; segments of `aois.json` that all start after the end of the video fail the stage instead of giving no pictures; one analysis of a video of a study at a time; a sample stands for the time to the next webcam frame, at most `sample_max_dt_ms` (100); the option `heatmap_dots` (§9.1 "optionally per-participant dots") is a checkbox in the admin form and `--dots` in the CLI.
+- Reason: found in the Milestone 4 review.
+- Approved by: Nágó Dániel (2026-10-20)
+
 ## 2026-10-20 — Milestone 4 pilot result (H2): analysis on four real sessions
 - Plan section: §8.8, §9, §14
 - Result (no decision changed; the numbers are in PROGRESS "H2 result"): four moving-dot sessions of one study, screen 1710 px wide, codes AA0101 and CC0101 with glasses, BB0101 and DD0101 without. The analysis ran for all four (no session left out). Findings:

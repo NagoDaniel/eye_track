@@ -116,7 +116,13 @@ def analyze(
     def metrics() -> dict[str, Any]:
         if not aois.aois:
             return {"files": [], "summary": {"skipped": "the video has no AOIs"}}
-        rows = aoi_metrics(sessions, aois.aois, config.aoi_tolerance_k, video.duration_s)
+        rows = aoi_metrics(
+            sessions,
+            aois.aois,
+            config.aoi_tolerance_k,
+            video.duration_s,
+            video.width / video.height,
+        )
         files = write_metrics(run_dir, rows)
         unknown = [s.participant_code for s in sessions if s.accuracy_norm is None]
         return {
