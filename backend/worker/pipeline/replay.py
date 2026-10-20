@@ -4,6 +4,9 @@ For every stretch of the session in which a stimulus video was on screen it show
 - the raw gaze (orange), the smoothed gaze (blue) and the drift-corrected gaze (green) as dots, and
   the smoothed gaze of the last third of a second as a trail;
 - a ring around the centre of the fixation the gaze is in, growing with its duration;
+- when Pipeline B has made gaze for the session (`gaze_b.parquet`), its raw (magenta), smoothed
+  (cyan) and drift-corrected (yellow) gaze as squares, and its fixation as a yellow ring, in the
+  same film (the video is decoded once); without B's files the film is the one without it;
 - the participant's webcam in the bottom right corner with the landmarks drawn on it (left out when
   the recording or its landmarks are not there);
 - a timeline bar below: orange where the video is paused or stalled, red where no face was found,
@@ -37,6 +40,7 @@ from worker.pipeline.fixations import runs
 from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE
 from worker.pipeline.ingest import WEBCAM_FRAMES_FILE
 from worker.pipeline.landmarks import LANDMARK_COUNT, LANDMARKS_FILE
+from worker.pipeline.spec import SPEC_B
 from worker.pipeline.stimulus_map import StimulusMap, VideoRectTimeline
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 
@@ -69,6 +73,13 @@ CYAN: Colour = (255, 220, 0)
 YELLOW: Colour = (0, 230, 255)
 BANNER: Colour = (90, 90, 255)  # the warning line: a brighter red than the bar's
 
+# Pipeline B's gaze, drawn as squares in colours that stay apart from A's (BGR).
+B_RAW: Colour = (255, 0, 255)  # magenta
+B_SMOOTH: Colour = (255, 255, 0)  # cyan
+B_CORRECTED: Colour = (0, 255, 255)  # yellow; also the ring of B's fixation
+B_RING_EXTRA = 4  # B's fixation ring is this much larger than A's, so equal fixations show both
+B_LEGEND_WIDTH_EXTRA, B_LEGEND_HEIGHT_EXTRA = 110, 20  # more room behind the text when B is drawn
+
 # The state of a frame in the timeline bar; the higher wins.
 FINE, INVALID_GAZE, NO_FACE, STALLED = 0, 1, 2, 3
 BAR_COLOURS: dict[int, Colour] = {
@@ -93,6 +104,7 @@ class ReplaySummary:
     videos: list[str]
     webcam_inset: bool
     bytes: int
+    pipeline_b: bool = False  # Pipeline B's gaze is in the film
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -104,6 +116,7 @@ class ReplaySummary:
             "videos": self.videos,
             "webcam_inset": self.webcam_inset,
             "bytes": self.bytes,
+            "pipeline_b": self.pipeline_b,
         }
 
 
@@ -200,6 +213,16 @@ class Webcam:
 
 
 @dataclass
+class PipelineDots:
+    """One pipeline's gaze per output frame, in video-normalised coordinates."""
+
+    raw: tuple[Floats, Floats]
+    smooth: tuple[Floats, Floats]
+    corrected: tuple[Floats, Floats]
+    fixations: Floats  # rows (start_t, end_t, duration_ms, cx_vid, cy_vid)
+
+
+@dataclass
 class Timeline:
     """Everything the film shows, per output frame."""
 
@@ -217,6 +240,7 @@ class Timeline:
     state: NDArray[np.int8]
     ticks: list[int]  # frames at which fullscreen was left
     boundaries: list[int]  # frames at which another video starts
+    pipeline_b: PipelineDots | None = None  # None when Pipeline B has no gaze for the session
 
 
 def _nearest(times: Floats, t: float) -> int:
@@ -276,12 +300,30 @@ def build_timeline(
     valid = np.asarray(gaze["valid"].to_pylist(), dtype=bool)[rows] & fresh
     interpolated = np.asarray(gaze["interpolated"].to_pylist(), dtype=bool)[rows]
 
-    fixations = np.empty((0, 5))
-    if (derived / FIXATIONS_FILE).is_file():
-        table = pq.read_table(derived / FIXATIONS_FILE)
-        if table.num_rows:
-            names = ("start_t", "end_t", "duration_ms", "cx_vid", "cy_vid")
-            fixations = np.column_stack([floats(table, c) for c in names])
+    def fixation_rows(file: str) -> Floats:
+        rows_out = np.empty((0, 5))
+        if (derived / file).is_file():
+            table = pq.read_table(derived / file)
+            if table.num_rows:
+                names = ("start_t", "end_t", "duration_ms", "cx_vid", "cy_vid")
+                rows_out = np.column_stack([floats(table, c) for c in names])
+        return rows_out
+
+    fixations = fixation_rows(FIXATIONS_FILE)
+
+    dots_b: PipelineDots | None = None
+    if (derived / SPEC_B.gaze_file).is_file():
+        gaze_b = pq.read_table(derived / SPEC_B.gaze_file)
+        t_b = floats(gaze_b, "t")
+        rows_b = np.array([_nearest(t_b, x) for x in times])
+        dots_b = PipelineDots(
+            raw=VideoRectTimeline(events).normalise(
+                times, floats(gaze_b, "x_px")[rows_b], floats(gaze_b, "y_px")[rows_b]
+            ),
+            smooth=(floats(gaze_b, "x_vid")[rows_b], floats(gaze_b, "y_vid")[rows_b]),
+            corrected=(floats(gaze_b, "x_vid_dc")[rows_b], floats(gaze_b, "y_vid_dc")[rows_b]),
+            fixations=fixation_rows(SPEC_B.fixations_file),
+        )
 
     features = pq.read_table(derived / FEATURES_FILE)
     a_ms, b = read_t_of_pts(derived / SYNC_FILE)
@@ -301,7 +343,7 @@ def build_timeline(
     ]
     boundaries = [int(np.argmax(which == k)) for k in range(1, len(intervals))]
     return Timeline(times, which, intervals, lookup.stim_time, raw, smooth, corrected, valid,
-                    interpolated, face, fixations, state, ticks, boundaries)  # fmt: skip
+                    interpolated, face, fixations, state, ticks, boundaries, dots_b)  # fmt: skip
 
 
 # --- Drawing ---
@@ -331,9 +373,10 @@ def marker(
     colour: Colour,
     radius: int,
     ring: bool = False,
+    square: bool = False,
 ) -> None:
-    """A dot (or ring) at a position given as fractions of the video; off the video it is a cross
-    on the border."""
+    """A dot (or ring, or square) at a position given as fractions of the video; off the video it
+    is a cross on the border."""
     if not (np.isfinite(point[0]) and np.isfinite(point[1])):
         return
     centre = to_pixels(point, rect)
@@ -341,6 +384,10 @@ def marker(
         cv2.drawMarker(image, centre, colour, cv2.MARKER_CROSS, radius * 3, 2)
     elif ring:
         cv2.circle(image, centre, radius, colour, 2, cv2.LINE_AA)
+    elif square:
+        x, y = centre
+        cv2.rectangle(image, (x - radius, y - radius), (x + radius, y + radius), colour, -1)
+        cv2.rectangle(image, (x - radius, y - radius), (x + radius, y + radius), WHITE, 1)
     else:
         cv2.circle(image, centre, radius, colour, -1, cv2.LINE_AA)
         cv2.circle(image, centre, radius, WHITE, 1, cv2.LINE_AA)
@@ -387,12 +434,30 @@ def draw_frame(
             int(18 + min(tl.fixations[f, 2] / 20, 60)),
             ring=True,
         )
+    b = tl.pipeline_b
+    if b is not None:
+        here_b = np.flatnonzero(
+            (b.fixations[:, 0] <= tl.times[k]) & (tl.times[k] <= b.fixations[:, 1])
+        )
+        for f in here_b[:1]:
+            marker(
+                image,
+                (b.fixations[f, 3], b.fixations[f, 4]),
+                rect,
+                B_CORRECTED,
+                int(18 + min(b.fixations[f, 2] / 20, 60)) + B_RING_EXTRA,
+                ring=True,
+            )
     if len(trail) > 1:
         points = np.array([to_pixels(p, rect) for p in trail], dtype=np.int32)
         cv2.polylines(image, [points], False, BLUE, 1, cv2.LINE_AA)
     marker(image, (tl.raw[0][k], tl.raw[1][k]), rect, ORANGE, 4)
     marker(image, (tl.corrected[0][k], tl.corrected[1][k]), rect, GREEN, 5)
     marker(image, (tl.smooth[0][k], tl.smooth[1][k]), rect, BLUE, 6)
+    if b is not None:  # Pipeline B on top, as squares
+        marker(image, (b.raw[0][k], b.raw[1][k]), rect, B_RAW, 4, square=True)
+        marker(image, (b.corrected[0][k], b.corrected[1][k]), rect, B_CORRECTED, 5, square=True)
+        marker(image, (b.smooth[0][k], b.smooth[1][k]), rect, B_SMOOTH, 6, square=True)
 
     if inset is not None:
         h, w = inset.shape[:2]
@@ -400,7 +465,8 @@ def draw_frame(
         image[y0 : y0 + h, x0 : x0 + w] = inset
         cv2.rectangle(image, (x0, y0), (x0 + w, y0 + h), WHITE, 1)
 
-    panel = image[:TEXT_PANEL_HEIGHT, :TEXT_PANEL_WIDTH]
+    extra_h, extra_w = (B_LEGEND_HEIGHT_EXTRA, B_LEGEND_WIDTH_EXTRA) if b is not None else (0, 0)
+    panel = image[: TEXT_PANEL_HEIGHT + extra_h, : TEXT_PANEL_WIDTH + extra_w]
     panel[:] = (panel * 0.35).astype(np.uint8)  # darken what is under the text so it can be read
     video_id = tl.intervals[int(tl.which[k])][0]
     stim = f"{tl.stim[k]:.2f} s" if np.isfinite(tl.stim[k]) else "paused / stalled"
@@ -411,15 +477,15 @@ def draw_frame(
         (8, 38),
         WHITE,
     )
-    text(
-        image,
-        "orange: raw   blue: smoothed   green: drift-corrected, fixation",
-        (8, 58),
-        WHITE,
-        0.45,
-    )
+    legend_a = "orange: raw   blue: smoothed   green: drift-corrected, fixation"
+    text(image, legend_a if b is None else f"A, circles - {legend_a}", (8, 58), WHITE, 0.45)
+    invalid_y = 78
+    if b is not None:
+        legend_b = "magenta: raw   cyan: smoothed   yellow: drift-corrected, fixation"
+        text(image, f"B, squares - {legend_b}", (8, 78), WHITE, 0.45)
+        invalid_y += B_LEGEND_HEIGHT_EXTRA
     if not tl.valid[k] and not tl.interpolated[k]:
-        text(image, "gaze invalid" + ("" if tl.face[k] else " (no face)"), (8, 78), GREY)
+        text(image, "gaze invalid" + ("" if tl.face[k] else " (no face)"), (8, invalid_y), GREY)
 
     cursor = min(int(k / len(tl.times) * width), width - 1)
     with_cursor = bar.copy()
@@ -526,4 +592,5 @@ def render_replay(
         frames=n, seconds=n / config.replay_fps, fps=config.replay_fps, width=width,
         height=height + BAR_HEIGHT, videos=[v for v, _, _ in tl.intervals],
         webcam_inset=webcam is not None, bytes=target.stat().st_size,
+        pipeline_b=tl.pipeline_b is not None,
     )  # fmt: skip

@@ -23,6 +23,7 @@ from app.storage import webcam_path
 from worker.pipeline.features_b import compute_features_b
 from worker.pipeline.landmarks import LANDMARKS_FILE
 from worker.pipeline.model_b import GazeModelB
+from worker.pipeline.plots import run_plots
 from worker.pipeline.quality_b import build_quality_b
 from worker.pipeline.runner import (
     Context,
@@ -75,11 +76,16 @@ def _quality_b(ctx: Context) -> dict[str, Any]:
     return {"included": report["inclusion"]["included"], "reasons": report["inclusion"]["reasons"]}
 
 
+def _plots_b(ctx: Context) -> dict[str, Any]:
+    return run_plots(ctx.root, ctx.study_id, ctx.session_id, ctx.config, SPEC_B).as_dict()
+
+
 STAGES_B: dict[str, StageFn] = {
     "features_b": _features_b,
     "calibration_b": _calibration_b,
     "gaze_b": _gaze_b,
     "quality_b": _quality_b,
+    "plots_b": _plots_b,
 }
 assert tuple(STAGES_B) == B_STAGE_NAMES  # the names are defined once, in `app.pipeline_b`
 
@@ -105,7 +111,7 @@ def run_pipeline_b(
     result = run_pipeline(
         ctx, from_stage, only, stages,
         stages_file=STAGES_B_FILE, quality_file=QUALITY_B_FILE,
-        quality_stages=("quality_b",), marks_b_stale=False,
+        quality_stages=("quality_b", "plots_b"), marks_b_stale=False,
     )  # fmt: skip
     if selected == list(B_STAGE_NAMES):  # all of B was made again from fresh inputs
         clear_stale(ctx.derived)

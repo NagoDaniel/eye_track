@@ -32,13 +32,15 @@ QUALITY_B_FILE = "quality_b.json"
 STAGES_B_FILE = "stages_b.json"
 STALE_FILE = "pipeline_b_stale.json"
 
-# In the order the B job runs them (the plots, `plots_b`, are added with the B plots, PLAN §12.2).
-B_STAGE_NAMES = ("features_b", "calibration_b", "gaze_b", "quality_b")
+# In the order the B job runs them. `plots_b` draws B's debug plots (PLAN §12.2) after the quality
+# report, like A's `plots`; a plot that cannot be drawn is recorded, never a failed stage.
+B_STAGE_NAMES = ("features_b", "calibration_b", "gaze_b", "quality_b", "plots_b")
 B_STAGE_DESCRIPTIONS = {
     "features_b": "gaze angles of the neural network on a face crop of every frame",
     "calibration_b": "fit the gaze model on B's features",
     "gaze_b": "predict, smooth, fixations, video coordinates (Pipeline B)",
     "quality_b": "B's quality report and inclusion decision",
+    "plots_b": "debug plots of Pipeline B",
 }
 # The stages of Pipeline A whose output B reads: running one makes B stale.
 A_STAGES_FEEDING_B = ("ingest", "landmarks", "features", "sync")

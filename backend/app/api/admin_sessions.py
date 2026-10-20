@@ -17,7 +17,7 @@ from app.chunks import MIB
 from app.models import AdminUser
 from app.models import Session as SessionRow
 from app.pipeline_b import B_STAGE_NAMES, queue_pipeline_b
-from app.pipeline_names import PLOT_FILES, REPLAY_FILE
+from app.pipeline_names import PLOT_B_FILES, PLOT_FILES, REPLAY_FILE
 from app.reprocess import queue_render, queue_rerun
 from app.service_errors import NotFoundError
 from app.settings import Settings
@@ -157,7 +157,7 @@ def debug_file(
 ) -> Response:
     """A debug plot or the replay video of the session; only the known file names, and only for a
     logged-in admin. The replay shows the participant's webcam video."""
-    if name not in (*PLOT_FILES, REPLAY_FILE):
+    if name not in (*PLOT_FILES, *PLOT_B_FILES, REPLAY_FILE):
         raise NotFoundError(f"no debug file called {name}")
     session = _session_row(db, session_id)
     settings: Settings = request.app.state.settings
