@@ -53,8 +53,9 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   // Start it from the page, like the researcher does.
   await login(page.request);
   await page.goto("/admin/analysis");
-  await page.getByLabel("Study").selectOption(String(studyId));
-  await page.getByLabel("Video").selectOption(videoId);
+  await page.locator('select[name="study_id"]').selectOption(String(studyId));
+  await page.locator('select[name="video_id"]').selectOption(videoId);
+  await page.getByLabel("Draw a white dot per participant").check();
   await page.getByRole("button", { name: "Start analysis" }).click();
   await expect(page.locator("p.ok")).toContainText("Queued");
 
@@ -90,9 +91,11 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   expect(body.subarray(0, 2).toString()).toBe("PK");
   const record = (await (await admin.request.get(`/admin/api/analysis/${studyId}/${videoId}/${run.run_id}`)).json()) as {
     outputs: string[];
+    parameters: { heatmap_dots: boolean };
     included: { participant_code: string }[];
   };
   expect(record.included.map((i) => i.participant_code)).toEqual([PARTICIPANT]);
+  expect(record.parameters.heatmap_dots).toBe(true);
   expect(record.outputs).toEqual(
     expect.arrayContaining(["heatmap.mp4", "density.npz", "static/001_first.png", "aoi_metrics_wide.csv", "synchrony.png"]),
   );

@@ -380,9 +380,11 @@ def test_pages_list_detail_edit_delete(admin: Admin, clips: Clips) -> None:
     ), detail.text
     # The AOI editor (PLAN §9.3): no inline script (the proxy's CSP forbids it), its textarea stays
     # the form field.
-    assert re.findall(r"<script[^>]*>", detail.text) == [
-        '<script src="/admin/static/aoi_editor.js" defer>'
-    ]
+    scripts = re.findall(r"<script[^>]*>", detail.text)
+    assert len(scripts) == 1
+    assert re.fullmatch(
+        r'<script src="/admin/static/aoi_editor\.js\?v=[0-9a-f]{12}" defer>', scripts[0]
+    )
     assert 'id="aoi-editor"' in detail.text
     script = c.get("/admin/static/aoi_editor.js")
     assert script.status_code == 200 and "javascript" in script.headers["content-type"]

@@ -1,5 +1,6 @@
 """Admin login/logout, landing page and `/admin/api/*` JSON routes (PLAN §6)."""
 
+import hashlib
 from pathlib import Path
 from typing import Annotated
 
@@ -24,9 +25,12 @@ from app.models import AdminUser
 from app.settings import Settings
 
 router = APIRouter(prefix="/admin")
-templates = Jinja2Templates(
-    directory=str(Path(__file__).resolve().parent.parent / "admin_ui" / "templates")
-)
+ADMIN_UI = Path(__file__).resolve().parent.parent / "admin_ui"
+templates = Jinja2Templates(directory=str(ADMIN_UI / "templates"))
+# The editor script is cached by the browser; a changed file gets a new address.
+templates.env.globals["aoi_editor_version"] = hashlib.sha256(
+    (ADMIN_UI / "static" / "aoi_editor.js").read_bytes()
+).hexdigest()[:12]
 
 
 def login_page(request: Request, status_code: int = 200, error: str | None = None) -> Response:

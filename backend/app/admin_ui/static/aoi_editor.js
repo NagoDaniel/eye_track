@@ -108,6 +108,9 @@ document.addEventListener("DOMContentLoaded", () => {
         ids.add(it.id);
         if (!(it.end > it.start)) problems.push(`The ${name} "${it.id || i + 1}" must end after it starts.`);
         if (it.start < 0) problems.push(`The ${name} "${it.id || i + 1}" starts before 0.`);
+        if (it.shape === "rect" && !(it.coords[2] > it.coords[0] && it.coords[3] > it.coords[1])) {
+          problems.push(`The ${name} "${it.id || i + 1}" is a rectangle with no size: coords must be [x0, y0, x1, y1] with x1 > x0 and y1 > y0.`);
+        }
       });
     }
     for (const p of problems) list.append(el("li", {}, p));
@@ -136,6 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
     svg.replaceChildren();
     const px = (p) => `${p[0] * W},${p[1] * H}`;
     data.aois.forEach((a, i) => {
+      if (a.shape === "rect" && !(a.coords[2] > a.coords[0] && a.coords[3] > a.coords[1])) return;
       const cls = "aoi" + (active(a) ? "" : " inactive") + (i === selected ? " selected" : "");
       const pts = points(a);
       const shape = a.shape === "rect"
@@ -207,8 +211,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function finishPolygon() {
     const last = draft.length - 1;
-    if (last > 0 && Math.hypot(draft[last][0] - draft[last - 1][0], draft[last][1] - draft[last - 1][1]) < 0.004) {
-      draft.pop(); // the double-click added its point twice
+    if (last > 0 && draft[last][0] === draft[last - 1][0] && draft[last][1] === draft[last - 1][1]) {
+      draft.pop(); // the double-click added its point twice (at exactly the same place)
     }
     if (draft.length < 3) return;
     const coords = draft.map((p) => [round(p[0], 4), round(p[1], 4)]);
@@ -218,7 +222,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   svg.addEventListener("pointerdown", (e) => {
-    if (paused) return;
+    if (paused || e.button !== 0) return; // the main button only
     const p = pointer(e);
     if (mode === "rect") {
       drag = { kind: "draw", start: p, now: p };
@@ -302,18 +306,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---- tables ----------------------------------------------------------------------------
   const textField = (item, key, label) => el("input", {
     value: item[key], "aria-label": label,
-    oninput: (e) => { item[key] = e.target.value; writeText(); draw(); },
+    oninput: (e) => { if (paused) return; item[key] = e.target.value; writeText(); draw(); },
   });
 
   function timeField(item, key, label) {
     const input = el("input", { type: "number", step: "0.01", min: "0", value: String(item[key]), "aria-label": label });
     input.addEventListener("input", () => {
-      if (input.value === "") return; // being edited
+      if (paused || input.value === "") return; // paused: the text is not valid; empty: being edited
       item[key] = Number(input.value);
       writeText();
       draw();
     });
     const now = el("button", { type: "button", title: "Use the time of the slider", onclick: () => {
+      if (paused) return;
       item[key] = round(video.currentTime, 2);
       input.value = String(item[key]);
       writeText();
@@ -332,6 +337,7 @@ document.addEventListener("DOMContentLoaded", () => {
         timeField(a, "start", "Area starts"), timeField(a, "end", "Area ends"),
         el("td", {}, a.shape),
         el("td", {}, el("button", { type: "button", class: "danger", onclick: () => {
+          if (paused) return;
           data.aois.splice(i, 1);
           selected = null;
           writeText(); renderTables(); draw();
@@ -347,6 +353,7 @@ document.addEventListener("DOMContentLoaded", () => {
         el("td", {}, textField(s, "id", "Segment id")),
         timeField(s, "start", "Segment starts"), timeField(s, "end", "Segment ends"),
         el("td", {}, el("button", { type: "button", class: "danger", onclick: () => {
+          if (paused) return;
           data.segments.splice(i, 1);
           writeText(); renderTables();
         } }, "Delete"))));

@@ -38,9 +38,14 @@ test("areas are drawn, moved and edited on the picture, and saved as aois.json",
   };
   const at = (fx: number, fy: number): [number, number] => [svg.x + fx * svg.width, svg.y + fy * svg.height];
 
-  // A rectangle: drag from (0.2, 0.2) to (0.6, 0.7).
+  // A rectangle: drag from (0.2, 0.2) to (0.6, 0.7). The right mouse button draws nothing.
   await editor.getByRole("button", { name: "Add rectangle" }).click();
   await showPicture();
+  await page.mouse.move(...at(0.1, 0.1));
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(...at(0.3, 0.3), { steps: 3 });
+  await page.mouse.up({ button: "right" });
+  expect(await textarea.inputValue()).toBe("");
   await page.mouse.move(...at(0.2, 0.2));
   await page.mouse.down();
   await page.mouse.move(...at(0.4, 0.5), { steps: 4 });
@@ -104,6 +109,16 @@ test("areas are drawn, moved and edited on the picture, and saved as aois.json",
   // Hand edits in the text box are picked up; broken text pauses the editor instead of losing work.
   await textarea.fill("{ not json");
   await expect(page.locator("#aoi-notice")).toContainText("not valid JSON");
+  // ... and the tables do not write over the text that is being typed
+  await page.locator("#aoi-table tr[data-index]").nth(0).getByLabel("Area id").fill("overwritten");
+  expect(await textarea.inputValue()).toBe("{ not json");
+  // A rectangle without size is pointed out, not drawn.
+  const broken = JSON.stringify({
+    aois: [{ id: "flat", label: "Flat", start: 0, end: 3, shape: "rect", coords: [0.6, 0.2, 0.2, 0.6] }],
+  });
+  await textarea.fill(broken);
+  await expect(page.locator("#aoi-problems")).toContainText("rectangle with no size");
+  await expect(page.locator("#aoi-editor svg rect")).toHaveCount(0);
   await textarea.fill(JSON.stringify(stored.aois));
   await expect(page.locator("#aoi-notice")).toBeHidden();
   await expect(page.locator("#aoi-table tr[data-index]")).toHaveCount(2);

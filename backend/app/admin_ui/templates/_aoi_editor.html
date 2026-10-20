@@ -21,7 +21,7 @@
   #aoi-editor td.n input { width: 5.5rem; }
   #aoi-editor td.n button, #aoi-editor td button { margin: 0 0 0 .25rem; padding: .15rem .4rem; }
   #aoi-editor tr.selected td { background: #fff3e0; }
-  #aoi-editor.paused .stage, #aoi-editor.paused .toolbar { opacity: .4; pointer-events: none; }
+  #aoi-editor.paused .stage, #aoi-editor.paused .toolbar, #aoi-editor.paused table, #aoi-editor.paused #segment-add { opacity: .4; pointer-events: none; }
 </style>
 <section id="aoi-editor" data-duration="{{ video.duration }}" hidden>
   <h2>AOI editor</h2>
@@ -38,7 +38,7 @@
     <span id="aoi-hint" class="muted"></span>
   </div>
   <div class="stage">
-    <video muted playsinline preload="auto" src="/media/videos/{{ video.id }}.mp4"></video>
+    <video muted playsinline preload="metadata" src="/media/videos/{{ video.id }}.mp4"></video>
     <svg></svg>
   </div>
   <div class="time">
@@ -54,4 +54,4 @@
   <button type="button" id="segment-add">Add segment</button>
   <ul id="aoi-problems" class="error"></ul>
 </section>
-<script src="/admin/static/aoi_editor.js" defer></script>
+<script src="/admin/static/aoi_editor.js?v={{ aoi_editor_version }}" defer></script>
