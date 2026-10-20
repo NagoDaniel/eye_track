@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import Engine, text
 
 from app.db import make_engine
+from tests.session_fixture import FixtureSession
 
 POSTGRES_IMAGE = "postgres:16"
 
@@ -124,3 +125,16 @@ def no_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
     """`make` exports GIT_SHA for the image build; tests must not depend on it (the ones that
     need it set it themselves)."""
     monkeypatch.delenv("GIT_SHA", raising=False)
+
+
+@pytest.fixture(scope="session")
+def b_session(
+    tmp_path_factory: pytest.TempPathFactory, face_model: Path, model_b_root: Path
+) -> FixtureSession:
+    """The recorded session after the A pipeline and Pipeline B (real MediaPipe, real small gaze
+    network), loose inclusion thresholds. Read-only: tests that change files copy it first."""
+    from tests.analysis_data import add_pipeline_b, process_fixture
+
+    s = process_fixture(tmp_path_factory.mktemp("b_session"), face_model)
+    add_pipeline_b(s, model_b_root)
+    return s

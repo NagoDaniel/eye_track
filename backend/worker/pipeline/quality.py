@@ -200,6 +200,46 @@ def _mean(values: Sequence[float | None]) -> float | None:
     return float(np.mean(present)) if present else None
 
 
+def playback_summary(gaze: Any) -> dict[str, Any]:
+    """Valid, blink and interpolated shares of the playback frames of a gaze table, in total and
+    per video (one definition for both pipelines)."""
+    phase = np.asarray(gaze["phase"].to_pylist(), dtype=object)
+    playback = phase == "playback"
+    valid = np.asarray(gaze["valid"].to_pylist(), dtype=np.bool_)
+    interpolated = np.asarray(gaze["interpolated"].to_pylist(), dtype=np.bool_)
+    blink = np.asarray(gaze["blink"].to_pylist(), dtype=np.bool_)
+    video = np.asarray(gaze["video_id"].to_pylist(), dtype=object)
+    frames = int(playback.sum())
+    per_video = {
+        str(v): {
+            "frames": int(((video == v) & playback).sum()),
+            "valid_fraction": _frac(int((valid & playback & (video == v)).sum()),
+                                    int(((video == v) & playback).sum())),
+        }
+        for v in sorted({v for v in video if v is not None})
+    }  # fmt: skip
+    return {
+        "frames": frames,
+        "valid_frames": int((valid & playback).sum()),
+        "valid_fraction": _frac(int((valid & playback).sum()), frames),
+        "blink_fraction": _frac(int((blink & playback).sum()), frames),
+        "interpolated_fraction": _frac(int((interpolated & playback).sum()), frames),
+        "per_video": per_video,
+    }
+
+
+def validation_summary(result: Any) -> tuple[dict[str, Any], float | None]:
+    """The validation part of a report and its mean uncorrected error (`error_norm`)."""
+    blocks = result.as_dict()["blocks"]
+    error = _mean([blk["mean_error_norm"] for blk in blocks])
+    part = {
+        **result.as_dict(),
+        "mean_error_norm": error,
+        "mean_error_corrected_norm": _mean([blk["mean_error_corrected_norm"] for blk in blocks]),
+    }
+    return part, error
+
+
 def build_quality(
     root: Path,
     study_id: int,
@@ -236,28 +276,8 @@ def build_quality(
     valid_fraction: float | None = None
     playback_frames = 0
     if gaze is not None and playback is not None:
-        valid = np.asarray(gaze["valid"].to_pylist(), dtype=np.bool_)
-        interpolated = np.asarray(gaze["interpolated"].to_pylist(), dtype=np.bool_)
-        blink = np.asarray(gaze["blink"].to_pylist(), dtype=np.bool_)
-        video = np.asarray(gaze["video_id"].to_pylist(), dtype=object)
-        playback_frames = int(playback.sum())
-        valid_fraction = _frac(int((valid & playback).sum()), playback_frames)
-        per_video = {
-            str(v): {
-                "frames": int(((video == v) & playback).sum()),
-                "valid_fraction": _frac(int((valid & playback & (video == v)).sum()),
-                                        int(((video == v) & playback).sum())),
-            }
-            for v in sorted({v for v in video if v is not None})
-        }  # fmt: skip
-        playback_part = {
-            "frames": playback_frames,
-            "valid_frames": int((valid & playback).sum()),
-            "valid_fraction": valid_fraction,
-            "blink_fraction": _frac(int((blink & playback).sum()), playback_frames),
-            "interpolated_fraction": _frac(int((interpolated & playback).sum()), playback_frames),
-            "per_video": per_video,
-        }
+        playback_part = playback_summary(gaze)
+        playback_frames, valid_fraction = playback_part["frames"], playback_part["valid_fraction"]
 
     # --- face size relative to the calibration (the study's warn multipliers)
     ratio_part: dict[str, Any] | None = None
@@ -286,16 +306,9 @@ def build_quality(
     validation_part: dict[str, Any] | None = None
     validation_error: float | None = None
     if ok:
-        result = validate_session(root, study_id, session_id, config)
-        blocks = result.as_dict()["blocks"]
-        validation_error = _mean([blk["mean_error_norm"] for blk in blocks])
-        validation_part = {
-            **result.as_dict(),
-            "mean_error_norm": validation_error,
-            "mean_error_corrected_norm": _mean(
-                [blk["mean_error_corrected_norm"] for blk in blocks]
-            ),
-        }
+        validation_part, validation_error = validation_summary(
+            validate_session(root, study_id, session_id, config)
+        )
 
     inclusion = decide_inclusion(
         is_debug=bool(meta.get("is_debug")),

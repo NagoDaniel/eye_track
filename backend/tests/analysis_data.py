@@ -106,3 +106,31 @@ def seed(
                 upload_token_hash="h", status=SessionStatus.PROCESSED, quality=quality, flags=[],
             ))  # fmt: skip
         db.commit()
+
+
+def add_pipeline_b(s: FixtureSession, model_root: Path, name: str = "l2cs_mobileone_s0") -> None:
+    """Run Pipeline B on a processed session in place: the real network (small weights by default),
+    then B's calibration and gaze stages."""
+    from app.storage import webcam_path
+    from worker.pipeline.features_b import compute_features_b
+    from worker.pipeline.landmarks import LANDMARKS_FILE
+    from worker.pipeline.model_b import GazeModelB
+    from worker.pipeline.runner import calibration_stage, gaze_stage
+    from worker.pipeline.spec import SPEC_A, SPEC_B
+
+    config = PipelineConfig()
+    derived = derived_dir(s.root, s.study_id, s.session_id)
+    model = GazeModelB.load(model_root, name)
+    compute_features_b(
+        webcam_path(s.root, s.study_id, s.session_id),
+        derived / LANDMARKS_FILE,
+        derived / SPEC_A.features_file,
+        derived / SPEC_B.features_file,
+        model,
+        {"name": model.name, "sha256": model.sha256},
+        config,
+    )
+    ctx = Context(root=s.root, study_id=s.study_id, session_id=s.session_id, config=config,
+                  model=Path("unused"), max_inflated_bytes=1)  # fmt: skip
+    calibration_stage(ctx, SPEC_B)
+    gaze_stage(ctx, SPEC_B)
