@@ -9,6 +9,7 @@ import pytest
 from app.aois import Segment
 from tests.test_heatmap_video import DOT, PARTICIPANTS, SIGMA, VIDEO
 from worker.analysis.config import AnalysisConfig
+from worker.analysis.density import StimSamples
 from worker.analysis.heatmap_static import file_name, render_static, segments_for
 
 CONFIG = AnalysisConfig()
@@ -35,6 +36,19 @@ def test_configured_segments_replace_the_defaults_and_are_cut_to_the_video() -> 
              Segment(id="late", start=30, end=35)]  # fmt: skip
     chosen = segments_for(given, 21.8, CONFIG)
     assert [(s.id, s.start, s.end) for s in chosen] == [("a", 1, 3), ("b", 20, 21.8)]
+
+
+def test_segments_that_all_start_after_the_video_are_an_error() -> None:
+    late = [Segment(id="a", start=30, end=35), Segment(id="b", start=40, end=50)]
+    with pytest.raises(ValueError, match="starts after the end of the video"):
+        segments_for(late, 21.8, CONFIG)
+
+
+def test_a_sample_on_the_boundary_of_two_segments_counts_once(tmp_path: Path) -> None:
+    on_edge = StimSamples(np.array([3.0]), np.array([0.5]), np.array([0.5]))
+    segments = [Segment(id="a", start=2.0, end=3.0), Segment(id="b", start=3.0, end=4.0)]
+    summary = render_static(VIDEO, tmp_path, [on_edge], SIGMA, segments, CONFIG)
+    assert [s["samples"] for s in summary.segments] == [0, 1]  # in the later segment only
 
 
 def test_file_names_are_safe_and_ordered() -> None:

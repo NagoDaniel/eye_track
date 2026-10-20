@@ -77,12 +77,16 @@ def build_zip(root: Path, study_id: int, video_id: int, run_id: str) -> Path:
 
 
 def _from_record(record: dict[str, Any], job: Job | None) -> dict[str, Any]:
+    status, error = record["status"], record["error"]
+    if status == "running" and job is not None and job.status is JobStatus.FAILED:
+        # the worker died or gave up: the record never got its end
+        status, error = "failed", job.log
     return {
         "study_id": record["study_id"],
         "video_id": record["video_id"],
         "run_id": record["run_id"],
-        "status": record["status"],
-        "error": record["error"],
+        "status": status,
+        "error": error,
         "started_at": record["started_at"],
         "git_hash": record["git_hash"],
         "gaze_columns": record["parameters"]["gaze_columns"],

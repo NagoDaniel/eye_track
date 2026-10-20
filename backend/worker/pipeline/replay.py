@@ -123,6 +123,11 @@ class FrameReader:
         self._last: Frame | None = None
         self._last_index = -1
 
+    @property
+    def last_index(self) -> int:
+        """The index of the last frame that could be decoded so far (-1 before the first)."""
+        return self._last_index
+
     def at(self, index: int) -> Frame | None:
         index = max(index, 0)
         if index == self._last_index:

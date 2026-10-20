@@ -13,7 +13,8 @@
   <tr><th>Code version</th><td>{% if record.git_hash %}<code>{{ record.git_hash }}</code>{% else %}<span class="warning">not recorded (the image was built without GIT_SHA)</span>{% endif %}</td></tr>
   <tr><th>Gaze</th><td>{{ record.parameters.gaze_columns }}</td></tr>
   <tr><th>AOI tolerance k</th><td>{{ record.parameters.aoi_tolerance_k }}</td></tr>
-  {% if record.results.sigma %}<tr><th>Heatmap sigma</th><td>{{ "%.4f"|format(record.results.sigma.value) }} of the video width, from {{ record.results.sigma.sessions_used }} session(s){% if record.results.sigma.floored %} (raised to the lower limit {{ record.parameters.sigma_min }}){% endif %}</td></tr>{% endif %}
+  <tr><th>Dots on the heatmap video</th><td>{{ "yes" if record.parameters.heatmap_dots else "no" }}</td></tr>
+  {% if record.results.sigma %}<tr><th>Heatmap sigma</th><td>{{ "%.4f"|format(record.results.sigma.value) }} of the video width, from {{ record.results.sigma.sessions_used }} session(s){% if record.results.sigma.floored %} (raised to the lower limit {{ record.parameters.sigma_min }}){% endif %}{% if record.results.sigma.sessions_used == 0 %} <span class="warning">no session had a validation accuracy, so the lower limit is used</span>{% endif %}</td></tr>{% endif %}
 </table>
 {% if record.error %}<p class="error" role="alert">Failed: {{ record.error }}</p>{% endif %}
 

@@ -120,5 +120,7 @@ def test_samples_are_sliced_by_media_time_whatever_their_order() -> None:
     ordered = by_stim_time(s)
     x, _ = ordered.window(2.0, 4.0)  # both ends included
     np.testing.assert_allclose(x, [0.2, 0.3, 0.4])
+    half_open, _ = ordered.window(2.0, 4.0, include_end=False)
+    np.testing.assert_allclose(half_open, [0.2, 0.3])  # 4.0 is the start of the next window
     assert len(ordered.window(5.1, 9)[0]) == 0
     assert len(ordered.window(0, 0.5)[0]) == 0

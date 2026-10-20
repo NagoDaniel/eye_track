@@ -6,6 +6,7 @@ that died is visible. Outputs sit next to it in `analysis/{study_id}/{video_id}/
 """
 
 import json
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +66,23 @@ class RunRecord:
         self.error = error
         self.finished_at = datetime.now(UTC).isoformat()
         self.write(run_dir)
+
+
+def discard_unfinished_run(root: Path, study_id: int, video_id: int, run_id: str) -> bool:
+    """Remove what an earlier attempt of the same run left behind. A requeued job (its worker died)
+    has the same run id; its directory holds `run.json` with status `running`, or nothing yet.
+    Raises FileExistsError when the run finished: an id is never reused for a finished run."""
+    run_dir = analysis_run_dir(root, study_id, video_id, run_id)
+    if not run_dir.exists():
+        return False
+    try:
+        status = json.loads((run_dir / RUN_FILE).read_text(encoding="utf-8"))["status"]
+    except (OSError, ValueError, KeyError):
+        status = None  # the attempt died before it wrote the record
+    if status in (DONE, FAILED):
+        raise FileExistsError(f"analysis run {run_id} has already finished")
+    shutil.rmtree(run_dir)
+    return True
 
 
 def start_run(

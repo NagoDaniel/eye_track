@@ -207,7 +207,7 @@ Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`,
 
 ## `analysis/{study_id}/{video_id}/{run_id}/run.json` (PLAN §9)
 
-One `analyze_video` run (`backend/worker/analysis/run.py`), started from the admin or with `docker compose exec api python cli.py analyze <study_id> <video_id> [--drift-corrected] [--tolerance-k K]`. The directory holds `run.json` and the files below; a stage that fails leaves the finished stages' files in place and the run `failed`. A session whose gaze cannot be read is listed in `excluded` (`gaze_unreadable: ...`), one without a valid sample on the video as `no_valid_samples`; a run with nobody left fails (`no included sessions`). `results` has the sigma used and, per stage, its summary and seconds. `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
+One `analyze_video` run (`backend/worker/analysis/run.py`), started from the admin or with `docker compose exec api python cli.py analyze <study_id> <video_id> [--drift-corrected] [--tolerance-k K]`. The directory holds `run.json` and the files below; a stage that fails leaves the finished stages' files in place and the run `failed`. A session whose gaze cannot be read is listed in `excluded` (`gaze_unreadable: ...`), one without a valid sample on the video as `no_valid_samples`; a run with nobody left fails (`no included sessions`). `results` has the sigma used and, per stage, its summary and seconds. `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused for a finished run. A job that is requeued after its worker died (same id) removes what the unfinished attempt left and starts again; in the admin list a `running` record whose job failed shows as `failed`. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
 
 | key | meaning |
 |---|---|
@@ -215,7 +215,7 @@ One `analyze_video` run (`backend/worker/analysis/run.py`), started from the adm
 | `run_id`, `study_id`, `video_id` | |
 | `status`, `error`, `started_at`, `finished_at` | ISO 8601 UTC |
 | `git_hash` | `git describe --always --dirty` of the build (`GIT_SHA` build argument); `null` when the image was built without it |
-| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `plain` / `drift_corrected`, heatmap window, sigma floor, grid, segment length, AOI tolerance k, synchrony window) |
+| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `plain` / `drift_corrected`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
 | `included` | `{session_id, participant_code, ...}` per session analysed (later stages add their numbers) |
 | `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json`), `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
 | `outputs` | files written, relative to the run directory |
@@ -233,7 +233,7 @@ For stimulus frame `k` (media time `s = k / fps`) the density uses the valid sam
 
 ### `static/NNN_<id>.png` (PLAN §9.2)
 
-Written by `backend/worker/analysis/heatmap_static.py`, one picture per time segment, numbered in segment order (the id is made file-name safe). The segments are the `segments` of the video's `aois.json`, or consecutive windows of `segment_default_s` (10) seconds over the whole video, the last one shorter; a segment is cut at the end of the video and one that starts after it is dropped. The density is the one of the dynamic heatmap (same sigma, equal weight per participant) over all samples of the participant in the segment, drawn over the video frame at the segment's middle. Each picture has its own colour scale (the 99th percentile of its non-zero densities).
+Written by `backend/worker/analysis/heatmap_static.py`, one picture per time segment, numbered in segment order (the id is made file-name safe). The segments are the `segments` of the video's `aois.json`, or consecutive windows of `segment_default_s` (10) seconds over the whole video, the last one shorter; a segment is cut at the end of the video and one that starts after it is dropped (if all do, the stage fails). Segments are half-open `[start, end)` in media time. The density is the one of the dynamic heatmap (same sigma, equal weight per participant) over all samples of the participant in the segment, drawn over the video frame at the segment's middle. Each picture has its own colour scale (the 99th percentile of its non-zero densities).
 
 ### `aoi_metrics_long.csv` and `aoi_metrics_wide.csv` (PLAN §9.3)
 

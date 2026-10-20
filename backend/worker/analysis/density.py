@@ -45,10 +45,10 @@ class StimSamples:
     x: Floats
     y: Floats
 
-    def window(self, lo: float, hi: float) -> tuple[Floats, Floats]:
-        """Samples with media time in `[lo, hi]`."""
+    def window(self, lo: float, hi: float, include_end: bool = True) -> tuple[Floats, Floats]:
+        """Samples with media time in `[lo, hi]`, or `[lo, hi)` without `include_end`."""
         a = int(np.searchsorted(self.stim_time, lo, side="left"))
-        b = int(np.searchsorted(self.stim_time, hi, side="right"))
+        b = int(np.searchsorted(self.stim_time, hi, side="right" if include_end else "left"))
         return self.x[a:b], self.y[a:b]
 
 

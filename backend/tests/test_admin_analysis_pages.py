@@ -9,9 +9,13 @@ import pytest
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session as Db
 
+from app.jobs import enqueue, mark_failed
 from app.models import Job, JobKind, JobStatus, Study, StudyMode, Video
 from tests.adminutil import Admin, anonymous_client, csrf_from, logged_in_admin
 from tests.analysis_fake import make_run
+from worker.analysis.config import AnalysisConfig
+from worker.analysis.run import start_run
+from worker.analysis.select import Selection
 
 
 @pytest.fixture
@@ -157,3 +161,30 @@ def test_the_participant_page_shows_the_latest_run_that_included_them(
         {"participant_code": "P1", "aoi_id": "a", "dwell_sample_s": "1.5"}
     ]
     assert admin.client.get("/admin/participants/1/P3").text.count("<h2>Analysis</h2>") == 0
+
+
+def test_a_run_whose_worker_died_and_whose_job_failed_is_listed_as_failed(
+    admin: Admin, seeded: None, data_root: Path, migrated_engine: Engine
+) -> None:
+    run_id = "20261020T080000Z-abcdef"
+    start_run(data_root, 1, 1, run_id, AnalysisConfig(), Selection([], []))  # `running`, no end
+    with Db(migrated_engine) as db:
+        job = enqueue(db, JobKind.ANALYZE_VIDEO, {"study_id": 1, "video_id": 1, "run_id": run_id})
+        mark_failed(db, job, "worker died during attempt 3 of 3")
+        db.commit()
+    (listed,) = admin.client.get("/admin/api/analysis").json()
+    assert listed["status"] == "failed" and "worker died" in listed["error"]
+    assert "failed: worker died" in admin.client.get("/admin/analysis").text
+
+
+def test_the_dots_checkbox_reaches_the_job(
+    admin: Admin, seeded: None, migrated_engine: Engine
+) -> None:
+    c = admin.client
+    assert c.post("/admin/analysis", data=form(admin, heatmap_dots="true")).status_code == 303
+    with Db(migrated_engine) as db:
+        (job,) = db.scalars(select(Job)).all()
+        assert job.args["heatmap_dots"] is True
+    api = c.post("/admin/api/analysis", json={"study_id": 1, "video_id": 1, "heatmap_dots": True},
+                 headers=admin.headers)  # fmt: skip
+    assert api.status_code == 409  # one at a time; the option itself is accepted by the schema

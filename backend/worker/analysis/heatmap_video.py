@@ -101,12 +101,16 @@ def _frames(
     scale: float,
     size: tuple[int, int],
     config: AnalysisConfig,
+    written: list[int],
 ) -> Iterator[Image]:
+    """The drawn frames. The frame count a container reports can be too high: the frames stop at the
+    last one that decodes, and `written[0]` says how many there were."""
     width, height = size
     for k in range(len(densities)):
         picture = reader.at(k)
-        if picture is None:
-            raise ValueError(f"the stimulus video has no frame {k}")
+        if picture is None or reader.last_index < k:
+            return
+        written[0] = k + 1
         picture = np.ascontiguousarray(picture[:height, :width])
         out = overlay(picture, densities[k], scale, config)
         if config.heatmap_dots:
@@ -129,7 +133,8 @@ def render_heatmap(
         if frames <= 0:
             raise ValueError(f"{video_file.name} has no frames")
         first = reader.at(0)
-        assert first is not None
+        if first is None:
+            raise ValueError(f"{video_file.name} has no readable first frame")
         # H.264 with yuv420p needs even sides.
         size = (first.shape[1] - first.shape[1] % 2, first.shape[0] - first.shape[0] % 2)
 
@@ -139,14 +144,22 @@ def render_heatmap(
 
         target = run_dir / HEATMAP_VIDEO_FILE
         temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        written = [0]
         try:
-            encode(temporary, size, fps,
-                   _frames(reader, densities, participants, scale, size, config))  # fmt: skip
+            drawn = _frames(reader, densities, participants, scale, size, config, written)
+            encode(temporary, size, fps, drawn)
             temporary.replace(target)
         finally:
             temporary.unlink(missing_ok=True)
     finally:
         reader.release()
+
+    if written[0] == 0:
+        raise ValueError(f"{video_file.name} could not be decoded")
+    if written[0] < frames:
+        log.warning("the video has fewer frames than its container says",
+                    extra={"declared": frames, "decoded": written[0]})  # fmt: skip
+        frames, densities = written[0], densities[: written[0]]
 
     with atomic_writer(run_dir / DENSITY_FILE) as f:
         np.savez_compressed(

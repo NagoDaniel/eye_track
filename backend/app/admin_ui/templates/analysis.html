@@ -29,6 +29,7 @@
   <label>AOI tolerance k (shapes grow by k times each participant's accuracy; 0 for none)
     <input name="aoi_tolerance_k" type="number" step="0.1" min="0" value="0">
   </label>
+  <label><input name="heatmap_dots" type="checkbox" value="true" style="width: auto"> Draw a white dot per participant on the heatmap video</label>
   <button type="submit"{% if not studies or not videos %} disabled{% endif %}>Start analysis</button>
 </form>
 

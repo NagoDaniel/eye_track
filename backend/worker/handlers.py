@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.analysis_view import RUN_ID
 from app.aois import parse_aoi_file
 from app.chunks import MIB
 from app.models import Chunk, Job, SessionStatus, Study, Video
@@ -18,7 +19,7 @@ from app.settings import Settings
 from app.storage import derived_dir
 from worker.analysis.analyze import VideoInfo, analyze, load_included
 from worker.analysis.config import AnalysisConfig
-from worker.analysis.run import start_run
+from worker.analysis.run import discard_unfinished_run, start_run
 from worker.analysis.select import query_sessions, select_sessions
 from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
@@ -143,19 +144,24 @@ def make_render_debug(
 
 def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Callable[[Job], str]:
     """The handler for `analyze_video` jobs (PLAN §9). Args: `study_id`, `video_id`, `run_id`,
-    optionally `gaze_columns` and `aoi_tolerance_k`. Writes `analysis/{study}/{video}/{run}/` with
-    `run.json`; a run that cannot produce anything (or whose stage raises) is marked `failed` there
-    and fails the job."""
+    optionally `gaze_columns`, `aoi_tolerance_k` and `heatmap_dots`. Writes
+    `analysis/{study}/{video}/{run}/` with `run.json`; a run that cannot produce anything (or whose
+    stage raises) is marked `failed` there and fails the job. A job requeued after its worker died
+    starts its run again from nothing."""
 
     def handle(job: Job) -> str:
-        study_id, video_id, run_id = (job.args.get(k) for k in ("study_id", "video_id", "run_id"))
-        if not (
-            isinstance(study_id, int) and isinstance(video_id, int) and isinstance(run_id, str)
-        ):
-            raise ValueError("analyze_video needs study_id, video_id and run_id in its args")
+        study_id, video_id = job.args.get("study_id"), job.args.get("video_id")
+        run_id, columns = job.args.get("run_id"), job.args.get("gaze_columns", "plain")
+        if not (isinstance(study_id, int) and isinstance(video_id, int)):
+            raise ValueError("analyze_video needs study_id and video_id in its args")
+        if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
+            raise ValueError("analyze_video needs a run_id made by queue_analysis")
+        if columns not in ("plain", "drift_corrected"):
+            raise ValueError("analyze_video needs plain or drift_corrected gaze")
         config = AnalysisConfig(
-            gaze_columns=job.args.get("gaze_columns", "plain"),
+            gaze_columns=columns,
             aoi_tolerance_k=float(job.args.get("aoi_tolerance_k", 0.0)),
+            heatmap_dots=bool(job.args.get("heatmap_dots", False)),
         )
         with factory() as db:
             if db.get(Study, study_id) is None:
@@ -167,18 +173,15 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
             aois = parse_aoi_file(video.aois or {})
             infos = query_sessions(db, settings.data_root, study_id)
 
+        root = settings.data_root
+        if discard_unfinished_run(root, study_id, video_id, run_id):
+            log.warning("an unfinished analysis run is started again", extra={"run_id": run_id})
         selection = select_sessions(infos, video_id)
-        record, run_dir = start_run(
-            settings.data_root, study_id, video_id, run_id, config, selection
-        )
+        record, run_dir = start_run(root, study_id, video_id, run_id, config, selection)
         try:
-            sessions = load_included(
-                settings.data_root, study_id, video_id, selection, config, record
-            )
-            analyze(settings.data_root, run_dir, record, info, aois, sessions)
-        except (
-            BaseException
-        ) as exc:  # an AnalysisError, a stage that raised, or the worker stopping
+            sessions = load_included(root, study_id, video_id, selection, config, record)
+            analyze(root, run_dir, record, info, aois, sessions)
+        except BaseException as exc:  # an AnalysisError, a failing stage, or the worker stopping
             record.finish(run_dir, error=str(exc) or type(exc).__name__)
             raise
         record.finish(run_dir)

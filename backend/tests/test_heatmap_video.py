@@ -168,3 +168,38 @@ def test_dots_are_drawn_only_when_asked_and_at_the_participants_median() -> None
     untouched = np.zeros_like(frame)
     draw_dots(untouched, [p], 9.0, config)  # no samples near 9 s
     assert not untouched.any()
+
+
+def test_a_container_that_reports_too_many_frames_gives_the_frames_it_has(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from worker.pipeline.replay import FrameReader
+
+    original = FrameReader.__init__
+
+    def inflated(self: FrameReader, path: Path) -> None:
+        original(self, path)
+        self.frame_count += 12  # the container says 12 frames more than there are
+
+    monkeypatch.setattr(FrameReader, "__init__", inflated)
+    summary = render_heatmap(VIDEO, tmp_path, PARTICIPANTS, SIGMA, CONFIG)
+    assert summary.frames == 545
+    assert int(probe(tmp_path / HEATMAP_VIDEO_FILE)["nb_read_frames"]) == 545
+    with np.load(tmp_path / DENSITY_FILE) as npz:
+        assert npz["density"].shape[0] == 545
+
+
+def test_the_dots_option_draws_them_into_the_video(tmp_path: Path) -> None:
+    plain_dir, dots_dir = tmp_path / "plain", tmp_path / "dots"
+    plain_dir.mkdir()
+    dots_dir.mkdir()
+    render_heatmap(VIDEO, plain_dir, PARTICIPANTS, SIGMA, CONFIG)
+    render_heatmap(VIDEO, dots_dir, PARTICIPANTS, SIGMA, AnalysisConfig(heatmap_dots=True))
+    k = round(PAUSE_S * 25)
+    plain = frame_at(plain_dir / HEATMAP_VIDEO_FILE, k)
+    dots = frame_at(dots_dir / HEATMAP_VIDEO_FILE, k)
+
+    def whites(frame: np.ndarray) -> int:
+        return int((frame.min(axis=2) > 235).sum())  # the dot is white; the video is compressed
+
+    assert whites(dots) > whites(plain) + 100

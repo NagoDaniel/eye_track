@@ -86,6 +86,7 @@ class StartRequest(BaseModel):
     video_id: int
     gaze_columns: str = "plain"
     aoi_tolerance_k: float = 0.0
+    heatmap_dots: bool = False
 
 
 @router.post("/api/analysis", status_code=201, dependencies=[Depends(csrf_protected)])
@@ -95,7 +96,12 @@ def api_start(
     db: DbSession = Depends(get_db),
 ) -> dict[str, Any]:
     job, run_id = queue_analysis(
-        db, body.study_id, body.video_id, body.gaze_columns, body.aoi_tolerance_k
+        db,
+        body.study_id,
+        body.video_id,
+        body.gaze_columns,
+        body.aoi_tolerance_k,
+        body.heatmap_dots,
     )
     db.commit()
     return {"job_id": job.id, "run_id": run_id, "args": job.args}
@@ -164,13 +170,14 @@ def start_form(
     video_id: Annotated[int, Form()],
     gaze_columns: Annotated[str, Form()] = "plain",
     aoi_tolerance_k: Annotated[float, Form()] = 0.0,
+    heatmap_dots: Annotated[bool, Form()] = False,
     csrf_token: Annotated[str, Form()] = "",
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
     check_form_csrf(page, csrf_token)
     try:
-        queue_analysis(db, study_id, video_id, gaze_columns, aoi_tolerance_k)
+        queue_analysis(db, study_id, video_id, gaze_columns, aoi_tolerance_k, heatmap_dots)
     except AdminError as exc:
         db.rollback()
         return _index(request, page, db, error=str(exc), status_code=exc.status_code)

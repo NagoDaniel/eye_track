@@ -20,7 +20,7 @@ from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
-from app.storage import derived_dir, events_path
+from app.storage import analysis_run_dir, derived_dir, events_path
 from worker.handlers import make_analyze_video, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
@@ -217,6 +217,7 @@ def analyze_command(
     tolerance_k: float = typer.Option(
         0.0, "--tolerance-k", min=0.0, help="Grow the AOIs by k times each participant's accuracy."
     ),
+    dots: bool = typer.Option(False, "--dots", help="Draw a dot per participant on the heatmap."),
 ) -> None:
     """Analyse one video across the included sessions of a study here and now (PLAN §9).
 
@@ -235,9 +236,10 @@ def analyze_command(
         "run_id": run_id,
         "gaze_columns": "drift_corrected" if drift_corrected else "plain",
         "aoi_tolerance_k": tolerance_k,
+        "heatmap_dots": dots,
     }
     handler = make_analyze_video(session_factory(), config)
-    run_dir = config.data_root / "analysis" / str(study_id) / str(video_id) / run_id
+    run_dir = analysis_run_dir(config.data_root, study_id, video_id, run_id)
     try:
         handler(Job(kind=JobKind.ANALYZE_VIDEO, args=args))
     except Exception as exc:

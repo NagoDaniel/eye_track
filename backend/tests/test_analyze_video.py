@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session as Db
@@ -20,9 +22,9 @@ import cli
 import worker.analysis.analyze as analyze_module
 from app.analysis_runs import RUN_FILE, new_run_id, queue_analysis
 from app.db import make_session_factory
-from app.models import Job, JobKind, JobStatus, SessionStatus
+from app.models import Job, JobKind, JobStatus, SessionStatus, Video
 from app.models import Session as SessionRow
-from app.storage import analysis_run_dir
+from app.storage import analysis_run_dir, derived_dir
 from tests.analysis_data import (
     VIDEO_ID,
     Participant,
@@ -32,6 +34,9 @@ from tests.analysis_data import (
 )
 from tests.dbutil import make_settings
 from tests.session_fixture import FixtureSession
+from worker.analysis.config import AnalysisConfig
+from worker.analysis.run import start_run
+from worker.analysis.select import Selection
 from worker.handlers import make_analyze_video
 from worker.run import process_one
 
@@ -219,12 +224,13 @@ def test_the_cli_runs_an_analysis_and_lists_the_files(
     monkeypatch.setattr(cli, "settings", lambda: settings)
     monkeypatch.setattr(cli, "session_factory", lambda: make_session_factory(migrated_engine))
     monkeypatch.setattr(cli, "open_session", lambda: make_session_factory(migrated_engine)())
-    result = runner.invoke(cli.app, ["analyze", "1", str(VIDEO_ID), "--tolerance-k", "1"])
+    result = runner.invoke(cli.app, ["analyze", "1", str(VIDEO_ID), "--tolerance-k", "1", "--dots"])
     assert result.exit_code == 0, result.output
     assert "done, 3 participants" in result.output
     assert "heatmap.mp4" in result.output and "synchrony.png" in result.output
     (run_dir,) = (root / "analysis" / "1" / str(VIDEO_ID)).iterdir()
-    assert json.loads((run_dir / RUN_FILE).read_text())["parameters"]["aoi_tolerance_k"] == 1.0
+    parameters = json.loads((run_dir / RUN_FILE).read_text())["parameters"]
+    assert parameters["aoi_tolerance_k"] == 1.0 and parameters["heatmap_dots"] is True
 
     with Db(migrated_engine) as db:  # an open job for the same video: refused
         queue_analysis(db, 1, VIDEO_ID)
@@ -235,3 +241,103 @@ def test_the_cli_runs_an_analysis_and_lists_the_files(
 
 def test_new_run_ids_are_unique() -> None:
     assert len({new_run_id() for _ in range(50)}) == 50
+
+
+def test_a_requeued_run_starts_again_from_nothing(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    """The worker died during the first attempt: its directory holds a `running` record and a file.
+    The requeued job (same run id) must not trip over them."""
+    root, _ = world
+    factory = make_session_factory(migrated_engine)
+    with factory() as db:
+        job, run_id = queue_analysis(db, 1, VIDEO_ID)
+        db.commit()
+        job_id = job.id
+    _, run_dir = start_run(root, 1, VIDEO_ID, run_id, AnalysisConfig(), Selection([], []))
+    (run_dir / "stale.csv").write_text("left behind")
+    handler = make_analyze_video(factory, make_settings(data_root=root))
+    assert process_one(factory, {JobKind.ANALYZE_VIDEO: handler}) is True
+    with factory() as db:
+        assert db.get_one(Job, job_id).status is JobStatus.DONE
+    assert record_of(root, run_id)["status"] == "done" and not (run_dir / "stale.csv").exists()
+
+
+def test_a_finished_run_is_never_overwritten(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    root, _ = world
+    factory = make_session_factory(migrated_engine)
+    with factory() as db:
+        job, run_id = queue_analysis(db, 1, VIDEO_ID)
+        db.commit()
+    record, run_dir = start_run(root, 1, VIDEO_ID, run_id, AnalysisConfig(), Selection([], []))
+    record.finish(run_dir)
+    handler = make_analyze_video(factory, make_settings(data_root=root))
+    assert process_one(factory, {JobKind.ANALYZE_VIDEO: handler}) is True
+    with factory() as db:
+        failed = db.get_one(Job, job.id)
+    assert failed.status is JobStatus.FAILED and "already finished" in failed.log
+    assert record_of(root, run_id)["status"] == "done"
+
+
+def test_a_run_id_that_queue_analysis_did_not_make_is_refused(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    root, _ = world
+    handler = make_analyze_video(
+        make_session_factory(migrated_engine), make_settings(data_root=root)
+    )
+    for bad in ("../x", "x", 5):
+        args = {"study_id": 1, "video_id": VIDEO_ID, "run_id": bad}
+        with pytest.raises(ValueError, match="run_id"):
+            handler(Job(kind=JobKind.ANALYZE_VIDEO, args=args))
+    assert not (root / "analysis").exists()
+
+
+def test_a_video_without_areas_still_gets_heatmaps_and_synchrony(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    root, _ = world
+    with Db(migrated_engine) as db:
+        db.get_one(Video, VIDEO_ID).aois = None
+        db.commit()
+    job, run_id = run_job(migrated_engine, root)
+    assert job.status is JobStatus.DONE, job.log
+    record = record_of(root, run_id)
+    assert not any(n.startswith("aoi_metrics") for n in record["outputs"])
+    assert record["results"]["aoi_metrics"]["skipped"] == "the video has no AOIs"
+    # no segments either: windows of 10 s over the 21.8 s video
+    assert [n for n in record["outputs"] if n.startswith("static/")] == [
+        "static/001_window_1.png", "static/002_window_2.png", "static/003_window_3.png",
+    ]  # fmt: skip
+    assert "synchrony.csv" in record["outputs"] and "heatmap.mp4" in record["outputs"]
+
+
+def test_when_every_drift_corrected_column_is_empty_the_run_says_so(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    root, people = world
+    for p in people:
+        path = derived_dir(root, 1, p.session_id) / "gaze_a.parquet"
+        table = pq.read_table(path)
+        for name in ("x_vid_dc", "y_vid_dc"):
+            nothing = pa.nulls(len(table), pa.float32())
+            table = table.set_column(table.schema.get_field_index(name), name, nothing)
+        pq.write_table(table.replace_schema_metadata(pq.read_schema(path).metadata), path)
+    job, run_id = run_job(migrated_engine, root, gaze_columns="drift_corrected")
+    assert job.status is JobStatus.FAILED and "no included sessions" in job.log
+    left = record_of(root, run_id)["excluded"]
+    assert sorted(e["participant_code"] for e in left) == ["P1", "P2", "P3"]
+    assert all(e["reasons"] == ["no_valid_samples"] for e in left)
+    plain, _ = run_job(migrated_engine, root)  # the plain columns are untouched
+    assert plain.status is JobStatus.DONE
+
+
+def test_the_dots_option_reaches_the_run(
+    migrated_engine: Engine, world: tuple[Path, list[Participant]]
+) -> None:
+    root, _ = world
+    job, run_id = run_job(migrated_engine, root, heatmap_dots=True)
+    assert job.status is JobStatus.DONE, job.log
+    assert record_of(root, run_id)["parameters"]["heatmap_dots"] is True

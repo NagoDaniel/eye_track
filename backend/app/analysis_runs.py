@@ -38,7 +38,12 @@ def analysis_jobs(db: Db, study_id: int | None = None, video_id: int | None = No
 
 
 def queue_analysis(
-    db: Db, study_id: int, video_id: int, gaze_columns: str = "plain", aoi_tolerance_k: float = 0.0
+    db: Db,
+    study_id: int,
+    video_id: int,
+    gaze_columns: str = "plain",
+    aoi_tolerance_k: float = 0.0,
+    heatmap_dots: bool = False,
 ) -> tuple[Job, str]:
     """Queue `analyze_video`. The caller commits. Returns the job and the run id.
 
@@ -64,6 +69,7 @@ def queue_analysis(
             "run_id": run_id,
             "gaze_columns": gaze_columns,
             "aoi_tolerance_k": aoi_tolerance_k,
+            "heatmap_dots": heatmap_dots,
         },
     )
     return job, run_id

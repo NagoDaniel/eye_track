@@ -1,10 +1,11 @@
 """Static heatmaps, one PNG per time segment (PLAN §9.2).
 
 A segment comes from `aois.json` (`segments`) or, without any, fixed windows of
-`config.segment_default_s` seconds over the whole video. The density is the one of §9.1 (equal
-weight per participant, the run's sigma) over all samples of the segment, drawn over the video frame
-at the segment's middle. Each picture has its own colour scale (its own percentile), since a long
-segment spreads the same weight over more places than a short one.
+`config.segment_default_s` seconds over the whole video. A segment is the half-open interval of
+media time `[start, end)`, so a sample between two segments counts once. The density is the one of
+§9.1 (equal weight per participant, the run's sigma) over all samples of the segment, drawn over the
+video frame at the segment's middle. Each picture has its own colour scale (its own percentile),
+since a long segment spreads the same weight over more places than a short one.
 """
 
 import logging
@@ -43,9 +44,14 @@ def segments_for(
     configured: Sequence[Segment], duration_s: float, config: AnalysisConfig
 ) -> list[Segment]:
     """The segments of the video, or consecutive windows covering it (the last one may be shorter).
-    A segment that starts after the end of the video is dropped, one that ends after it is cut."""
+    A segment that starts after the end of the video is dropped, one that ends after it is cut;
+    when all of them start after it, that is an error (the researcher meant something else)."""
     if configured:
         chosen = [s for s in configured if s.start < duration_s]
+        if not chosen:
+            raise ValueError(
+                f"every segment in aois.json starts after the end of the video ({duration_s:.1f} s)"
+            )
         return [Segment(id=s.id, start=s.start, end=min(s.end, duration_s)) for s in chosen]
     count = max(1, math.ceil(duration_s / config.segment_default_s))
     return [
@@ -82,7 +88,9 @@ def render_static(
             frame = reader.at(min(round(middle * reader.fps), max(reader.frame_count - 1, 0)))
             if frame is None:
                 raise ValueError(f"the stimulus video has no frame at {middle:.2f} s")
-            windows = [p.window(segment.start, segment.end) for p in participants]
+            windows = [
+                p.window(segment.start, segment.end, include_end=False) for p in participants
+            ]
             grid = group_density(windows, sigma, config).astype(np.float32)
             scale = colour_scale(grid[None], config.heatmap_scale_percentile)
             ok, encoded = cv2.imencode(".png", overlay(frame, grid, scale, config))
