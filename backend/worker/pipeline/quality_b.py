@@ -15,6 +15,7 @@ from typing import Any
 
 import pyarrow.parquet as pq
 
+from app.pipeline_b import QUALITY_B_FILE
 from app.schemas import StudyConfig
 from app.storage import atomic_write_bytes, derived_dir, meta_path
 from worker.pipeline.config import PipelineConfig
@@ -22,7 +23,6 @@ from worker.pipeline.quality import decide_inclusion, playback_summary, validati
 from worker.pipeline.spec import SPEC_B
 from worker.pipeline.validation import validate_session
 
-QUALITY_B_FILE = "quality_b.json"
 QUALITY_B_VERSION = 1
 
 

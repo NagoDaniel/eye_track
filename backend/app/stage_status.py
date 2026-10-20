@@ -23,10 +23,12 @@ def status_of(summary: Any) -> str:
     return "skipped" if isinstance(summary, dict) and "skipped" in summary else "ok"
 
 
-def read_entries(derived: Path, quality: dict[str, Any] | None = None) -> Entries:
+def read_entries(
+    derived: Path, quality: dict[str, Any] | None = None, filename: str = STAGES_FILE
+) -> Entries:
     """The entries of `stages.json`. Without that file (a session processed before it existed) the
     stages recorded in the quality report, if given, with their status worked out."""
-    path = derived / STAGES_FILE
+    path = derived / filename
     if path.is_file():
         stages = json.loads(path.read_text(encoding="utf-8")).get("stages", {})
         return dict(stages) if isinstance(stages, dict) else {}
@@ -42,6 +44,6 @@ def read_entries(derived: Path, quality: dict[str, Any] | None = None) -> Entrie
     }
 
 
-def write_entries(derived: Path, entries: Entries) -> None:
+def write_entries(derived: Path, entries: Entries, filename: str = STAGES_FILE) -> None:
     document = {"version": STAGES_VERSION, "stages": entries}
-    atomic_write_bytes(derived / STAGES_FILE, (json.dumps(document, indent=1) + "\n").encode())
+    atomic_write_bytes(derived / filename, (json.dumps(document, indent=1) + "\n").encode())

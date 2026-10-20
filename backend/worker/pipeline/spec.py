@@ -8,6 +8,12 @@ definition). A's file names are the ones of Milestones 2 and 3 and do not change
 
 from dataclasses import dataclass
 
+from app.pipeline_b import (
+    CALIBRATION_B_FILE,
+    FEATURES_B_FILE,
+    FIXATIONS_B_FILE,
+    GAZE_B_FILE,
+)
 from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 
 
@@ -36,11 +42,11 @@ B_FEATURE_COLUMNS = ("gaze_pitch", "gaze_yaw", "yaw", "pitch", "roll", "face_rat
 
 SPEC_B = PipelineSpec(
     id="b",
-    features_file="features_b.parquet",
+    features_file=FEATURES_B_FILE,
     feature_columns=B_FEATURE_COLUMNS,
-    calibration_file="calibration_b.json",
-    gaze_file="gaze_b.parquet",
-    fixations_file="fixations_b.parquet",
+    calibration_file=CALIBRATION_B_FILE,
+    gaze_file=GAZE_B_FILE,
+    fixations_file=FIXATIONS_B_FILE,
 )
 
 SPECS = {SPEC_A.id: SPEC_A, SPEC_B.id: SPEC_B}

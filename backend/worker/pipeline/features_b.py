@@ -31,8 +31,9 @@ from numpy.typing import NDArray
 
 from app.storage import atomic_writer
 from worker.pipeline.config import PipelineConfig
+from worker.pipeline.spec import SPEC_B
 
-FEATURES_B_FILE = "features_b.parquet"
+FEATURES_B_FILE = SPEC_B.features_file
 INPUT_SIZE = 448  # the network's input (PLAN §8.5)
 FEATURES_B_VERSION = 1
 HEAD_COLUMNS = ("yaw", "pitch", "roll", "face_ratio")

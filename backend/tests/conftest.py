@@ -128,13 +128,28 @@ def no_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def b_session(
-    tmp_path_factory: pytest.TempPathFactory, face_model: Path, model_b_root: Path
-) -> FixtureSession:
-    """The recorded session after the A pipeline and Pipeline B (real MediaPipe, real small gaze
-    network), loose inclusion thresholds. Read-only: tests that change files copy it first."""
-    from tests.analysis_data import add_pipeline_b, process_fixture
+def a_session(tmp_path_factory: pytest.TempPathFactory, face_model: Path) -> FixtureSession:
+    """The recorded session after the A pipeline (real MediaPipe, real ffmpeg), with loose inclusion
+    thresholds. Read-only: tests that change files copy it first."""
+    from tests.analysis_data import process_fixture
 
-    s = process_fixture(tmp_path_factory.mktemp("b_session"), face_model)
+    return process_fixture(tmp_path_factory.mktemp("a_session"), face_model)
+
+
+@pytest.fixture(scope="session")
+def b_session(
+    tmp_path_factory: pytest.TempPathFactory, a_session: FixtureSession, model_b_root: Path
+) -> FixtureSession:
+    """The same session after Pipeline B too (the real small gaze network). Read-only."""
+    import shutil
+
+    from tests.analysis_data import add_pipeline_b
+
+    root = tmp_path_factory.mktemp("b_session") / "data"
+    shutil.copytree(a_session.root, root)
+    s = FixtureSession(
+        root, a_session.study_id, a_session.session_id, a_session.manifest,
+        root / a_session.raw.relative_to(a_session.root),
+    )  # fmt: skip
     add_pipeline_b(s, model_b_root)
     return s

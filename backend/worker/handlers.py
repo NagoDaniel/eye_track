@@ -15,6 +15,7 @@ from app.aois import parse_aoi_file
 from app.chunks import MIB
 from app.models import Chunk, Job, SessionStatus, Study, Video
 from app.models import Session as SessionRow
+from app.pipeline_b import stale_info, summary_of
 from app.settings import Settings
 from app.storage import derived_dir
 from worker.analysis.analyze import VideoInfo, analyze, load_included
@@ -27,6 +28,7 @@ from worker.pipeline.ingest import ChunkRecord
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.replay import render_replay
 from worker.pipeline.runner import Context, is_pipeline_flag, pipeline_flags
+from worker.pipeline.runner_b import run_pipeline_b
 
 log = logging.getLogger("worker")
 
@@ -90,7 +92,14 @@ def make_process_session(
         report = _read_report(derived / QUALITY_FILE)
         # A run of early stages on a session never processed before has no report yet.
         status = SessionStatus.PROCESSED if report is not None else previous
-        _finish(factory, session_id, status, report, pipeline_flags(derived))
+        _finish(
+            factory,
+            session_id,
+            status,
+            report,
+            pipeline_flags(derived),
+            b_stale=stale_info(derived) is not None,
+        )
         return f"processed: {', '.join(stages)}"
 
     return handle
@@ -106,6 +115,7 @@ def _finish(
     status: SessionStatus,
     report: dict[str, Any] | None,
     flags: list[str],
+    b_stale: bool = False,
 ) -> None:
     with factory() as db:
         session = db.get(SessionRow, session_id)
@@ -113,7 +123,10 @@ def _finish(
             return
         session.status = status
         if report is not None:
-            session.quality = report
+            old_b = (session.quality or {}).get("pipeline_b")  # Pipeline B's line stays
+            session.quality = (
+                report if old_b is None else {**report, "pipeline_b": {**old_b, "stale": b_stale}}
+            )
             kept = [f for f in session.flags if not is_pipeline_flag(f)]
             session.flags = kept + [f for f in flags if f not in kept]
         db.commit()
@@ -186,5 +199,53 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
             raise
         record.finish(run_dir)
         return f"analysed {len(sessions)} sessions: {', '.join(record.outputs)}"
+
+    return handle
+
+
+def make_process_pipeline_b(
+    factory: sessionmaker[Session], settings: Settings, config: PipelineConfig | None = None
+) -> Callable[[Job], str]:
+    """The handler for `process_pipeline_b` jobs (PLAN §8.5; DECISIONS 2026-10-20). Args:
+    `session_id`, optionally `from_stage` or `only` (a stage of Pipeline B). The session's status
+    is not touched and Pipeline A's files stay as they are; a missing weights file or a stage that
+    raises fails the job, with the reason in its log. On success B's line in the session record
+    (`quality["pipeline_b"]`) is updated."""
+    pipeline_config = config or PipelineConfig()
+
+    def handle(job: Job) -> str:
+        raw = job.args.get("session_id")
+        if not isinstance(raw, str):
+            raise ValueError("process_pipeline_b needs a session_id in its args")
+        session_id = uuid.UUID(raw)
+        with factory() as db:
+            session = db.get(SessionRow, session_id)
+            if session is None:
+                raise LookupError(f"session {session_id} does not exist")
+            if session.status is not SessionStatus.PROCESSED:
+                raise ValueError(
+                    f"session {session_id} is {session.status.value}; "
+                    "Pipeline A must have processed it first"
+                )
+            study_id = session.study_id
+        ctx = Context(
+            root=settings.data_root,
+            study_id=study_id,
+            session_id=session_id,
+            config=pipeline_config,
+            model=settings.face_landmarker_model,
+            max_inflated_bytes=0,
+            models_root=settings.models_root,
+            b_model=settings.pipeline_b_model,
+            onnx_provider=settings.onnx_provider,
+        )
+        stages = run_pipeline_b(ctx, job.args.get("from_stage"), job.args.get("only"))
+        summary = summary_of(ctx.derived)
+        with factory() as db:
+            session = db.get(SessionRow, session_id)
+            if session is not None and summary is not None:
+                session.quality = {**(session.quality or {}), "pipeline_b": summary}
+                db.commit()
+        return f"pipeline B: {', '.join(stages)}"
 
     return handle

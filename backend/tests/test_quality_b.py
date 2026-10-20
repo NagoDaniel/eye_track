@@ -8,10 +8,11 @@ from typing import Any
 
 import pytest
 
+from app.pipeline_b import QUALITY_B_FILE
 from app.storage import derived_dir, meta_path
 from tests.session_fixture import FixtureSession
 from worker.pipeline.config import PipelineConfig
-from worker.pipeline.quality_b import QUALITY_B_FILE, build_quality_b
+from worker.pipeline.quality_b import build_quality_b
 from worker.pipeline.spec import SPEC_A, SPEC_B
 
 CONFIG = PipelineConfig()

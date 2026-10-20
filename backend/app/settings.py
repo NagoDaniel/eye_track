@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     api_workers: int = 2
     worker_concurrency: int = 1
     onnx_provider: Literal["cpu", "cuda"] = "cpu"
+    # Pipeline B weights (a name of `shared/models.json`; DECISIONS 2026-10-20: ResNet-50 is the
+    # production default, `l2cs_mobileone_s0` the small CPU one).
+    pipeline_b_model: str = "l2cs_resnet50"
     max_upload_chunk_mb: int = 10
     max_video_upload_mb: int = Field(default=2048, gt=0)
     log_level: str = "INFO"

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 import typer
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.analysis_runs import OPEN_JOBS, analysis_jobs, new_run_id
@@ -14,14 +15,16 @@ from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
 from app.logging import configure_logging
-from app.models import Job, JobKind
+from app.models import Job, JobKind, SessionStatus
 from app.models import Session as SessionRow
+from app.pipeline_b import B_STAGE_NAMES, queue_pipeline_b
+from app.pipeline_b import refusal as b_refusal
 from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import analysis_run_dir, derived_dir, events_path
-from worker.handlers import make_analyze_video, make_process_session
+from worker.handlers import make_analyze_video, make_process_pipeline_b, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
@@ -138,6 +141,78 @@ def process_command(
         inclusion = report["inclusion"]
         typer.echo(
             f"  included in the analysis: {inclusion['included']} {inclusion['reasons'] or ''}"
+        )
+
+
+@app.command("process-b")
+def process_b_command(
+    session_id: str | None = typer.Argument(
+        None, help="Run Pipeline B for this session here and now (it can take a long time)."
+    ),
+    study: int | None = typer.Option(
+        None, "--study", help="Queue a job for every processed session of this study instead."
+    ),
+    from_stage: str | None = typer.Option(
+        None, "--from-stage", help=f"Start at this stage: {', '.join(B_STAGE_NAMES)}."
+    ),
+    only: str | None = typer.Option(None, "--only", help="Run this stage only."),
+) -> None:
+    """Run Pipeline B, the gaze network (PLAN §8.5; DECISIONS 2026-10-20).
+
+    With a session: here and now, like `process`. With `--study`: one queued job per processed
+    session, for the worker to run when it has nothing else to do."""
+    if (session_id is None) == (study is None):
+        typer.echo("error: give a session id or --study, not both or neither", err=True)
+        raise typer.Exit(1)
+    config = settings()
+    weights = (config.models_root, config.pipeline_b_model)
+    factory = session_factory()
+    if study is not None:
+        queued, left = 0, []
+        with factory() as db:
+            rows = db.scalars(select(SessionRow).where(SessionRow.study_id == study)).all()
+            for row in rows:
+                reason = b_refusal(db, row, config.data_root, weights)
+                if reason is None:
+                    queue_pipeline_b(db, row.id, config.data_root, from_stage, weights)
+                    queued += 1
+                elif row.status is SessionStatus.PROCESSED:  # the others are not B's business
+                    left.append(f"  {row.participant_code} {str(row.id)[:8]}: {reason}")
+            db.commit()
+        typer.echo(f"Queued Pipeline B for {queued} session(s) of study {study}.")
+        for line in left:
+            typer.echo(line)
+        return
+    assert session_id is not None
+    sid = _session_id(session_id)
+    with factory() as db:
+        existing = db.get(SessionRow, sid)
+        if existing is None:
+            typer.echo(f"error: session {sid} does not exist", err=True)
+            raise typer.Exit(1)
+        reason = b_refusal(db, existing, config.data_root, weights)
+    if reason is not None:
+        typer.echo(f"error: {reason}", err=True)
+        raise typer.Exit(1)
+    args: dict[str, object] = {"session_id": str(sid)}
+    if from_stage is not None:
+        args["from_stage"] = from_stage
+    if only is not None:
+        args["only"] = only
+    handler = make_process_pipeline_b(factory, config)
+    try:
+        handler(Job(kind=JobKind.PROCESS_PIPELINE_B, args=args))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    with factory() as db:
+        after = db.get(SessionRow, sid)
+        summary = ((after.quality if after else None) or {}).get("pipeline_b")
+    typer.echo(f"Session {sid}: Pipeline B done")
+    if summary is not None:
+        typer.echo(f"  included for B: {summary['included']} {summary['reasons'] or ''}")
+        typer.echo(
+            f"  model {summary['model']}, validation error {summary['validation_error_norm']}"
         )
 
 

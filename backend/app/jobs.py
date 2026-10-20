@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.models import Job, JobKind, JobStatus, SessionStatus
@@ -27,7 +27,8 @@ def claim_next(db: Session) -> Job | None:
     stmt = (
         select(Job)
         .where(Job.status == JobStatus.QUEUED)
-        .order_by(Job.id)
+        # Pipeline B takes hours: every other job goes first (DECISIONS 2026-10-20).
+        .order_by(case((Job.kind == JobKind.PROCESS_PIPELINE_B, 1), else_=0), Job.id)
         .limit(1)
         .with_for_update(skip_locked=True)
     )
