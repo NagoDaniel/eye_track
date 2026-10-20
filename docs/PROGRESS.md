@@ -95,6 +95,23 @@ Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backen
 
 Not proposed as tasks (accepted or later): plot failures are recorded in the stage summary but do not flag the session (documented, DECISIONS T13); the participant results page shows the inclusion line and a link, not the whole report (T14); no test kills a worker in the middle of a real pipeline run (the two halves are tested); the real-fixture lag bound of 150 ms is loose; the flaky first e2e test (see Open problems).
 
+## Review of Milestone 4 (plan-reviewer, 2026-10-20): proposed fixes
+Verdict: **READY AFTER FIXES**. No blocker, two majors (the reviewer's run and mine agree on Major 2: `make test` fails with `GIT_SHA` set). The full report is in the conversation of 2026-10-20. Nothing is fixed yet: approve, change or drop by number.
+
+| # | Severity | Task | Test |
+|---|---|---|---|
+| R1 | major | A requeued analysis fails and leaves a stale `running` record: after a worker death `recover_stale_running` requeues the job with the same `run_id`, `start_run` does `mkdir(exist_ok=False)` (`worker/analysis/run.py:80`) and raises `FileExistsError` before the `try`; `run.json` stays `running` for good and `list_runs` prefers it over the failed job. Fix: the handler starts over in the same directory when the old record is `running` (outputs removed), and `list_runs` lets a failed or done job override a stale `running` record | a job requeued after a simulated worker death completes with `done`; a failed job over a `running` record shows `failed` |
+| R2 | major | `make test` is red: `tests/test_admin_analysis_pages.py:121` expects "not recorded" but the Makefile exports `GIT_SHA`. Fix: a conftest autouse fixture that removes `GIT_SHA` (tests that need it set it themselves) | `make test` passes with `GIT_SHA` set |
+| R3 | minor | AOI tolerance is the same number in x and y video units, so vertically it is 0.56 times the intended px (16:9); vertical gaze is the weak axis (H1, H2) and synchrony is aspect-corrected. Decide: keep (document it in DATA_FORMATS and the README) or correct the vertical growth by the aspect ratio | hit-test and metric test for the chosen rule |
+| R4 | minor | A ZIP whose download is aborted stays in `/tmp` (the `BackgroundTask` does not run). Sweep `analysis-*.zip` older than an hour whenever a ZIP is built | stale file removed on the next download |
+| R5 | minor, privacy | Run files and `run.json` carry participant codes and session ids; withdrawal (M6) must delete or rewrite the analysis outputs of that code. Record the M6 follow-up in DECISIONS and PROGRESS | doc only |
+| R6 | minor | Segments that all start after the video's end give a `done` run with no pictures. Fail the stage with a message (or fall back to the 10 s windows: say which) | stage test |
+| R7 | minor | Static segment windows are closed at both ends, so a sample on a shared boundary counts twice; make them half-open like the synchrony windows | boundary sample counted once |
+| R8 | minor | Record the unrecorded choices in DECISIONS: frames are decoded with OpenCV and piped to ffmpeg (the plan says PyAV; fix the PROGRESS T5 wording), one scale per picture for static heatmaps, one open analysis per study and video, the `sample_max_dt_ms` cap. `heatmap_dots` is reachable from neither admin nor CLI: add a form checkbox and `--dots`, or remove it (YAGNI) | doc, plus the chosen option |
+| R9 | minor | AOI editor: ignore edits in the tables while the text is invalid (they overwrite the hand-typed text); flag a rectangle with x1 <= x0 in the problems list and do not draw it with a negative size; ignore non-primary mouse buttons; keep a real second polygon point that is close to the first; `preload="metadata"` for the editor video; add a version to the script URL so an upgrade is not served from cache | e2e steps for the first three |
+| R10 | minor | Tests missing: a video without AOIs through the whole analysis, a run where every drift-corrected column is null, the requeue path (with R1), ZIP cleanup (with R4) | the tests themselves |
+| R11 | minor | Small code items: no `assert` for control flow in `render_heatmap`; the handler checks `run_id` against the id pattern; `cli.py` calls `analysis_run_dir`; `frame_count` from OpenCV may be an estimate (use the last decodable frame as the limit and say so); sigma at the lower limit because no session has an accuracy is flagged on the run page | tests where behaviour changes |
+
 ## Your checklist for Milestone 3
 Everything below needs a real webcam, real lighting, or your decision. The code and tests are done.
 
