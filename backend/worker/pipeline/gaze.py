@@ -1,4 +1,4 @@
-"""Assemble `gaze_a.parquet` and `fixations_a.parquet` (PLAN §7, §8.7 to §8.9).
+"""Assemble `gaze_{a,b}.parquet` and `fixations_{a,b}.parquet` (PLAN §7, §8.7 to §8.9).
 
 Runs prediction, smoothing, validation/drift, the stimulus-time map and the fixation detection, and
 writes one row per webcam frame (`gaze_a.parquet`) and one row per fixation (`fixations_a.parquet`).
@@ -23,11 +23,12 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.fixations import FixationParams, all_runs_fixations, runs
 from worker.pipeline.predict import predict_session
 from worker.pipeline.smoothing import smooth_gaze
+from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.stimulus_map import StimulusMap, VideoRectTimeline
 from worker.pipeline.validation import validate_session
 
-GAZE_FILE = "gaze_a.parquet"
-FIXATIONS_FILE = "fixations_a.parquet"
+GAZE_FILE = SPEC_A.gaze_file  # Pipeline A's files; `PipelineSpec` names the others
+FIXATIONS_FILE = SPEC_A.fixations_file
 GAZE_VERSION = 1
 PHASES = ("calibration", "validation", "playback", "other")
 
@@ -111,7 +112,11 @@ def _nullable(values: Floats) -> pa.Array:
 
 
 def run_gaze(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec = SPEC_A,
 ) -> GazeSummary:
     derived = derived_dir(root, study_id, session_id)
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
@@ -122,10 +127,10 @@ def run_gaze(
         else []
     )
 
-    prediction = predict_session(root, study_id, session_id, config)
+    prediction = predict_session(root, study_id, session_id, config, spec)
     gaze, t = prediction.gaze, prediction.t_ms
     smoothed = smooth_gaze(t, gaze.x_px, gaze.y_px, gaze.valid, config)
-    validation = validate_session(root, study_id, session_id, config, prediction)
+    validation = validate_session(root, study_id, session_id, config, prediction, spec)
     drift = validation.drift
 
     lookup = StimulusMap(stimulus_frames, events, config).lookup(t)
@@ -146,6 +151,7 @@ def run_gaze(
     )  # fmt: skip
     params = {
         "version": GAZE_VERSION,
+        "pipeline": spec.id,
         "config": config.as_dict(),
         "drift_corrected": drift is not None,
         "validation_precision_px": validation.precision_px,
@@ -170,7 +176,7 @@ def run_gaze(
             "x_px_dc", "y_px_dc", "x_sm_dc", "y_sm_dc", "x_vid_dc", "y_vid_dc",
         ],
     ).replace_schema_metadata({"gaze": json.dumps(params)})  # fmt: skip
-    with atomic_writer(derived / GAZE_FILE) as target:
+    with atomic_writer(derived / spec.gaze_file) as target:
         pq.write_table(table, target, compression="snappy")
 
     # Fixations: smoothed samples (valid or interpolated) of the playback phase.
@@ -180,7 +186,7 @@ def run_gaze(
         runs(prediction.index, playback, video_id, gaze.viewport_width, gaze.viewport_height),
         t, smoothed.x, smoothed.y, gaze.viewport_width, fixation_params, config,
     )  # fmt: skip
-    _write_fixations(derived / FIXATIONS_FILE, found, t, smoothed, lookup.stim_time, video_id,
+    _write_fixations(derived / spec.fixations_file, found, t, smoothed, lookup.stim_time, video_id,
                      (x_vid, y_vid), (x_sm_dc, y_sm_dc), (x_vid_dc, y_vid_dc), fixation_params,
                      config)  # fmt: skip
     return GazeSummary(
