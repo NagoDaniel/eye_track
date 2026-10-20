@@ -55,6 +55,13 @@ class PipelineConfig:
     calib_min_frames_per_dot: int = 5
     calib_max_sparse_dots: int = 3
 
+    # --- Pipeline B features (PLAN §8.5, DECISIONS 2026-10-20) ---
+    # The face crop is a square around the centre of the landmark box, with the longer side of the
+    # box times this (the plan's "expanded 20 %"), resized to the network's input size.
+    b_crop_scale: float = 1.2
+    # Faces per batch through the network.
+    b_batch_size: int = 8
+
     # --- Prediction and smoothing (PLAN §8.7) ---
     # A prediction is valid inside the viewport expanded by this share of its size on every side.
     valid_viewport_margin: float = 0.15
