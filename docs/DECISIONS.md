@@ -14,6 +14,46 @@ Format:
 
 ---
 
+## 2026-10-20 — Milestone 4 accepted; drift-corrected gaze is the default of an analysis
+- Plan section: §8.8, §9
+- Decision: an analysis uses the drift-corrected gaze columns by default (item 2 of 2026-10-19 said "plain"). The option stays: `gaze_columns` `plain` in the API and the admin form, `--as-measured` in the CLI (replaces `--drift-corrected`); the run records which one it used. A session without validation data has no corrected columns and is left out as `no_valid_samples` (the inclusion rule already refuses such a session). Milestone 4 is accepted.
+- Reason: H2 (DECISIONS 2026-10-20, "pilot result"): with glasses the gaze has a constant vertical offset that the correction removes (median error 191 to 102 px and 187 to 130 px, group dispersion 0.116 to 0.079, NSS 1.13 to 2.11); without glasses it changes little.
+- Approved by: Nágó Dániel (2026-10-20)
+
+## 2026-10-20 — Milestone 4 review: AOI tolerance corrected for the aspect ratio, deviations recorded
+- Plan section: §9.3, §9.1, §9.2
+- Decision (review of Milestone 4, fixes R3 and R8; approved by Nágó Dániel on 2026-10-20):
+  1. **AOI tolerance** (item 5 of 2026-10-19 said "the units of item 3", which grew shapes by the same fraction in x and y, so vertically only 0.56 of the intended distance for 16:9): the tolerance is k times the participant's accuracy in px as a distance on screen, the same in every direction. In code the vertical direction is divided by the video's width over height (`aoi_contains(..., aspect)`).
+  2. Choices the first version did not record: frames of the stimulus video are decoded with OpenCV and piped to an ffmpeg subprocess (H.264), not decoded with PyAV as §9.1 names (the replay of Milestone 3 does the same); static heatmaps have one colour scale per picture (the dynamic one has one per video, item 5); static segments are half-open `[start, end)` so a sample on a shared boundary counts once; segments of `aois.json` that all start after the end of the video fail the stage instead of giving no pictures; one analysis of a video of a study at a time; a sample stands for the time to the next webcam frame, at most `sample_max_dt_ms` (100); the option `heatmap_dots` (§9.1 "optionally per-participant dots") is a checkbox in the admin form and `--dots` in the CLI.
+- Reason: found in the Milestone 4 review.
+- Approved by: Nágó Dániel (2026-10-20)
+
+## 2026-10-20 — Milestone 4 pilot result (H2): analysis on four real sessions
+- Plan section: §8.8, §9, §14
+- Result (no decision changed; the numbers are in PROGRESS "H2 result"): four moving-dot sessions of one study, screen 1710 px wide, codes AA0101 and CC0101 with glasses, BB0101 and DD0101 without. The analysis ran for all four (no session left out). Findings:
+  1. With glasses the gaze has a large constant vertical offset (about +0.21 of the video height for AA, -0.15 for CC, opposite signs). The drift correction (§8.8, mean offset of the validation blocks, interpolated in time) removes most of it: median error against the dot 191 to 102 px (AA) and 187 to 130 px (CC); without glasses it changes little (BB 192 to 195, DD 149 to 135). Group level: heat peak to dot 0.177 to 0.113 of the video width, dispersion 0.116 to 0.079, mean NSS 1.13 to 2.11, sigma 0.100 to 0.059. This differs from the H1 note (DECISIONS 2026-10-18: the correction did not help); H1 had two sessions, only one with glasses.
+  2. Gaze is weakest in the right-hand corners (error at (0.9, 0.9): 320 px for BB, 390 to 520 px for DD) and lags the dot by 0.12 to 0.16 s (H1: 0.16 s).
+  3. AOIs drawn at about 0.06 x 0.10 of the video (100 x 70 px) are smaller than the accuracy (140 to 225 px): 5 of 16 participant-AOI rows have a fixation hit without tolerance, 12 of 16 with k = 1.
+- Open question for the human (the default of DECISIONS 2026-10-19 item 2, "plain"): make `drift_corrected` the default gaze of an analysis, or keep it an option. The evidence is four sessions, two of them with glasses; the correction is a constant-in-time offset between two validation blocks, so it cannot remove drift that happens inside a video. **Answered the same day: see the next entry.**
+- Approved by: results of the human's sessions (2026-10-20); nothing to approve.
+
+## 2026-10-19 — Milestone 4: visual AOI editor in the admin video page
+- Plan section: §9.3, §15
+- Decision: the admin video page gets a visual AOI editor (draw rectangles and polygons on a video frame, drag to move or reshape, set start and end from the slider, edit time segments). The PLAN (§15) leaves an AOI drawing tool out of scope "unless requested"; the human requested it on 2026-10-19. The textarea with the JSON stays the form field and the source of truth (the editor reads and writes it; the server validates it on save, `app/aois.py`), so the page still works without JavaScript. The script is `backend/app/admin_ui/static/aoi_editor.js`, served at `/admin/static/` by the API, because the proxy's CSP (`script-src 'self'`) forbids inline scripts. Tested with Playwright in `make e2e` (`e2e/tests/aoi-editor.spec.ts`).
+- Reason: typing normalized coordinates is error-prone.
+- Approved by: Nágó Dániel (2026-10-19)
+
+## 2026-10-19 — Milestone 4 scope and open choices
+- Plan section: §4, §6, §9, §14
+- Decision:
+  1. **Done when** (the plan has none for M4): `analyze_video` on at least 2 real processed sessions writes every §9.1 to §9.4 output and `run.json`; admin starts a run, views it and downloads the ZIP (e2e); the human sees the heat follow the dot (H2).
+  2. **Gaze columns:** a run option chooses plain or drift-corrected (`_dc`) gaze; default plain. Recorded in `run.json`. Model and tracking tuning is deferred (DECISIONS 2026-10-18).
+  3. **Heatmap sigma (§9.1):** the simple reading. One isotropic sigma in video-normalized units: the median over included sessions of the validation accuracy in px divided by the width of the video content rectangle, at least 0.03.
+  4. **One unit per participant:** several included sessions of one participant code for the same video give one unit, the latest session; the others are listed in `run.json` as excluded (`superseded`). (Item 4 of the answer was left empty; the recommendation was taken because the rest was approved. Say if you object.)
+  5. Recommendations accepted for: one colour scale per video (99th percentile of all frames' densities); static heatmap over the frame at the segment's middle; AOI metric definitions (dwell overlap with the active interval, entry-based revisits, time to first fixation from the AOI start, empty when never hit); tolerance k uses each participant's own accuracy in the units of item 3; synchrony uses the coordinate-wise group median, aspect-corrected distance, NSS from the z-scored leave-one-out density on the 64x36 grid, exported per window and as a per-participant mean; no new DB table for runs (job row with `run_id` in its args plus `run.json`); `GIT_SHA` build argument, `null` in `run.json` when missing; backend test on the real processed `session_e2e` copied as 3 participants with known offsets; participant results page shows AOI metrics and NSS mean from the latest run, no per-participant heatmap; worker concurrency stays 1, render time is measured first.
+- Reason: answers to the numbered questions of `/milestone-start 4`.
+- Approved by: Nágó Dániel (2026-10-19; items 1, 2, 3 and the rest approved)
+
 ## 2026-10-18 — Milestone 3 review fixes: calibration samples, stage file, import
 - Plan section: §8.6, §12.2, §12.3
 - Decision: (1) The calibration trains on the *usable* frames of a dot (a face, no blink, finite features), not on the plan's `valid` frames (§8.6). `valid` is a property of the fitted model's output (it needs predictions inside the screen margin and the face-geometry checks), so it cannot select the samples the model is fitted on. The gaze stage applies `valid` as the plan says. (2) The per-stage status, duration, summary and error are also kept in `derived/stages.json`, written after every stage, so a failed stage leaves a trace (`quality.json` is only written when the quality stage runs). (3) `import-session --force` verifies the archive in a staging directory before it touches the existing session; a failure puts the old session back. (4) `cli.py process` refuses a session with an open job or in a state the admin "run again" also refuses. (5) The moving-dot "within threshold" share uses the configured limit (`dot_max_median_error_norm`) instead of a literal.

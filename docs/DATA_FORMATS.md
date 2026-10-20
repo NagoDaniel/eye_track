@@ -187,6 +187,76 @@ derived/...    everything the stages wrote
 
 `cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
 
+## `videos/{id}/aois.json` (PLAN §9.3)
+
+Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`, 422 with the reason); unknown keys are refused. Coordinates are video-normalized (0 to 1 over the content rectangle), times are stimulus media seconds.
+
+```json
+{
+  "segments": [{"id": "intro", "start": 0.0, "end": 32.5}],
+  "aois": [
+    {"id": "code_panel", "label": "Code", "start": 12.0, "end": 95.0,
+     "shape": "rect", "coords": [0.55, 0.10, 0.98, 0.90]},
+    {"id": "dancers", "label": "Dancers", "start": 0.0, "end": 180.0,
+     "shape": "polygon", "coords": [[0.1, 0.2], [0.5, 0.2], [0.5, 0.9], [0.1, 0.9]]}
+  ]
+}
+```
+
+`rect` coords are `[x0, y0, x1, y1]` with x1 > x0, y1 > y0; `polygon` has at least 3 `[x, y]` points (concave allowed). Both lists default to empty; ids are unique within their list; `end` is after `start`. An AOI is active from `start` up to but excluding `end`. A point on the border is inside. The hit tolerance grows the shape by a distance (round corners); the analysis gives it in video widths and corrects the vertical direction by the video's aspect ratio, so the growth is the same on screen both ways.
+
+## `analysis/{study_id}/{video_id}/{run_id}/run.json` (PLAN §9)
+
+One `analyze_video` run (`backend/worker/analysis/run.py`), started from the admin or with `docker compose exec api python cli.py analyze <study_id> <video_id> [--as-measured] [--tolerance-k K]`. The directory holds `run.json` and the files below; a stage that fails leaves the finished stages' files in place and the run `failed`. A session whose gaze cannot be read is listed in `excluded` (`gaze_unreadable: ...`), one without a valid sample on the video as `no_valid_samples`; a run with nobody left fails (`no included sessions`). `results` has the sigma used and, per stage, its summary and seconds. `run_id` is `YYYYMMDDTHHMMSSZ-xxxxxx` (UTC start time, random tail); a run directory is never reused for a finished run. A job that is requeued after its worker died (same id) removes what the unfinished attempt left and starts again; in the admin list a `running` record whose job failed shows as `failed`. `run.json` is written when the run starts (`status` `running`) and again when it ends (`done`, or `failed` with `error`), so a run that died shows as `running`.
+
+| key | meaning |
+|---|---|
+| `version`, `kind` | 1, `analyze_video` |
+| `run_id`, `study_id`, `video_id` | |
+| `status`, `error`, `started_at`, `finished_at` | ISO 8601 UTC |
+| `git_hash` | `git describe --always --dirty` of the build (`GIT_SHA` build argument); `null` when the image was built without it |
+| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `drift_corrected` (default) / `plain`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
+| `included` | `{session_id, participant_code, ...}` per session analysed (later stages add their numbers) |
+| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json`), `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
+| `outputs` | files written, relative to the run directory |
+| `results` | numbers the stages report |
+
+Sessions that never finished uploading and withdrawn ones are not listed. One participant code counts once: its latest included session.
+
+### `heatmap.mp4` and `density.npz` (PLAN §9.1)
+
+Written by `backend/worker/analysis/heatmap_video.py` into the run directory. `heatmap.mp4` is the stimulus video (same frames, size cropped to even sides, frame rate) with the group density drawn on it: H.264, yuv420p, faststart; hotter is warmer (Turbo colour map) and more opaque, up to `heatmap_alpha_max`. One colour scale serves the whole video: the `heatmap_scale_percentile` (99) of the non-zero densities of all frames is fully hot. With `heatmap_dots` on, one white dot per participant is drawn at the median of their samples in the window.
+
+For stimulus frame `k` (media time `s = k / fps`) the density uses the valid samples of every included participant with `stim_time` in `[s - heatmap_window_s, s + heatmap_window_s]` (video-normalized coordinates, from the plain or the drift-corrected columns as the run says). A participant's density is the mean of Gaussians at their samples, so each participant weighs the same; the group density is their sum. The Gaussian is isotropic in video-normalized units with `sigma` = the median over included sessions of the mean validation accuracy in px divided by the width of the video's content rectangle on that participant's screen, at least `sigma_min` (DECISIONS 2026-10-19 item 3).
+
+`density.npz`: `density` float32 `(frames, 36, 64)` (row = y from the top, column = x; cell centres at `(i + 0.5) / 64`, `(j + 0.5) / 36` of the video), and scalars `fps`, `sigma`, `scale` (the density drawn fully hot), `window_s`.
+
+### `static/NNN_<id>.png` (PLAN §9.2)
+
+Written by `backend/worker/analysis/heatmap_static.py`, one picture per time segment, numbered in segment order (the id is made file-name safe). The segments are the `segments` of the video's `aois.json`, or consecutive windows of `segment_default_s` (10) seconds over the whole video, the last one shorter; a segment is cut at the end of the video and one that starts after it is dropped (if all do, the stage fails). Segments are half-open `[start, end)` in media time. The density is the one of the dynamic heatmap (same sigma, equal weight per participant) over all samples of the participant in the segment, drawn over the video frame at the segment's middle. Each picture has its own colour scale (the 99th percentile of its non-zero densities).
+
+### `aoi_metrics_long.csv` and `aoi_metrics_wide.csv` (PLAN §9.3)
+
+Only written when the video has AOIs. Code: `backend/worker/analysis/aoi_metrics.py`. Per included participant and AOI, over the time the AOI exists (`start` to `end`, cut at the end of the video); coordinates are video-normalized and the shape is grown by `aoi_tolerance_k` times the participant's own validation accuracy, as a distance on screen (the accuracy in px, the same horizontally and vertically, with round corners; no growth when the accuracy is unknown). The long file has the columns `participant_code, aoi_id, metric, value`; the wide file has one row per participant and AOI and one column per metric. An empty value means "not defined" (no fixation hit the AOI).
+
+| metric | meaning |
+|---|---|
+| `dwell_fixation_s` | time of the fixations whose centroid is in the shape; a fixation that starts before or ends after the AOI counts for the part inside the active time |
+| `dwell_sample_s` | time of the valid samples in the shape; a sample stands for the time to the next webcam frame, at most `sample_max_dt_ms` (100) |
+| `share_active` | `dwell_sample_s` over the AOI's active time (empty when the AOI starts after the video ends) |
+| `time_to_first_fixation_s` | from the AOI's start to the start of the first hitting fixation (0 when it was already there); empty when none |
+| `fixation_count` | number of hitting fixations |
+| `revisits` | entries minus one (at least 0); an entry is a run of consecutive hitting fixations among the fixations in the active time |
+
+### `synchrony.csv`, `synchrony_nss.csv`, `synchrony.png` (PLAN §9.4)
+
+Code: `backend/worker/analysis/synchrony.py`. Windows of `synchrony_window_ms` (200) from 0 to the end of the video, `[start, start + 200 ms)`, the last one partial. In each window every included participant with valid samples has a median position (coordinate-wise). A window needs at least two such participants; otherwise `dispersion` and NSS are empty.
+
+- `dispersion`: the mean distance of the participants' medians to their coordinate-wise group median, in units of the video's width (the vertical distance is multiplied by height over width). 0 = all look at the same place.
+- NSS: for a participant, the leave-one-out group density (the other participants' densities of the heatmap, same sigma, summed) is z-scored over the 64x36 grid and averaged at the participant's samples in the window (a sample outside the video counts at the nearest edge cell). Positive = looking where the others look.
+
+`synchrony.csv`: `window_start_s, window_end_s, participants` (with samples), `dispersion`, `nss_mean` (mean over the participants that have an NSS). `synchrony_nss.csv`: `participant_code, window_start_s, nss`. `synchrony.png`: both series over the video's timeline. The per-participant mean NSS is in `run.json` under `results`.
+
 ## Participant code
 
 Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.

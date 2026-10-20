@@ -96,3 +96,10 @@ def face_model(request: pytest.FixtureRequest) -> Path:
     cache = request.config.cache.mkdir("models")
     download_model.fetch(download_model.DEFAULT_MANIFEST, ["face_landmarker"], cache)
     return cache / "face_landmarker.task"
+
+
+@pytest.fixture(autouse=True)
+def no_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`make` exports GIT_SHA for the image build; tests must not depend on it (the ones that
+    need it set it themselves)."""
+    monkeypatch.delenv("GIT_SHA", raising=False)

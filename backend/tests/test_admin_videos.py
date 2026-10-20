@@ -213,7 +213,19 @@ def test_upload_without_csrf_is_403_and_nothing_is_stored(
 def test_update_title_and_aois_writes_aois_json(admin: Admin, clips: Clips) -> None:
     c = admin.client
     vid = upload(admin, clips.cfr).json()["id"]
-    aois = {"aois": [{"name": "slide", "shape": "rect", "x": 0, "y": 0, "w": 1, "h": 0.5}]}
+    aois = {
+        "segments": [{"id": "intro", "start": 0, "end": 2}],
+        "aois": [
+            {
+                "id": "slide",
+                "label": "Slide",
+                "start": 0,
+                "end": 2,
+                "shape": "rect",
+                "coords": [0, 0, 1, 0.5],
+            }  # fmt: skip
+        ],
+    }
     r = c.put(f"{URL}/{vid}", json={"title": "Renamed", "aois": aois}, headers=admin.headers)
     assert r.status_code == 200, r.text
     assert (r.json()["title"], r.json()["aois"]) == ("Renamed", aois)
@@ -228,6 +240,18 @@ def test_update_title_and_aois_writes_aois_json(admin: Admin, clips: Clips) -> N
     assert c.put(f"{URL}/{vid}", json={"title": "x"}).status_code == 403
     assert c.put(f"{URL}/9999", json={"title": "x"}, headers=admin.headers).status_code == 404
     assert c.get(f"{URL}/9999").status_code == 404
+
+
+def test_invalid_aois_are_refused_and_change_nothing(admin: Admin, clips: Clips) -> None:
+    c = admin.client
+    vid = upload(admin, clips.cfr).json()["id"]
+    bad = {"aois": [{"id": "a", "label": "A", "start": 0, "end": 2, "shape": "rect",
+                     "coords": [0.9, 0, 0.1, 1]}]}  # fmt: skip
+    r = c.put(f"{URL}/{vid}", json={"title": "New", "aois": bad}, headers=admin.headers)
+    assert r.status_code == 422 and "coords" in r.json()["detail"]
+    assert c.get(f"{URL}/{vid}").json()["aois"] is None
+    assert not (admin.data_root / "videos" / str(vid) / "aois.json").exists()
+    assert c.get(f"{URL}/{vid}").json()["title"] != "New"
 
 
 def study_with_playlist(admin: Admin, code: str, playlist: list[str]) -> int:
@@ -251,7 +275,9 @@ def test_delete_works_and_removes_row_and_directory(
     admin: Admin, clips: Clips, migrated_engine: Engine
 ) -> None:
     vid = upload(admin, clips.cfr).json()["id"]
-    admin.client.put(f"{URL}/{vid}", json={"title": "t", "aois": {"a": 1}}, headers=admin.headers)
+    admin.client.put(
+        f"{URL}/{vid}", json={"title": "t", "aois": {"aois": []}}, headers=admin.headers
+    )
     assert admin.client.delete(f"{URL}/{vid}").status_code == 403
     assert admin.client.delete(f"{URL}/{vid}", headers=admin.headers).status_code == 204
     assert video_count(migrated_engine) == 0
@@ -352,7 +378,18 @@ def test_pages_list_detail_edit_delete(admin: Admin, clips: Clips) -> None:
     assert re.search(
         rf'<video[^>]*\bcontrols\b[^>]*\bsrc="/media/videos/{v["id"]}\.mp4"', detail.text
     ), detail.text
-    assert "<script" not in detail.text
+    # The AOI editor (PLAN §9.3): no inline script (the proxy's CSP forbids it), its textarea stays
+    # the form field.
+    scripts = re.findall(r"<script[^>]*>", detail.text)
+    assert len(scripts) == 1
+    assert re.fullmatch(
+        r'<script src="/admin/static/aoi_editor\.js\?v=[0-9a-f]{12}" defer>', scripts[0]
+    )
+    assert 'id="aoi-editor"' in detail.text
+    script = c.get("/admin/static/aoi_editor.js")
+    assert script.status_code == 200 and "javascript" in script.headers["content-type"]
+    assert "readText" in script.text
+    assert re.search(r'<textarea name="aois"', detail.text)
 
     url = f"/admin/videos/{v['id']}"
     aois = '{"aois": []}'

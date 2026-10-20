@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from app.analysis_view import participant_analysis
 from app.models import Chunk, ChunkStream
 from app.schemas import EventRecord
 from app.sessions_view import list_sessions, read_event_records
@@ -116,4 +117,5 @@ def participant_results(
         "study": {"id": study.id, "name": study.name, "code": study.code},
         "participant_code": code,
         "sessions": sessions,
+        "analysis": participant_analysis(db, data_root, study_id, code),
     }

@@ -114,10 +114,16 @@ def test_heartbeat_thread_updates_while_running(migrated_engine: Engine) -> None
             first = db.get(WorkerHeartbeat, "w1")
             assert first is not None
             t_first = first.beat_at
-        time.sleep(0.2)
-        with f() as db:
-            later = db.get(WorkerHeartbeat, "w1")
-            assert later is not None and later.beat_at > t_first
+        # a loaded machine may be slow to beat again: wait for it instead of for a fixed time
+        deadline = time.monotonic() + 5
+        while True:
+            with f() as db:
+                later = db.get(WorkerHeartbeat, "w1")
+                assert later is not None
+                if later.beat_at > t_first or time.monotonic() > deadline:
+                    break
+            time.sleep(0.05)
+        assert later.beat_at > t_first
     finally:
         hb.stop()
 

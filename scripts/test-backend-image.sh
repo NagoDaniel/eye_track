@@ -8,7 +8,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 run() { docker run --rm --entrypoint "" "$IMAGE" "$@"; }
 
 echo "== build"
-docker build -f backend/Dockerfile -t "$IMAGE" . >/dev/null
+docker build -f backend/Dockerfile --build-arg GIT_SHA=test-sha-123 -t "$IMAGE" . >/dev/null
 
 echo "== runs as non-root"
 uid=$(run id -u)
@@ -45,6 +45,13 @@ from pathlib import Path
 from worker.pipeline.moving_dot import DotPath
 path = DotPath.load(Path('/shared/moving_dot_path.json'))
 print('moving-dot path:', path.duration_s, 's')
+"
+
+echo "== the git hash given at build time is in the image (analysis runs record it)"
+run python -c "
+from worker.analysis.config import git_hash
+assert git_hash() == 'test-sha-123', git_hash()
+print('git hash:', git_hash())
 "
 
 echo "== CLI and alembic available"

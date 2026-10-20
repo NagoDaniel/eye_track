@@ -40,6 +40,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     FACE_LANDMARKER_MODEL=/opt/mediapipe/face_landmarker.task
+# The git hash of the build, written into each analysis run (PLAN §9); empty when not given.
+ARG GIT_SHA=
+ENV GIT_SHA=${GIT_SHA}
 USER eyetrack
 EXPOSE 8000
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2} --log-config uvicorn_logging.json --no-access-log"]

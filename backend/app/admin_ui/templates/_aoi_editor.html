@@ -1,0 +1,57 @@
+{# Visual editor for the AOIs of a video (PLAN §9.3); the script is /admin/static/aoi_editor.js. The
+   textarea named "aois" stays the form field and the source of truth: the editor reads it, and
+   writes it back on every change. Without JavaScript the textarea alone works. Coordinates are
+   video-normalized (0 to 1). #}
+<style>
+  #aoi-editor .stage { position: relative; max-width: 48rem; background: #000; touch-action: none; user-select: none; }
+  #aoi-editor video { display: block; width: 100%; height: auto; }
+  #aoi-editor svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #aoi-editor.drawing svg { cursor: crosshair; }
+  #aoi-editor .aoi { fill: rgba(30, 120, 255, .25); stroke: #1e78ff; stroke-width: 2; cursor: move; }
+  #aoi-editor .aoi.inactive { fill: rgba(200, 200, 200, .08); stroke: #ccc; stroke-dasharray: 6 4; }
+  #aoi-editor .aoi.selected { stroke: #ff8c00; stroke-width: 3; }
+  #aoi-editor .draft { fill: rgba(255, 140, 0, .2); stroke: #ff8c00; stroke-width: 2; stroke-dasharray: 4 3; }
+  #aoi-editor .handle { fill: #fff; stroke: #ff8c00; stroke-width: 2; cursor: pointer; }
+  #aoi-editor text { fill: #fff; font: 600 13px system-ui, sans-serif; paint-order: stroke; stroke: #000; stroke-width: 3px; pointer-events: none; }
+  #aoi-editor .toolbar button, #aoi-editor .time button { margin: .5rem .5rem 0 0; }
+  #aoi-editor button.on { background: #ff8c00; color: #000; }
+  #aoi-editor .time { display: flex; align-items: center; gap: .75rem; max-width: 48rem; }
+  #aoi-editor .time input { flex: 1; }
+  #aoi-editor td input { padding: .25rem; }
+  #aoi-editor td.n input { width: 5.5rem; }
+  #aoi-editor td.n button, #aoi-editor td button { margin: 0 0 0 .25rem; padding: .15rem .4rem; }
+  #aoi-editor tr.selected td { background: #fff3e0; }
+  #aoi-editor.paused .stage, #aoi-editor.paused .toolbar, #aoi-editor.paused table, #aoi-editor.paused #segment-add { opacity: .4; pointer-events: none; }
+</style>
+<section id="aoi-editor" data-duration="{{ video.duration }}" hidden>
+  <h2>AOI editor</h2>
+  <p class="muted">Pick a moment with the slider, draw an area on the picture, then set when it exists
+    (start and end, in seconds of video). Drag a shape to move it, drag its dots to reshape it. Shapes
+    that do not exist at the chosen moment are dashed. The text box below holds exactly what is saved;
+    press Save to keep it.</p>
+  <p id="aoi-notice" class="error" role="alert" hidden></p>
+  <div class="toolbar">
+    <button type="button" data-mode="rect">Add rectangle</button>
+    <button type="button" data-mode="polygon">Add polygon</button>
+    <button type="button" id="aoi-finish" hidden>Finish polygon</button>
+    <button type="button" id="aoi-cancel" hidden>Cancel</button>
+    <span id="aoi-hint" class="muted"></span>
+  </div>
+  <div class="stage">
+    <video muted playsinline preload="metadata" src="/media/videos/{{ video.id }}.mp4"></video>
+    <svg></svg>
+  </div>
+  <div class="time">
+    <button type="button" id="aoi-play">Play</button>
+    <input type="range" id="aoi-time" min="0" max="{{ video.duration }}" step="0.01" value="0" aria-label="Video time">
+    <span id="aoi-clock">0.00 s</span>
+  </div>
+
+  <h3>Areas</h3>
+  <table id="aoi-table"></table>
+  <h3>Time segments <span class="muted">(for the static heatmaps; without any, 10 s windows are used)</span></h3>
+  <table id="segment-table"></table>
+  <button type="button" id="segment-add">Add segment</button>
+  <ul id="aoi-problems" class="error"></ul>
+</section>
+<script src="/admin/static/aoi_editor.js?v={{ aoi_editor_version }}" defer></script>

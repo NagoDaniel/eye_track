@@ -50,4 +50,20 @@
 {% else %}
 <p>No sessions for this participant code in this study.</p>
 {% endfor %}
+{% if results.analysis %}
+<h2>Analysis</h2>
+<p class="muted">From the latest finished analysis of each video that included this participant.</p>
+{% for a in results.analysis %}
+<h3>Video <a href="/admin/videos/{{ a.video_id }}">{{ a.video_id }}</a>, run <a href="/admin/analysis/{{ results.study.id }}/{{ a.video_id }}/{{ a.run_id }}"><code>{{ a.run_id }}</code></a></h3>
+<p>Mean NSS (how much they looked where the others did): {% if a.nss_mean is not none %}{{ "%.2f"|format(a.nss_mean) }}{% else %}<span class="muted">not defined (fewer than two participants)</span>{% endif %}</p>
+{% if a.aoi_rows %}
+<table>
+  <thead><tr>{% for h in a.aoi_rows[0].keys() if h != "participant_code" %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in a.aoi_rows %}<tr>{% for k, v in row.items() if k != "participant_code" %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endfor %}
+{% endif %}
 {% endblock %}

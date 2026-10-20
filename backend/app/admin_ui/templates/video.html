@@ -18,11 +18,13 @@
   <tr><th>File</th><td><code>{{ video.file_path }}</code></td></tr>
 </table>
 
+{% include "_aoi_editor.html" %}
+
 <h2>Edit</h2>
 <form method="post" action="/admin/videos/{{ video.id }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Title <input name="title" value="{{ title }}" required></label>
-  <label>AOIs (JSON object; empty for none)
+  <label>AOIs (JSON; the editor above writes it for you; empty for none)
     <textarea name="aois" rows="16" spellcheck="false">{{ aois_text }}</textarea>
   </label>
   <button type="submit">Save</button>

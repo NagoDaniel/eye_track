@@ -11,6 +11,8 @@ x-backend: &backend
   build:
     context: .
     dockerfile: backend/Dockerfile
+    args:
+      GIT_SHA: ${GIT_SHA:-}
   image: eyetrack-backend:local
   restart: unless-stopped
   logging: *logging
