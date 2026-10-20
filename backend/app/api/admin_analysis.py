@@ -84,7 +84,7 @@ class StartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     study_id: int
     video_id: int
-    gaze_columns: str = "plain"
+    gaze_columns: str = "drift_corrected"
     aoi_tolerance_k: float = 0.0
     heatmap_dots: bool = False
 
@@ -168,7 +168,7 @@ def start_form(
     request: Request,
     study_id: Annotated[int, Form()],
     video_id: Annotated[int, Form()],
-    gaze_columns: Annotated[str, Form()] = "plain",
+    gaze_columns: Annotated[str, Form()] = "drift_corrected",
     aoi_tolerance_k: Annotated[float, Form()] = 0.0,
     heatmap_dots: Annotated[bool, Form()] = False,
     csrf_token: Annotated[str, Form()] = "",

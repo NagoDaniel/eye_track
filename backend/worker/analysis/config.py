@@ -16,8 +16,9 @@ GazeColumns = Literal["plain", "drift_corrected"]
 class AnalysisConfig:
     # Which pipeline's gaze is analysed (PLAN §9: default A; B arrives with Milestone 5).
     pipeline: Literal["a"] = "a"
-    # Smoothed gaze as it is, or with the drift correction of §8.8 (DECISIONS 2026-10-19 item 2).
-    gaze_columns: GazeColumns = "plain"
+    # Smoothed gaze with the drift correction of §8.8 (the default, DECISIONS 2026-10-20: it removes
+    # the constant offset glasses cause, H2) or as measured.
+    gaze_columns: GazeColumns = "drift_corrected"
 
     # Time a sample stands for: until the next webcam frame, at most this long (a longer gap is a
     # break in the recording, not looking). Not in the plan.

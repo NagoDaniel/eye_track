@@ -151,7 +151,7 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
 
     def handle(job: Job) -> str:
         study_id, video_id = job.args.get("study_id"), job.args.get("video_id")
-        run_id, columns = job.args.get("run_id"), job.args.get("gaze_columns", "plain")
+        run_id, columns = job.args.get("run_id"), job.args.get("gaze_columns", "drift_corrected")
         if not (isinstance(study_id, int) and isinstance(video_id, int)):
             raise ValueError("analyze_video needs study_id and video_id in its args")
         if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):

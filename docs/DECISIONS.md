@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-20 — Milestone 4 accepted; drift-corrected gaze is the default of an analysis
+- Plan section: §8.8, §9
+- Decision: an analysis uses the drift-corrected gaze columns by default (item 2 of 2026-10-19 said "plain"). The option stays: `gaze_columns` `plain` in the API and the admin form, `--as-measured` in the CLI (replaces `--drift-corrected`); the run records which one it used. A session without validation data has no corrected columns and is left out as `no_valid_samples` (the inclusion rule already refuses such a session). Milestone 4 is accepted.
+- Reason: H2 (DECISIONS 2026-10-20, "pilot result"): with glasses the gaze has a constant vertical offset that the correction removes (median error 191 to 102 px and 187 to 130 px, group dispersion 0.116 to 0.079, NSS 1.13 to 2.11); without glasses it changes little.
+- Approved by: Nágó Dániel (2026-10-20)
+
 ## 2026-10-20 — Milestone 4 review: AOI tolerance corrected for the aspect ratio, deviations recorded
 - Plan section: §9.3, §9.1, §9.2
 - Decision (review of Milestone 4, fixes R3 and R8; approved by Nágó Dániel on 2026-10-20):
@@ -28,7 +34,7 @@ Format:
   1. With glasses the gaze has a large constant vertical offset (about +0.21 of the video height for AA, -0.15 for CC, opposite signs). The drift correction (§8.8, mean offset of the validation blocks, interpolated in time) removes most of it: median error against the dot 191 to 102 px (AA) and 187 to 130 px (CC); without glasses it changes little (BB 192 to 195, DD 149 to 135). Group level: heat peak to dot 0.177 to 0.113 of the video width, dispersion 0.116 to 0.079, mean NSS 1.13 to 2.11, sigma 0.100 to 0.059. This differs from the H1 note (DECISIONS 2026-10-18: the correction did not help); H1 had two sessions, only one with glasses.
   2. Gaze is weakest in the right-hand corners (error at (0.9, 0.9): 320 px for BB, 390 to 520 px for DD) and lags the dot by 0.12 to 0.16 s (H1: 0.16 s).
   3. AOIs drawn at about 0.06 x 0.10 of the video (100 x 70 px) are smaller than the accuracy (140 to 225 px): 5 of 16 participant-AOI rows have a fixation hit without tolerance, 12 of 16 with k = 1.
-- Open question for the human (the default of DECISIONS 2026-10-19 item 2, "plain", stays until you decide): make `drift_corrected` the default gaze of an analysis, or keep it an option. The evidence is four sessions, two of them with glasses; the correction is a constant-in-time offset between two validation blocks, so it cannot remove drift that happens inside a video.
+- Open question for the human (the default of DECISIONS 2026-10-19 item 2, "plain"): make `drift_corrected` the default gaze of an analysis, or keep it an option. The evidence is four sessions, two of them with glasses; the correction is a constant-in-time offset between two validation blocks, so it cannot remove drift that happens inside a video. **Answered the same day: see the next entry.**
 - Approved by: results of the human's sessions (2026-10-20); nothing to approve.
 
 ## 2026-10-19 — Milestone 4: visual AOI editor in the admin video page

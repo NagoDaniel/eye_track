@@ -95,7 +95,7 @@ def test_a_run_writes_every_output_and_the_known_dispersion(
     assert record["status"] == "done" and record["error"] is None and record["finished_at"]
     assert sorted(p["participant_code"] for p in record["included"]) == ["P1", "P2", "P3"]
     assert record["excluded"] == []
-    assert record["parameters"]["gaze_columns"] == "plain"
+    assert record["parameters"]["gaze_columns"] == "drift_corrected"
     for name in record["outputs"]:
         assert (run_dir / name).is_file() and (run_dir / name).stat().st_size > 0, name
     assert set(record["outputs"]) == {
@@ -231,6 +231,11 @@ def test_the_cli_runs_an_analysis_and_lists_the_files(
     (run_dir,) = (root / "analysis" / "1" / str(VIDEO_ID)).iterdir()
     parameters = json.loads((run_dir / RUN_FILE).read_text())["parameters"]
     assert parameters["aoi_tolerance_k"] == 1.0 and parameters["heatmap_dots"] is True
+    assert parameters["gaze_columns"] == "drift_corrected"  # the default
+    measured = runner.invoke(cli.app, ["analyze", "1", str(VIDEO_ID), "--as-measured"])
+    assert measured.exit_code == 0, measured.output
+    newest = max((root / "analysis" / "1" / str(VIDEO_ID)).iterdir())
+    assert json.loads((newest / RUN_FILE).read_text())["parameters"]["gaze_columns"] == "plain"
 
     with Db(migrated_engine) as db:  # an open job for the same video: refused
         queue_analysis(db, 1, VIDEO_ID)
@@ -330,7 +335,9 @@ def test_when_every_drift_corrected_column_is_empty_the_run_says_so(
     left = record_of(root, run_id)["excluded"]
     assert sorted(e["participant_code"] for e in left) == ["P1", "P2", "P3"]
     assert all(e["reasons"] == ["no_valid_samples"] for e in left)
-    plain, _ = run_job(migrated_engine, root)  # the plain columns are untouched
+    plain, _ = run_job(
+        migrated_engine, root, gaze_columns="plain"
+    )  # the plain columns are untouched
     assert plain.status is JobStatus.DONE
 
 

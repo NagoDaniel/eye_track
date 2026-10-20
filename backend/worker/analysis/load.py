@@ -1,7 +1,8 @@
 """One session's gaze and fixations on one video, as the analysis uses them (PLAN §9).
 
 Reads `gaze_a.parquet`, `fixations_a.parquet` and `quality.json` of the session, keeps the rows of
-the video, and picks the plain or drift-corrected video coordinates (DECISIONS 2026-10-19 item 2).
+the video, and picks the plain or drift-corrected video coordinates (DECISIONS 2026-10-19 item 2;
+drift-corrected is the default since 2026-10-20).
 Coordinates are video-normalized (0 to 1 over the content rectangle, can fall outside).
 """
 

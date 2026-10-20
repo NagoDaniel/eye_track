@@ -185,6 +185,7 @@ def test_the_dots_checkbox_reaches_the_job(
     with Db(migrated_engine) as db:
         (job,) = db.scalars(select(Job)).all()
         assert job.args["heatmap_dots"] is True
+        assert job.args["gaze_columns"] == "drift_corrected"  # the form's default
     api = c.post("/admin/api/analysis", json={"study_id": 1, "video_id": 1, "heatmap_dots": True},
                  headers=admin.headers)  # fmt: skip
     assert api.status_code == 409  # one at a time; the option itself is accepted by the schema

@@ -33,6 +33,11 @@ def test_queueing_records_the_options_and_a_run_id(db: Db) -> None:
     assert analysis_jobs(db, study_id=2) == [] and analysis_jobs(db, video_id=1) == []
 
 
+def test_the_default_gaze_is_drift_corrected(db: Db) -> None:
+    job, _ = queue_analysis(db, 1, 1)
+    assert job.args["gaze_columns"] == "drift_corrected" and job.args["heatmap_dots"] is False
+
+
 def test_unknown_study_or_video_and_bad_options_are_refused(db: Db) -> None:
     with pytest.raises(NotFoundError):
         queue_analysis(db, 9, 1)

@@ -109,7 +109,7 @@ def _from_job(job: Job) -> dict[str, Any]:
         "error": None if status else job.log,
         "started_at": None if job.started_at is None else job.started_at.isoformat(),
         "git_hash": None,
-        "gaze_columns": args.get("gaze_columns", "plain"),
+        "gaze_columns": args.get("gaze_columns", "drift_corrected"),
         "aoi_tolerance_k": args.get("aoi_tolerance_k", 0.0),
         "included": 0,
         "excluded": 0,

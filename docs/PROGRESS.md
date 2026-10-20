@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**4 — Analysis** (PLAN §14): in progress on branch `m4-analysis`, task list below. Previous milestone: **3 — Pipeline A** (PLAN §14): accepted by Nágó Dániel on 2026-10-18, merged via PR from branch `m3-pipeline-a`; task list below, scope choices in DECISIONS (2026-10-16, "Milestone 3 scope and open choices"). Milestone 2 (Recording and sync data) was accepted by Nágó Dániel and merged into `main` on 2026-10-16; its task list, results, the first real-run fixes and the review are in git history (last commit before the merge: `ca0bbb3`) and in DECISIONS (entries of 2026-10-15 and 2026-10-16).
+**4 — Analysis** (PLAN §14): accepted by Nágó Dániel on 2026-10-20, branch `m4-analysis` (merge command below); its task list, the H2 result and the review fixes are further down. The next milestone is **5 — Pipeline B and comparison**. Milestone 3 (Pipeline A) was accepted on 2026-10-18 and merged via PR #4; its task list is in git history (`6336f6a`).
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -12,7 +12,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 1b Skeleton app | done (accepted and merged 2026-10-15) | m1b-skeleton-app | PR #2; task record and review fixes in git history (`745c48c`) |
 | 2 Recording and sync data | done (accepted and merged 2026-10-16) | m2-recording | reviewed by the plan-reviewer, fixes done except the items under "Open problems"; `make e2e` produces complete raw data (webcam WebM, features, stimulus frames, events) |
 | 3 Pipeline A | done (accepted 2026-10-18; H1 passed, review fixes done) | m3-pipeline-a | `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
-| 4 Analysis | in progress | m4-analysis | task list approved 2026-10-19 |
+| 4 Analysis | done (accepted 2026-10-20; H2 passed, review fixes done) | m4-analysis | `make lint`, `make test` (789 backend, 474 frontend tests) and `make e2e` pass; heatmaps, AOI metrics, synchrony, AOI editor, analysis runs in admin, ZIP export; drift-corrected gaze is the default (DECISIONS 2026-10-20) |
 | 5 Pipeline B and comparison | not started | | |
 | 6 Hardening for pilot | not started | | |
 
@@ -148,4 +148,4 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 20. One `make e2e` run in five failed its first browser test once (empty page for 100 s, no cause found, see "Open problems"). If it happens to you, keep `e2e/test-results/*/trace.zip` and tell me.
 
 ## Next step
-Milestone 4: all tasks (T1 to T14) and the review fixes (above) are done and committed on `m4-analysis`; `make lint`, `make test` (788 backend, 474 frontend tests) and `make e2e` (9 browser tests) pass; the human's H2 is done (above). Left: the human's decision on the default gaze of an analysis (DECISIONS 2026-10-20), the human's word that the milestone is accepted, then merge. Things to know: the density array of the heatmap video is held in memory (545 frames is 5 MB; an hour of video at 30 fps would be about 800 MB, measure before changing); the worker runs one job at a time, so a long analysis delays processing jobs behind it (DECISIONS 2026-10-19 item 5); `make e2e` makes a sixth session (the analysis one, with loosened inclusion thresholds), so `E2E_EXPORT_SESSION` (the session fixture script) still picks the first complete one, not that.
+Milestone 4 is accepted. Merge it (`m4-analysis` into `main`), then run `/milestone-start 5` (Pipeline B: L2CS ONNX inference, features B, comparison report, PLAN §8.5, §9.5, §14). For Milestone 5: the weights and their sha256 are pinned in `shared/models.json` (DECISIONS 2026-10-12, "Pipeline B model weights"); `JobKind.COMPARE_PIPELINES` exists but has no handler; the analysis runs accept only pipeline `a` (`AnalysisConfig.pipeline`) and read `gaze_a.parquet`, `fixations_a.parquet` (add B beside them, not instead); the debug replay shows Pipeline A only (DECISIONS 2026-10-16 item 17); the admin session page and the participant page are where per-session B results go. Carry-overs for Milestone 6 are under "Open problems" (total inflated cap per stream in `/complete`, the vitest 4 upgrade, participant-code collisions); also the notebook and the admin diagnostics page (DECISIONS 2026-10-16 item 16), and the memory of the heatmap video's density array for long videos (measure first). Known and left on purpose: a ZIP of an aborted download stays in `/tmp` of the api container (review R4).

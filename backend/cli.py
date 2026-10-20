@@ -211,8 +211,8 @@ def render_debug_command(
 def analyze_command(
     study_id: int = typer.Argument(..., help="The study."),
     video_id: int = typer.Argument(..., help="The video to analyse."),
-    drift_corrected: bool = typer.Option(
-        False, "--drift-corrected", help="Use the drift-corrected gaze (default: as measured)."
+    as_measured: bool = typer.Option(
+        False, "--as-measured", help="Use the gaze as measured (default: drift-corrected)."
     ),
     tolerance_k: float = typer.Option(
         0.0, "--tolerance-k", min=0.0, help="Grow the AOIs by k times each participant's accuracy."
@@ -234,7 +234,7 @@ def analyze_command(
         "study_id": study_id,
         "video_id": video_id,
         "run_id": run_id,
-        "gaze_columns": "drift_corrected" if drift_corrected else "plain",
+        "gaze_columns": "plain" if as_measured else "drift_corrected",
         "aoi_tolerance_k": tolerance_k,
         "heatmap_dots": dots,
     }

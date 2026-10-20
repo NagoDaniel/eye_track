@@ -41,7 +41,7 @@ def queue_analysis(
     db: Db,
     study_id: int,
     video_id: int,
-    gaze_columns: str = "plain",
+    gaze_columns: str = "drift_corrected",
     aoi_tolerance_k: float = 0.0,
     heatmap_dots: bool = False,
 ) -> tuple[Job, str]:

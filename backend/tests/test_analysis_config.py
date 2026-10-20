@@ -16,7 +16,7 @@ def test_defaults_are_the_plan_values() -> None:
     assert c.segment_default_s == 10.0  # §9.2
     assert c.aoi_tolerance_k == 0.0  # §9.3
     assert c.synchrony_window_ms == 200.0  # §9.4
-    assert c.gaze_columns == "plain"  # DECISIONS 2026-10-19 item 2
+    assert c.gaze_columns == "drift_corrected"  # DECISIONS 2026-10-20
 
 
 def test_as_dict_is_plain_json() -> None:

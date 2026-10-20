@@ -22,7 +22,7 @@ from worker.pipeline.gaze import run_gaze
 from worker.pipeline.quality import QUALITY_FILE, build_quality
 
 CONFIG = PipelineConfig()
-PLAIN = AnalysisConfig()
+PLAIN = AnalysisConfig(gaze_columns="plain")
 DRIFT = AnalysisConfig(gaze_columns="drift_corrected")
 
 
