@@ -31,6 +31,7 @@ VIDEO = FIXTURES / "moving_dot.mp4"
 DOT = DotPath.load(FIXTURES / "moving_dot_path.json")
 CONFIG = AnalysisConfig()
 SIGMA = 0.05
+ENCODING_NOISE = 6  # mean grey-level difference two H.264 encodes of one picture may show
 PAUSE_S = 3.5  # the dot rests at (320, 180) of 1280 x 720 from 2.7 s to 4.2 s
 
 
@@ -126,13 +127,15 @@ def test_the_drawn_video_is_hot_at_the_dot_and_plain_elsewhere(
     near = np.hypot((xx - 320) / w, (yy - 180) / h) < 0.05
     far = np.hypot((xx - 960) / w, (yy - 540) / h) < 0.15
     assert difference[near].mean() > 20
-    assert difference[far].mean() < 2
+    # Far from the heat only the lossy H.264 encoding differs from the source; how much depends on
+    # the ffmpeg build (2.7 on the CI runner), so the limit is far below the heat's >20.
+    assert difference[far].mean() < ENCODING_NOISE
 
 
 def test_frames_without_gaze_are_the_stimulus_frame(tmp_path: Path) -> None:
     render_heatmap(VIDEO, tmp_path, [], SIGMA, CONFIG)
     heat, plain = frame_at(tmp_path / HEATMAP_VIDEO_FILE, 100), frame_at(VIDEO, 100)
-    assert np.abs(heat.astype(np.int16) - plain.astype(np.int16)).mean() < 2
+    assert np.abs(heat.astype(np.int16) - plain.astype(np.int16)).mean() < ENCODING_NOISE
     with np.load(tmp_path / DENSITY_FILE) as npz:
         assert npz["density"].sum() == 0 and float(npz["scale"]) == 1.0
 
