@@ -19,8 +19,11 @@ Entries = dict[str, dict[str, Any]]
 
 
 def status_of(summary: Any) -> str:
-    """`skipped` when a stage's summary says it was skipped, else `ok`."""
-    return "skipped" if isinstance(summary, dict) and "skipped" in summary else "ok"
+    """`skipped` when a stage's summary says it was skipped (a reason as text), else `ok`. The
+    plots stages list the plots they did not draw under `skipped` too, as a mapping: that is not a
+    skipped stage."""
+    skipped = summary.get("skipped") if isinstance(summary, dict) else None
+    return "skipped" if isinstance(skipped, str) else "ok"
 
 
 def read_entries(

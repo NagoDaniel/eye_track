@@ -69,7 +69,9 @@ def test_the_page_offers_pipeline_b_when_it_can_run(admin: Admin, a_only: Fixtur
     assert "Pipeline B has not been run for this session" in html
     assert html.count("not run") == len(B_STAGE_NAMES)
     assert "Cannot be run now" not in html and " disabled" not in html
-    assert "Run Pipeline B</button>" in html and html.count("Run from here") == 3
+    assert (
+        "Run Pipeline B</button>" in html and html.count("Run from here") == len(B_STAGE_NAMES) - 1
+    )
 
 
 def test_the_button_says_why_it_is_disabled(
