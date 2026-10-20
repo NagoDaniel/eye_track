@@ -14,6 +14,15 @@ Format:
 
 ---
 
+## 2026-10-20 — Milestone 4 pilot result (H2): analysis on four real sessions
+- Plan section: §8.8, §9, §14
+- Result (no decision changed; the numbers are in PROGRESS "H2 result"): four moving-dot sessions of one study, screen 1710 px wide, codes AA0101 and CC0101 with glasses, BB0101 and DD0101 without. The analysis ran for all four (no session left out). Findings:
+  1. With glasses the gaze has a large constant vertical offset (about +0.21 of the video height for AA, -0.15 for CC, opposite signs). The drift correction (§8.8, mean offset of the validation blocks, interpolated in time) removes most of it: median error against the dot 191 to 102 px (AA) and 187 to 130 px (CC); without glasses it changes little (BB 192 to 195, DD 149 to 135). Group level: heat peak to dot 0.177 to 0.113 of the video width, dispersion 0.116 to 0.079, mean NSS 1.13 to 2.11, sigma 0.100 to 0.059. This differs from the H1 note (DECISIONS 2026-10-18: the correction did not help); H1 had two sessions, only one with glasses.
+  2. Gaze is weakest in the right-hand corners (error at (0.9, 0.9): 320 px for BB, 390 to 520 px for DD) and lags the dot by 0.12 to 0.16 s (H1: 0.16 s).
+  3. AOIs drawn at about 0.06 x 0.10 of the video (100 x 70 px) are smaller than the accuracy (140 to 225 px): 5 of 16 participant-AOI rows have a fixation hit without tolerance, 12 of 16 with k = 1.
+- Open question for the human (the default of DECISIONS 2026-10-19 item 2, "plain", stays until you decide): make `drift_corrected` the default gaze of an analysis, or keep it an option. The evidence is four sessions, two of them with glasses; the correction is a constant-in-time offset between two validation blocks, so it cannot remove drift that happens inside a video.
+- Approved by: results of the human's sessions (2026-10-20); nothing to approve.
+
 ## 2026-10-19 — Milestone 4: visual AOI editor in the admin video page
 - Plan section: §9.3, §15
 - Decision: the admin video page gets a visual AOI editor (draw rectangles and polygons on a video frame, drag to move or reshape, set start and end from the slider, edit time segments). The PLAN (§15) leaves an AOI drawing tool out of scope "unless requested"; the human requested it on 2026-10-19. The textarea with the JSON stays the form field and the source of truth (the editor reads and writes it; the server validates it on save, `app/aois.py`), so the page still works without JavaScript. The script is `backend/app/admin_ui/static/aoi_editor.js`, served at `/admin/static/` by the API, because the proxy's CSP (`script-src 'self'`) forbids inline scripts. Tested with Playwright in `make e2e` (`e2e/tests/aoi-editor.spec.ts`).

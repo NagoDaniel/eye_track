@@ -61,6 +61,22 @@ Sync on the real recordings (`derived/sync.json`): A (153 s, the first real use 
 
 Findings (details in DECISIONS "Milestone 3 pilot result"): vertical gaze is the weak axis; A is worse but the glasses cannot be told apart from posture and fatigue with two sessions; the +160 ms lag is the same in both; the mean-offset drift correction does not help on this test; a smaller feature set is worse than the 10 features; the linear calibration model beats the quadratic one. The browser gate and the server's validation agree. Tuning is deferred (human, 2026-10-18).
 
+## H2 result (real webcam, moving-dot video, 2026-10-20)
+Four sessions by Nágó Dániel in one study (study 6, video 2), screen 1710 px wide: AA0101 and CC0101 with glasses, BB0101 and DD0101 without. Three analysis runs on them (all `done`, four participants, nobody left out, git `1d25a98`; the AOIs of the video are four small rectangles, `area_1` to `area_4`, at the dot's first rest positions plus the lower left corner).
+
+| | plain, k 0 (`...073202Z-c17161`) | drift-corrected, k 0 (`...074628Z-91e21c`) | drift-corrected, k 1 (`...074636Z-c30caa`) |
+|---|---|---|---|
+| heatmap sigma (video widths) | 0.100 | 0.059 | 0.059 |
+| heat peak to dot, median (video widths) | 0.177 | 0.113 | 0.113 |
+| synchrony: mean dispersion | 0.116 | 0.079 | 0.079 |
+| synchrony: mean NSS | 1.13 | 2.11 | 2.11 |
+| NSS AA / BB / CC / DD | 0.25 / 1.75 / 0.89 / 1.81 | 1.69 / 2.54 / 2.08 / 2.39 | same |
+| AOI rows (of 16) with a fixation hit / with sample dwell | 5 / 7 | 5 / 9 | 12 / 13 |
+
+Per participant, median distance to the dot over the whole video (px of the 1280 x 720 video), plain / drift-corrected: AA 191 / 102, BB 192 / 195, CC 187 / 130, DD 149 / 135. Validation accuracy in px, plain / corrected: AA 225 / 72, BB 142 / 131, CC 161 / 101, DD 180 / 102. Constant offset at the resting dot, plain: AA +0.21 and CC -0.15 of the video height (BB -0.06, DD 0.00). Best lag of the gaze behind the dot: 0.12 s (AA, BB), 0.16 s (CC, DD). Error by rest position: smallest at the centre and the upper left, largest at the right-hand corners (at (0.9, 0.9) BB 320 px, DD 390 to 520 px); the synchrony plot shows it as dispersion up to 0.22 and NSS below 0 at 17 to 20 s.
+
+What it shows: the analysis chain works on real data (heatmap video on the dot, segment pictures, AOI metrics, synchrony); glasses sessions have a constant vertical offset that the drift correction removes (not the case without glasses), so with glasses the as-measured heatmap and synchrony are much worse; AOIs must be larger than about 0.1 of the video or run with tolerance k of 1 or more. Details and the open question about the default gaze (not changed) are in DECISIONS 2026-10-20. Sources: `data/analysis/6/2/` (not committed; aggregate numbers only here).
+
 ## Review of Milestone 3 (plan-reviewer, 2026-10-18): fixes
 Approved by Nágó Dániel on 2026-10-18 and **done**: R1, R2, R3 (`docs/evidence/m3-h1/`), R4, R6, R8. **Dropped by the human:** R5, R7, R9 and the minor items below (replay loaded on every page view, participant-video access not logged, M6 retention follow-up).
 Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backend, 474 frontend) and `make e2e` all passed in the reviewer's own run. The full report is in the conversation of 2026-10-18; these are the tasks it asks for. Approve, change or drop them by number.
@@ -115,4 +131,4 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 20. One `make e2e` run in five failed its first browser test once (empty page for 100 s, no cause found, see "Open problems"). If it happens to you, keep `e2e/test-results/*/trace.zip` and tell me.
 
 ## Next step
-Milestone 4: all tasks (T1 to T14) are done and committed on `m4-analysis`; `make lint`, `make test` (backend 771 tests) and `make e2e` (9 browser tests) pass. Left: the human's **H2** (two or three moving-dot sessions in one study, run an analysis in admin, look at the heatmap video, the segment pictures and the synchrony plot; try the AOI editor on the video page; README items 5 and 6 say how), then `/milestone-review 4`. Things to know: the density array of the heatmap video is held in memory (545 frames is 5 MB; an hour of video at 30 fps would be about 800 MB, measure before changing); the worker runs one job at a time, so a long analysis delays processing jobs behind it (DECISIONS 2026-10-19 item 5); `make e2e` makes a sixth session (the analysis one, with loosened inclusion thresholds), so `E2E_EXPORT_SESSION` (the session fixture script) still picks the first complete one, not that.
+Milestone 4: all tasks (T1 to T14) are done and committed on `m4-analysis`; `make lint`, `make test` (backend 771 tests) and `make e2e` (9 browser tests) pass; the human's H2 is done (above). Left: the human's decision on the default gaze of an analysis (DECISIONS 2026-10-20), then `/milestone-review 4`. Things to know: the density array of the heatmap video is held in memory (545 frames is 5 MB; an hour of video at 30 fps would be about 800 MB, measure before changing); the worker runs one job at a time, so a long analysis delays processing jobs behind it (DECISIONS 2026-10-19 item 5); `make e2e` makes a sixth session (the analysis one, with loosened inclusion thresholds), so `E2E_EXPORT_SESSION` (the session fixture script) still picks the first complete one, not that.
