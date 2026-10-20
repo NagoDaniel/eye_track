@@ -14,6 +14,25 @@ Format:
 
 ---
 
+## 2026-10-20 — Milestone 5 scope and open choices
+- Plan section: §4, §8.5, §9.5, §11.2, §12.2, §14
+- Decision:
+  1. **Done when** (the plan has none for M5): B runs on real recordings and writes `features_b`, `gaze_b` and `fixations_b`; a comparison over the real H2 sessions writes the CSV, the Markdown report and the box plots with Wilcoxon statistics; a missing weights file never breaks A; the human has looked at the B plots and the replay (H3).
+  2. **Pipeline B is a separate job**, not stages of `process_session` (deviation from the plan's reading of §8, where all pipelines run in `process_session`; it also adds a job kind to §4's list): new kind `process_pipeline_b` (migration) with the stages `features_b`, `calibration_b`, `gaze_b`, `quality_b`, `plots_b`. Reason: B can take an hour or more of CPU per session, A must keep working without the weights, and the researcher chooses when to run B (a button per session, one for a whole study, `cli.py process-b`). The worker takes `process_session` and `render_debug` jobs before `process_pipeline_b`. B writes its own `derived/quality_b.json` and `stages_b.json`; A's `quality.json` is unchanged. No automatic run of B.
+  3. **Without weights** the B job fails with a clear message and A is untouched (the plan: "only fail Pipeline B jobs"). The button says why it is disabled when it can be known.
+  4. **Stale B:** re-running A from `landmarks` or `sync` marks B `stale`; analyses and the comparison skip stale sessions (reason `pipeline_b_stale`, or `pipeline_b_not_run`) until B is run again. B's files are not deleted.
+  5. **Features B** (§8.5 "gaze pitch/yaw + the head pose features from 8.4"): six: gaze pitch and yaw, head yaw, pitch, roll and face ratio. Blinks and validity are A's, so only the eye signal differs.
+  6. **Face crop** (fixed once chosen, DECISIONS 2026-10-12): a square around the centre of the landmark box, side = the longer side x 1.2, resized to 448 x 448 (no stretching).
+  7. **Models:** ResNet-50 is the production default; tests use the 5 MB MobileOne weights (cached), plus one ResNet-50 test in CI with a cache.
+  8. **Inclusion per pipeline:** B has its own decision in `quality_b.json` (same thresholds); an analysis with pipeline B uses it.
+  9. **`compare_pipelines`:** one per study, over all sessions that have both pipelines and no stale B, regardless of A's inclusion, in `analysis/{study_id}/compare/{run_id}/` with `run.json`; below `compare_min_pairs` (6) pairs the report gives n and medians but no p-value.
+  10. **E2E** does not download weights: it only checks that the B job fails cleanly without them; real-model tests are in the backend suite.
+  11. **Replay** gets B dots in a second colour (A's unchanged).
+  12. **GPU profile** (deferred from 1a): not done now; decide after measuring the speed of B on the human's desktop machine (it has the only GPU).
+  13. **Frames:** B runs on every webcam frame; no subsampling until the speed is measured.
+- Reason: answers to the numbered questions of `/milestone-start 5`, with the separation of the two pipelines proposed and approved in the discussion.
+- Approved by: Nágó Dániel (2026-10-20; "I accept the rest", GPU profile left for later)
+
 ## 2026-10-20 — Milestone 4 accepted; drift-corrected gaze is the default of an analysis
 - Plan section: §8.8, §9
 - Decision: an analysis uses the drift-corrected gaze columns by default (item 2 of 2026-10-19 said "plain"). The option stays: `gaze_columns` `plain` in the API and the admin form, `--as-measured` in the CLI (replaces `--drift-corrected`); the run records which one it used. A session without validation data has no corrected columns and is left out as `no_valid_samples` (the inclusion rule already refuses such a session). Milestone 4 is accepted.
