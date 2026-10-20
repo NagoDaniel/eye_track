@@ -20,7 +20,7 @@ RERUNNABLE = (SessionStatus.UPLOADED, SessionStatus.PROCESSED, SessionStatus.FAI
 OPEN_JOBS = (JobStatus.QUEUED, JobStatus.RUNNING)
 
 
-JOB_KINDS = (JobKind.PROCESS_SESSION, JobKind.RENDER_DEBUG)
+JOB_KINDS = (JobKind.PROCESS_SESSION, JobKind.RENDER_DEBUG, JobKind.PROCESS_PIPELINE_B)
 
 
 def jobs_of(db: Db, session_id: uuid.UUID) -> list[Job]:

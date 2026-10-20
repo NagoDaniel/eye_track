@@ -7,6 +7,13 @@
 <p>Participant link: <a href="{{ participant_link }}">{{ participant_link }}</a></p>
 <p>{{ study.session_count }} session(s): <a href="/admin/sessions?study_id={{ study.id }}">view</a></p>
 {% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
+<h2>Pipeline B</h2>
+<p class="muted">Pipeline B runs the gaze network on every processed session of this study (one job per session; it can take an hour or more per session on a CPU, and the worker runs it only when nothing else is waiting). Sessions that already have it are run again; one that is being processed is left out.</p>
+{% if b_queued is not none %}<p class="ok" role="status">Queued for {{ b_queued }} session(s){% if b_left %}; {{ b_left }} could not be queued (see each session's page for the reason){% endif %}.</p>{% endif %}
+<form method="post" action="/admin/studies/{{ study.id }}/run-b">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Run Pipeline B for all processed sessions</button>
+</form>
 <h2>Debug mode</h2>
 {% if study.config.debug_allowed %}
 <p class="warning">Debug mode is <strong>on</strong> for this study: anyone who adds <code>debug=1</code> to the link can start a debug session. Turn it off before collecting real data.</p>

@@ -50,6 +50,17 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   const inclusion = (session?.quality as { inclusion: { included: boolean; reasons: string[] } }).inclusion;
   expect(inclusion.included, inclusion.reasons.join(", ")).toBe(true);
 
+  // Pipeline B needs weights that this stack does not have: the page says so and the button is
+  // disabled; asking anyway is refused with the same reason and queues nothing.
+  const sessionPage = await (await admin.request.get(`/admin/sessions/${session!.id}`)).text();
+  const pipelineB = sessionPage.split("<h2>Pipeline B</h2>")[1]!.split("<h2>Debug plots</h2>")[0]!;
+  expect(pipelineB).toContain("Cannot be run now");
+  expect(pipelineB).toContain("scripts/fetch_models.sh");
+  expect(pipelineB).toContain("disabled");
+  const refused = await admin.request.post(`/admin/api/sessions/${session!.id}/run-b`, { headers: admin.headers, data: {} });
+  expect(refused.status()).toBe(409);
+  expect(await refused.text()).toContain("fetch_models.sh");
+
   // Start it from the page, like the researcher does.
   await login(page.request);
   await page.goto("/admin/analysis");

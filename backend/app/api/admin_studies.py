@@ -16,8 +16,10 @@ from app import videos as video_service
 from app.api.pages import Page, check_form_csrf, page_admin, render
 from app.auth import csrf_protected, current_admin, get_db
 from app.models import AdminUser
+from app.pipeline_b import queue_study
 from app.schemas import StudyConfig
 from app.service_errors import ConflictError, InvalidError
+from app.settings import Settings
 
 router = APIRouter(prefix="/admin")
 
@@ -167,6 +169,8 @@ def _detail_page(
     saved: bool = False,
     status_code: int = 200,
     playlist: list[str] | None = None,
+    b_queued: int | None = None,
+    b_left: int | None = None,
 ) -> Response:
     study = _out(db, study_id)
     form = form or {
@@ -193,6 +197,8 @@ def _detail_page(
         # PLAN §12.1: `?debug=1` works for studies with `debug_allowed` (or an admin on the browser)
         debug_link=f"{link}?debug=1",
         videos=_video_rows(db, playlist),
+        b_queued=b_queued,
+        b_left=b_left,
     )
 
 
@@ -233,10 +239,12 @@ def detail_page(
     request: Request,
     study_id: int,
     saved: bool = False,
+    b_queued: int | None = None,
+    b_left: int | None = None,
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
-    return _detail_page(request, page, db, study_id, saved=saved)
+    return _detail_page(request, page, db, study_id, saved=saved, b_queued=b_queued, b_left=b_left)
 
 
 @router.post("/studies/{study_id}")
@@ -308,3 +316,45 @@ def delete_form(
             request, page, db, study_id, error=str(exc), status_code=exc.status_code
         )
     return RedirectResponse("/admin/studies", status_code=303)
+
+
+def _run_b(request: Request, db: DbSession, study_id: int) -> dict[str, Any]:
+    settings: Settings = request.app.state.settings
+    studies.get_study(db, study_id)
+    queued, left = queue_study(
+        db, study_id, settings.data_root, (settings.models_root, settings.pipeline_b_model)
+    )
+    db.commit()
+    return {
+        "queued": [j.args["session_id"] for j in queued],
+        "left_out": [{"session_id": str(s.id), "reason": reason} for s, reason in left],
+    }
+
+
+@router.post(
+    "/api/studies/{study_id}/run-b", status_code=201, dependencies=[Depends(csrf_protected)]
+)
+def api_run_b(
+    request: Request,
+    study_id: int,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Queue Pipeline B for every processed session of the study that can take it."""
+    return _run_b(request, db, study_id)
+
+
+@router.post("/studies/{study_id}/run-b")
+def run_b_form(
+    request: Request,
+    study_id: int,
+    csrf_token: Annotated[str, Form()] = "",
+    page: Page = Depends(page_admin),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    check_form_csrf(page, csrf_token)
+    result = _run_b(request, db, study_id)
+    return RedirectResponse(
+        f"/admin/studies/{study_id}?b_queued={len(result['queued'])}&b_left={len(result['left_out'])}",
+        status_code=303,
+    )

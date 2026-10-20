@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 import typer
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.analysis_runs import OPEN_JOBS, analysis_jobs, new_run_id
@@ -15,9 +14,9 @@ from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
 from app.logging import configure_logging
-from app.models import Job, JobKind, SessionStatus
+from app.models import Job, JobKind
 from app.models import Session as SessionRow
-from app.pipeline_b import B_STAGE_NAMES, queue_pipeline_b
+from app.pipeline_b import B_STAGE_NAMES, queue_study
 from app.pipeline_b import refusal as b_refusal
 from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
@@ -168,20 +167,12 @@ def process_b_command(
     weights = (config.models_root, config.pipeline_b_model)
     factory = session_factory()
     if study is not None:
-        queued, left = 0, []
         with factory() as db:
-            rows = db.scalars(select(SessionRow).where(SessionRow.study_id == study)).all()
-            for row in rows:
-                reason = b_refusal(db, row, config.data_root, weights)
-                if reason is None:
-                    queue_pipeline_b(db, row.id, config.data_root, from_stage, weights)
-                    queued += 1
-                elif row.status is SessionStatus.PROCESSED:  # the others are not B's business
-                    left.append(f"  {row.participant_code} {str(row.id)[:8]}: {reason}")
+            queued, left = queue_study(db, study, config.data_root, weights)
             db.commit()
-        typer.echo(f"Queued Pipeline B for {queued} session(s) of study {study}.")
-        for line in left:
-            typer.echo(line)
+        typer.echo(f"Queued Pipeline B for {len(queued)} session(s) of study {study}.")
+        for row, reason in left:
+            typer.echo(f"  {row.participant_code} {str(row.id)[:8]}: {reason}")
         return
     assert session_id is not None
     sid = _session_id(session_id)
@@ -190,9 +181,9 @@ def process_b_command(
         if existing is None:
             typer.echo(f"error: session {sid} does not exist", err=True)
             raise typer.Exit(1)
-        reason = b_refusal(db, existing, config.data_root, weights)
-    if reason is not None:
-        typer.echo(f"error: {reason}", err=True)
+        refused = b_refusal(db, existing, config.data_root, weights)
+    if refused is not None:
+        typer.echo(f"error: {refused}", err=True)
         raise typer.Exit(1)
     args: dict[str, object] = {"session_id": str(sid)}
     if from_stage is not None:

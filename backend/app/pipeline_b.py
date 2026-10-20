@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as Db
 from app.jobs import enqueue
 from app.models import Job, JobKind, JobStatus, SessionStatus
 from app.models import Session as SessionRow
+from app.reprocess import jobs_of
 from app.service_errors import ConflictError, InvalidError, NotFoundError
 from app.storage import atomic_write_bytes, derived_dir
 
@@ -85,21 +86,6 @@ def weights_refusal(models_root: Path, model_name: str) -> str | None:
     return None
 
 
-def jobs_of(db: Db, session_id: uuid.UUID) -> list[Job]:
-    from sqlalchemy import select
-
-    return list(
-        db.scalars(
-            select(Job)
-            .where(
-                Job.kind == JobKind.PROCESS_PIPELINE_B,
-                Job.args["session_id"].as_string() == str(session_id),
-            )
-            .order_by(Job.id.desc())
-        )
-    )
-
-
 def refusal(
     db: Db,
     session: SessionRow,
@@ -115,7 +101,7 @@ def refusal(
     if missing:
         return f"Pipeline A has not made {', '.join(missing)} for this session"
     if any(job.status in OPEN_JOBS for job in jobs_of(db, session.id)):
-        return "a Pipeline B job for this session is already queued or running"
+        return "a job for this session is already queued or running"
     return None if weights is None else weights_refusal(*weights)
 
 
@@ -161,3 +147,28 @@ def summary_of(derived: Path) -> dict[str, Any] | None:
         "validation_error_norm": validation.get("mean_error_norm"),
         "stale": stale_info(derived) is not None,
     }
+
+
+def queue_study(
+    db: Db,
+    study_id: int,
+    data_root: Path,
+    weights: tuple[Path, str] | None = None,
+) -> tuple[list[Job], list[tuple[SessionRow, str]]]:
+    """Queue Pipeline B for every processed session of the study that can take it. Returns the
+    jobs and, for the processed sessions that cannot, the reason. The caller commits."""
+    from sqlalchemy import select
+
+    queued: list[Job] = []
+    left: list[tuple[SessionRow, str]] = []
+    for session in db.scalars(
+        select(SessionRow).where(SessionRow.study_id == study_id).order_by(SessionRow.created_at)
+    ):
+        if session.status is not SessionStatus.PROCESSED:
+            continue  # not Pipeline B's business yet
+        reason = refusal(db, session, data_root, weights)
+        if reason is None:
+            queued.append(queue_pipeline_b(db, session.id, data_root, None, weights))
+        else:
+            left.append((session, reason))
+    return queued, left

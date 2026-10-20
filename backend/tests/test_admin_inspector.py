@@ -26,6 +26,13 @@ from worker.pipeline.quality import build_quality
 CONFIG = PipelineConfig()
 
 
+def processing(html: str) -> str:
+    """The page without Pipeline B's section: Pipeline A's stage table, jobs and the rest (the
+    section of Pipeline B has its own tests)."""
+    return re.sub(r"<h2>Pipeline B</h2>.*?<h2>Debug plots</h2>", "<h2>Debug plots</h2>", html,
+                  flags=re.S)  # fmt: skip
+
+
 @pytest.fixture
 def data_root(tmp_path: Path) -> Path:
     return tmp_path / "data"
@@ -129,7 +136,7 @@ def test_a_session_that_was_not_processed_says_so(
         db.commit()
     html = admin.client.get(f"/admin/sessions/{sid}").text
     assert "No quality report yet" in html and "No plots yet" in html
-    assert html.count("not run") == len(STAGE_NAMES)
+    assert processing(html).count("not run") == len(STAGE_NAMES)
     assert html.count("Re-run from here") == len(
         STAGE_NAMES
     )  # an uploaded session can be processed
@@ -222,7 +229,7 @@ def test_the_button_queues_the_job_and_the_page_waits_for_it(
     html = page(admin, processed, "?queued=true")
     assert "Processing is queued" in html and "already queued or running" in html
     # No second job while one is open: the stage buttons and the replay button are off.
-    assert html.count(" disabled") == len(STAGE_NAMES) + 1
+    assert processing(html).count(" disabled") == len(STAGE_NAMES) + 1
     assert post_rerun(admin, processed).status_code == 409
 
 
@@ -350,7 +357,7 @@ def test_a_failed_stage_shows_in_the_table_with_its_error_and_the_earlier_durati
         'class="gap"' in html and "LandmarkError: the face landmarker model does not exist" in html
     )
     assert ">failed<" in html and ">ok<" in html and "1.5" in html
-    assert html.count("not run") == len(STAGE_NAMES) - 2  # everything after the failure
+    assert processing(html).count("not run") == len(STAGE_NAMES) - 2  # after the failure
 
 
 def test_summaries_without_a_report_or_inclusion() -> None:
