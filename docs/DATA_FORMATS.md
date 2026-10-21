@@ -225,9 +225,9 @@ One `analyze_video` run (`backend/worker/analysis/run.py`), started from the adm
 | `run_id`, `study_id`, `video_id` | |
 | `status`, `error`, `started_at`, `finished_at` | ISO 8601 UTC |
 | `git_hash` | `git describe --always --dirty` of the build (`GIT_SHA` build argument); `null` when the image was built without it |
-| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `drift_corrected` (default) / `plain`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
+| `parameters` | every value of `AnalysisConfig` that was used (`pipeline` `a` or `b`, `gaze_columns` `drift_corrected` (default) / `plain`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
 | `included` | `{session_id, participant_code, ...}` per session analysed (later stages add their numbers) |
-| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json`), `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
+| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json` for pipeline A, B's own in `quality_b.json` for pipeline B), for B also `pipeline_b_not_run` and `pipeline_b_stale`, `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
 | `outputs` | files written, relative to the run directory |
 | `results` | numbers the stages report |
 
@@ -489,7 +489,7 @@ Pipeline B's features, one row per row of `landmarks.parquet`, made by the gaze 
 
 **Crop rule** (fixed, so the calibration only has to absorb a constant difference): per frame with a face, the bounding box of all 478 landmarks (in px of the decoded frame) gives a square centred on the box's centre whose side is the box's longer side times `b_crop_scale` (1.2, "expanded 20 %"); it is cut out (black where it leaves the frame), resized to 448 x 448 (bilinear), RGB, scaled to 0 to 1 and normalised with the ImageNet mean and standard deviation. The network gives logits over 90 bins of 4 degrees for yaw and pitch each; the angle is the expected bin position times 4 minus 180 degrees, converted to radians. Faces go through the network `b_batch_size` (8) at a time (the small MobileOne weights run one at a time).
 
-Schema metadata, key `features_b` (JSON): `version` (1), `model` (`{"name", "sha256" of the weights file, "provider"}`; `provider` is the one asked for in the settings, `cpu` or `cuda`), `crop_scale`, `input_size` (448), `batch_size`.
+Schema metadata, key `features_b` (JSON): `version` (1), `model` (`{"name", "sha256" of the weights file, "provider"}`; `provider` is the one in use, `cpu` or `cuda`: a CUDA request without a CUDA runtime falls back to the CPU and says `cpu`), `crop_scale`, `input_size` (448), `batch_size`.
 
 ```python
 fb = pd.read_parquet(f"{d}/features_b.parquet")
@@ -540,6 +540,20 @@ The `_b` plots are the same drawings made from B's files, with "(Pipeline B)" in
 - The participant's webcam in the bottom right corner (a quarter of the width) with the 49 landmarks of the subset drawn on it (iris points cyan, the others yellow); left out when the recording or its landmarks are missing.
 - Text: video id, time since the start of the first shown stretch, video time (or "paused / stalled"), the colour legend, and "gaze invalid" (with "(no face)") when the frame has neither valid nor interpolated gaze (Pipeline A's).
 - The bar below: dark where all is fine, grey where A's gaze is invalid, red where no face was found, orange where the video is paused or stalled (the highest applies), a purple tick at every fullscreen exit and a white cursor.
+
+## `analysis/{study_id}/compare/{run_id}/` (PLAN §9.5)
+
+One `compare_pipelines` run (`backend/worker/analysis/compare.py`), started from the admin (`/admin/analysis`) or with `docker compose exec api python cli.py compare <study_id>`. One comparison per study, over every session that is processed, not a debug session, and has a successful calibration in both pipelines and a Pipeline B that is not stale; **A's inclusion decision is not applied** (it would bias the comparison). Other sessions are listed in `run.json` under `excluded`, reasons: `not_processed`, `debug_session`, `calibration_failed_a`, `calibration_failed_b`, `pipeline_b_not_run`, `pipeline_b_stale`, `quality_file_missing`. A run with nothing to compare fails (`status` `failed`, the reason in `error`).
+
+| file | content |
+|---|---|
+| `run.json` | like the analysis runs': `kind` `compare_pipelines`, `run_id`, `study_id`, `status`, `error`, `started_at`, `finished_at`, `git_hash`, `parameters` (`compare_min_pairs`), `included` and `excluded` (`session_id`, `participant_code`, `reasons`), `outputs`, `results` (`sessions` and `statistics`: the rows of `statistics.csv`) |
+| `comparison.csv` | one row per session: `participant_code`, `session_id`, then for each metric `<metric>_a`, `<metric>_b` and `<metric>_diff` (B minus A); empty where a pipeline has no number |
+| `statistics.csv` | one row per metric: `n` (sessions with the metric in both pipelines), `median_a`, `median_b`, `median_diff_b_minus_a`, `b_better`, `a_better` (sessions where each is better), `wilcoxon_statistic`, `p_value` |
+| `report.md` | a short report: the table of `statistics.csv`, the box plots, who was left out and why |
+| `boxplots.png` | a box plot of A and B per metric with a line per session |
+
+Metrics (from `quality.json` and `quality_b.json`, the same keys in both): `accuracy_norm` (mean validation error over the blocks, share of the viewport diagonal), `accuracy_corrected_norm` (the same after the drift correction), `accuracy_px` (mean of the blocks' mean error in px), `precision_px` (the median over the blocks of the RMS step between samples, px), `valid_fraction` (valid gaze share of the playback frames). Lower is better except for `valid_fraction`. The test is `scipy.stats.wilcoxon` (paired, two-sided), per metric, with no correction for several metrics; a p-value is only given from `compare_min_pairs` (6) pairs, and not when every difference is 0.
 
 ## Participant code
 

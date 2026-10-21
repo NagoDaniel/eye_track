@@ -103,9 +103,12 @@ def preprocess(images: Images) -> Float32Array:
 class GazeModelB:
     """The ONNX gaze network in an onnxruntime session."""
 
-    def __init__(self, session: ort.InferenceSession, name: str, sha256: str) -> None:
+    def __init__(
+        self, session: ort.InferenceSession, name: str, sha256: str, provider: Provider = "cpu"
+    ) -> None:
         self._session = session
         self.name = name
+        self.provider = provider  # the provider in use (a CUDA request falls back to the CPU)
         self.sha256 = sha256  # of the weights file, for the provenance of a run
         # The MobileOne export has a fixed batch dimension of 1; a dynamic one is a string or None.
         fixed = session.get_inputs()[0].shape[0]
@@ -133,16 +136,18 @@ class GazeModelB:
                 f"sha256 expected {expected}, actual {actual}. Re-download with {FETCH_HINT} {name}"
             )
         providers = ["CPUExecutionProvider"]
+        used: Provider = "cpu"
         if provider == "cuda":
             if "CUDAExecutionProvider" in ort.get_available_providers():
                 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                used = "cuda"
             else:
                 log.warning("CUDA requested for model B but not available; using the CPU")
         session = ort.InferenceSession(str(path), providers=providers)
         outputs = [o.name for o in session.get_outputs()]
         if not {"yaw", "pitch"} <= set(outputs):
             raise ModelBError(f"{path}: expected outputs 'yaw' and 'pitch', found {outputs}")
-        return cls(session, name, actual)
+        return cls(session, name, actual, used)
 
     def predict(
         self, images: Images, batch_size: int = DEFAULT_BATCH_SIZE

@@ -64,8 +64,9 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   // Start it from the page, like the researcher does.
   await login(page.request);
   await page.goto("/admin/analysis");
-  await page.locator('select[name="study_id"]').selectOption(String(studyId));
-  await page.locator('select[name="video_id"]').selectOption(videoId);
+  const form = page.locator('form[action="/admin/analysis"]');
+  await form.locator('select[name="study_id"]').selectOption(String(studyId));
+  await form.locator('select[name="video_id"]').selectOption(videoId);
   await page.getByLabel("Draw a white dot per participant").check();
   await page.getByRole("button", { name: "Start analysis" }).click();
   await expect(page.locator("p.ok")).toContainText("Queued");
@@ -118,4 +119,24 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   const participant = await (await admin.request.get(`/admin/participants/${studyId}/${PARTICIPANT}`)).text();
   expect(participant).toContain("<h2>Analysis</h2>");
   expect(participant).toContain(run.run_id);
+
+  // Comparing the pipelines needs Pipeline B, which this stack does not have: the comparison runs
+  // and fails with the reason, and its page shows who was left out.
+  const started = await admin.request.post("/admin/api/comparisons", { headers: admin.headers, data: { study_id: studyId } });
+  expect(started.status(), await started.text()).toBe(201);
+  const compareId = ((await started.json()) as { run_id: string }).run_id;
+  type Compared = { run_id: string; status: string; error: string | null; left_out: number };
+  const comparison = async (): Promise<Compared | undefined> => {
+    const all = (await (await admin.request.get(`/admin/api/comparisons?study_id=${studyId}`)).json()) as Compared[];
+    return all.find((c) => c.run_id === compareId);
+  };
+  await expect
+    .poll(async () => ["done", "failed"].includes((await comparison())?.status ?? ""), { timeout: 60_000, intervals: [2000] })
+    .toBe(true);
+  const compared = (await comparison())!;
+  expect(compared.status).toBe("failed");
+  expect(compared.error ?? "").toContain("no session has both");
+  expect(compared.left_out).toBe(1);
+  const comparisonPage = await (await admin.request.get(`/admin/comparisons/${studyId}/${compareId}`)).text();
+  expect(comparisonPage).toContain("pipeline_b_not_run");
 });

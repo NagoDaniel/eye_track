@@ -57,7 +57,7 @@ def _features_b(ctx: Context) -> dict[str, Any]:
         ctx.derived / SPEC_A.features_file,
         ctx.derived / SPEC_B.features_file,
         model,
-        {"name": model.name, "sha256": model.sha256, "provider": ctx.onnx_provider},
+        {"name": model.name, "sha256": model.sha256, "provider": model.provider},
         ctx.config,
     )
     return summary.as_dict() | {"model": model.name}

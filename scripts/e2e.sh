@@ -145,7 +145,9 @@ assert open_jobs() == 0, "the worker did not finish the processing jobs in 300 s
 def count(where: str) -> int:
     return int(run("exec", "-T", "db", "psql", "-U", "eyetrack", "-d", "eyetrack", "-At", "-c",
                    f"select count(*) from jobs where {where}"))
-failed = count("status = 'failed'")
+# (The comparison of the pipelines that the analysis test starts fails on purpose: this stack has
+# no Pipeline B, so there is nothing to compare; it is checked in the browser test.)
+failed = count("status = 'failed' and kind <> 'compare_pipelines'")
 # Only the session that was reloaded before it recorded anything fails (it has no webcam).
 no_webcam = count("status = 'failed' and log like '%webcam: there are no chunks%'")
 assert failed == no_webcam == 1, f"{failed} failed jobs, {no_webcam} of them for a missing webcam"
