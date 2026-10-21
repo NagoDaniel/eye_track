@@ -18,6 +18,7 @@ from app.service_errors import ConflictError, InvalidError, NotFoundError
 
 RUN_FILE = "run.json"
 GAZE_COLUMNS = ("plain", "drift_corrected")
+PIPELINES = ("a", "b")
 OPEN_JOBS = (JobStatus.QUEUED, JobStatus.RUNNING)
 
 
@@ -44,6 +45,7 @@ def queue_analysis(
     gaze_columns: str = "drift_corrected",
     aoi_tolerance_k: float = 0.0,
     heatmap_dots: bool = False,
+    pipeline: str = "a",
 ) -> tuple[Job, str]:
     """Queue `analyze_video`. The caller commits. Returns the job and the run id.
 
@@ -55,6 +57,8 @@ def queue_analysis(
         raise NotFoundError(f"video {video_id} not found")
     if gaze_columns not in GAZE_COLUMNS:
         raise InvalidError(f"gaze_columns must be one of: {', '.join(GAZE_COLUMNS)}")
+    if pipeline not in PIPELINES:
+        raise InvalidError(f"pipeline must be one of: {', '.join(PIPELINES)}")
     if not math.isfinite(aoi_tolerance_k) or aoi_tolerance_k < 0:
         raise InvalidError("aoi_tolerance_k must be a number of at least 0")
     if any(j.status in OPEN_JOBS for j in analysis_jobs(db, study_id, video_id)):
@@ -70,6 +74,7 @@ def queue_analysis(
             "gaze_columns": gaze_columns,
             "aoi_tolerance_k": aoi_tolerance_k,
             "heatmap_dots": heatmap_dots,
+            "pipeline": pipeline,
         },
     )
     return job, run_id

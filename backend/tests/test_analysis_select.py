@@ -155,3 +155,31 @@ def test_query_reads_the_study_sessions_from_postgres(
     selection = select_sessions(infos, video_id=1)
     assert [i.id.int for i in selection.included] == [1]
     assert reasons_of(selection) == {2: [NOT_PROCESSED]}
+
+
+def with_b(q: dict[str, Any], **b: Any) -> dict[str, Any]:
+    return {**q, "pipeline_b": {"included": True, "reasons": [], "stale": False, **b}}
+
+
+def test_for_pipeline_b_the_decision_and_the_freshness_are_b_s() -> None:
+    infos = [
+        info(1, "A", q=quality()),  # B never run
+        info(2, "B", q=with_b(quality(), stale=True)),
+        info(3, "C", q=with_b(quality(), included=False, reasons=["valid_fraction_low"])),
+        info(4, "D", q=with_b(quality(included=False, reasons=["debug_session"]))),  # A says no
+        info(5, "E", q=with_b(quality({"2": 300}))),  # did not watch this video
+        info(6, "F", q=with_b(quality()), has_gaze=False),
+        info(7, "G", q=with_b(quality())),
+    ]
+    selection = select_sessions(infos, video_id=1, pipeline="b")
+    assert sorted(i.id.int for i in selection.included) == [4, 7]  # A's exclusion does not count
+    assert reasons_of(selection) == {
+        1: ["pipeline_b_not_run"],
+        2: ["pipeline_b_stale"],
+        3: ["valid_fraction_low"],
+        5: [VIDEO_NOT_WATCHED],
+        6: [GAZE_FILE_MISSING],
+    }
+    # with A the same sessions are judged by A's report
+    a = select_sessions(infos, video_id=1, pipeline="a")
+    assert 4 not in {i.id.int for i in a.included} and reasons_of(a)[4] == ["debug_session"]

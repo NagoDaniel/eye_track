@@ -16,12 +16,14 @@ from sqlalchemy.orm import Session as Db
 
 from app.models import Session as SessionRow
 from app.models import SessionStatus, Study, StudyMode, Video
+from app.pipeline_b import summary_of
 from app.storage import derived_dir, meta_path, session_dir
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.runner import Context, run_pipeline
+from worker.pipeline.spec import SPEC_B
 
 MOVING_DOT = Path(__file__).resolve().parents[2] / "e2e" / "fixtures" / "moving_dot.mp4"
 VIDEO_ID = 1
@@ -77,6 +79,9 @@ def make_participants(
         derived = derived_dir(root, source.study_id, sid)
         _shift(derived / GAZE_FILE, ["x_vid", "x_vid_dc"], offset)
         _shift(derived / FIXATIONS_FILE, ["cx_vid", "cx_vid_dc"], offset)
+        if (derived / SPEC_B.gaze_file).exists():  # Pipeline B's gaze moves the same way
+            _shift(derived / SPEC_B.gaze_file, ["x_vid", "x_vid_dc"], offset)
+            _shift(derived / SPEC_B.fixations_file, ["cx_vid", "cx_vid_dc"], offset)
         people.append(Participant(sid, code, offset))
     return people
 
@@ -89,9 +94,11 @@ def seed(
     aois: dict[str, Any] | None = None,
 ) -> None:
     """Study, video (with its file under `root`) and the participants' sessions, `processed`."""
-    quality = json.loads(
-        (derived_dir(source.root, source.study_id, source.session_id) / QUALITY_FILE).read_text()
-    )
+    source_derived = derived_dir(source.root, source.study_id, source.session_id)
+    quality = json.loads((source_derived / QUALITY_FILE).read_text())
+    summary_b = summary_of(source_derived)  # Pipeline B's line in the record, when B was run
+    if summary_b is not None:
+        quality = {**quality, "pipeline_b": summary_b}
     video_file = root / "videos" / str(VIDEO_ID) / "video.mp4"
     video_file.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(MOVING_DOT, video_file)

@@ -87,6 +87,7 @@ class StartRequest(BaseModel):
     gaze_columns: str = "drift_corrected"
     aoi_tolerance_k: float = 0.0
     heatmap_dots: bool = False
+    pipeline: str = "a"
 
 
 @router.post("/api/analysis", status_code=201, dependencies=[Depends(csrf_protected)])
@@ -102,6 +103,7 @@ def api_start(
         body.gaze_columns,
         body.aoi_tolerance_k,
         body.heatmap_dots,
+        body.pipeline,
     )
     db.commit()
     return {"job_id": job.id, "run_id": run_id, "args": job.args}
@@ -171,13 +173,16 @@ def start_form(
     gaze_columns: Annotated[str, Form()] = "drift_corrected",
     aoi_tolerance_k: Annotated[float, Form()] = 0.0,
     heatmap_dots: Annotated[bool, Form()] = False,
+    pipeline: Annotated[str, Form()] = "a",
     csrf_token: Annotated[str, Form()] = "",
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
     check_form_csrf(page, csrf_token)
     try:
-        queue_analysis(db, study_id, video_id, gaze_columns, aoi_tolerance_k, heatmap_dots)
+        queue_analysis(
+            db, study_id, video_id, gaze_columns, aoi_tolerance_k, heatmap_dots, pipeline
+        )
     except AdminError as exc:
         db.rollback()
         return _index(request, page, db, error=str(exc), status_code=exc.status_code)

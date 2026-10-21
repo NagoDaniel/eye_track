@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session as Db
 from app.models import Session as SessionRow
 from app.models import SessionStatus
 from app.storage import derived_dir
-from worker.pipeline.gaze import GAZE_FILE
+from worker.pipeline.spec import spec_of
 
 # Sessions that finished uploading. Earlier states have no data; withdrawn ones have none left.
 UPLOADED_STATES = (
@@ -31,6 +31,8 @@ UPLOADED_STATES = (
 NOT_PROCESSED = "not_processed"
 VIDEO_NOT_WATCHED = "video_not_watched"
 GAZE_FILE_MISSING = "gaze_file_missing"
+PIPELINE_B_NOT_RUN = "pipeline_b_not_run"
+PIPELINE_B_STALE = "pipeline_b_stale"
 SUPERSEDED = "superseded"
 
 
@@ -41,7 +43,7 @@ class SessionInfo:
     created_at: datetime
     status: SessionStatus
     quality: dict[str, Any] | None  # `quality.json`, as kept in `sessions.quality`
-    has_gaze: bool  # `derived/gaze_a.parquet` exists
+    has_gaze: bool  # the gaze file of the run's pipeline exists
 
 
 @dataclass(frozen=True)
@@ -69,14 +71,23 @@ def _frames_of(quality: dict[str, Any], video_id: int) -> int:
     return int((per_video.get(str(video_id)) or {}).get("frames") or 0)
 
 
-def _problems(info: SessionInfo, video_id: int) -> list[str]:
-    """Why this session cannot be used for the video; empty when it can."""
+def _problems(info: SessionInfo, video_id: int, pipeline: str) -> list[str]:
+    """Why this session cannot be used for the video; empty when it can. Whether the video was
+    watched is a fact about the recording (A's report); the inclusion decision is the pipeline's
+    own (B's line in the session record, DECISIONS 2026-10-20)."""
     quality = info.quality
     if info.status is not SessionStatus.PROCESSED or quality is None:
         return [NOT_PROCESSED]
     if _frames_of(quality, video_id) == 0:
         return [VIDEO_NOT_WATCHED]
     inclusion = quality.get("inclusion") or {}
+    if pipeline == "b":
+        b = quality.get("pipeline_b")
+        if b is None:
+            return [PIPELINE_B_NOT_RUN]
+        if b.get("stale"):
+            return [PIPELINE_B_STALE]
+        inclusion = {"included": b.get("included"), "reasons": b.get("reasons")}
     if not inclusion.get("included"):
         return [str(r) for r in inclusion.get("reasons") or ["not_included"]]
     if not info.has_gaze:
@@ -84,12 +95,12 @@ def _problems(info: SessionInfo, video_id: int) -> list[str]:
     return []
 
 
-def select_sessions(infos: Sequence[SessionInfo], video_id: int) -> Selection:
+def select_sessions(infos: Sequence[SessionInfo], video_id: int, pipeline: str = "a") -> Selection:
     """Split the sessions into the ones to analyse and the ones left out, with reasons."""
     excluded: list[Excluded] = []
     usable: dict[str, list[SessionInfo]] = {}
     for info in sorted(infos, key=lambda i: (i.participant_code, i.created_at, str(i.id))):
-        problems = _problems(info, video_id)
+        problems = _problems(info, video_id, pipeline)
         if problems:
             excluded.append(Excluded(info.id, info.participant_code, problems))
         else:
@@ -102,7 +113,7 @@ def select_sessions(infos: Sequence[SessionInfo], video_id: int) -> Selection:
     return Selection(included=included, excluded=excluded)
 
 
-def query_sessions(db: Db, root: Path, study_id: int) -> list[SessionInfo]:
+def query_sessions(db: Db, root: Path, study_id: int, pipeline: str = "a") -> list[SessionInfo]:
     rows = db.scalars(
         select(SessionRow).where(
             SessionRow.study_id == study_id, SessionRow.status.in_(UPLOADED_STATES)
@@ -115,7 +126,7 @@ def query_sessions(db: Db, root: Path, study_id: int) -> list[SessionInfo]:
             created_at=r.created_at,
             status=r.status,
             quality=r.quality,
-            has_gaze=(derived_dir(root, study_id, r.id) / GAZE_FILE).exists(),
+            has_gaze=(derived_dir(root, study_id, r.id) / spec_of(pipeline).gaze_file).exists(),
         )
         for r in rows
     ]

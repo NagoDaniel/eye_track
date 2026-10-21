@@ -284,6 +284,7 @@ def analyze_command(
         0.0, "--tolerance-k", min=0.0, help="Grow the AOIs by k times each participant's accuracy."
     ),
     dots: bool = typer.Option(False, "--dots", help="Draw a dot per participant on the heatmap."),
+    pipeline: str = typer.Option("a", "--pipeline", help="Analyse Pipeline a or b."),
 ) -> None:
     """Analyse one video across the included sessions of a study here and now (PLAN §9).
 
@@ -303,6 +304,7 @@ def analyze_command(
         "gaze_columns": "plain" if as_measured else "drift_corrected",
         "aoi_tolerance_k": tolerance_k,
         "heatmap_dots": dots,
+        "pipeline": pipeline,
     }
     handler = make_analyze_video(session_factory(), config)
     run_dir = analysis_run_dir(config.data_root, study_id, video_id, run_id)

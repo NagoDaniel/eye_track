@@ -171,7 +171,11 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
             raise ValueError("analyze_video needs a run_id made by queue_analysis")
         if columns not in ("plain", "drift_corrected"):
             raise ValueError("analyze_video needs plain or drift_corrected gaze")
+        pipeline = job.args.get("pipeline", "a")
+        if pipeline not in ("a", "b"):
+            raise ValueError("analyze_video needs pipeline a or b")
         config = AnalysisConfig(
+            pipeline=pipeline,
             gaze_columns=columns,
             aoi_tolerance_k=float(job.args.get("aoi_tolerance_k", 0.0)),
             heatmap_dots=bool(job.args.get("heatmap_dots", False)),
@@ -184,12 +188,12 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
                 raise LookupError(f"video {video_id} does not exist")
             info = VideoInfo(video.id, video.duration, video.width, video.height)
             aois = parse_aoi_file(video.aois or {})
-            infos = query_sessions(db, settings.data_root, study_id)
+            infos = query_sessions(db, settings.data_root, study_id, config.pipeline)
 
         root = settings.data_root
         if discard_unfinished_run(root, study_id, video_id, run_id):
             log.warning("an unfinished analysis run is started again", extra={"run_id": run_id})
-        selection = select_sessions(infos, video_id)
+        selection = select_sessions(infos, video_id, config.pipeline)
         record, run_dir = start_run(root, study_id, video_id, run_id, config, selection)
         try:
             sessions = load_included(root, study_id, video_id, selection, config, record)

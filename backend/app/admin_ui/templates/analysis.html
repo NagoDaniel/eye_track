@@ -20,6 +20,12 @@
       {% for v in videos %}<option value="{{ v.id }}">{{ v.title }} (id {{ v.id }})</option>{% endfor %}
     </select>
   </label>
+  <label>Pipeline
+    <select name="pipeline">
+      <option value="a">A: landmark geometry (default)</option>
+      <option value="b">B: gaze network (needs Pipeline B run for the sessions; sessions without it or with a stale one are left out)</option>
+    </select>
+  </label>
   <label>Gaze
     <select name="gaze_columns">
       <option value="drift_corrected">drift-corrected between the validation blocks (default)</option>
@@ -36,7 +42,7 @@
 <h2>Runs</h2>
 <table>
   <thead>
-    <tr><th>Run</th><th>Study</th><th>Video</th><th>Status</th><th class="num">Included</th><th class="num">Left out</th><th>Gaze</th><th class="num">k</th></tr>
+    <tr><th>Run</th><th>Study</th><th>Video</th><th>Status</th><th class="num">Included</th><th class="num">Left out</th><th>Pipeline</th><th>Gaze</th><th class="num">k</th></tr>
   </thead>
   <tbody>
   {% for r in runs %}
@@ -47,11 +53,12 @@
       <td>{% if r.status == "done" %}<span class="ok">done</span>{% elif r.status == "failed" %}<span class="error" title="{{ r.error }}">failed: {{ (r.error or "")[:80] }}</span>{% else %}{{ r.status }}{% endif %}</td>
       <td class="num">{{ r.included }}</td>
       <td class="num">{{ r.excluded }}</td>
+      <td>{{ r.pipeline | upper }}</td>
       <td>{{ r.gaze_columns }}</td>
       <td class="num">{{ r.aoi_tolerance_k }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="8">No runs yet.</td></tr>
+    <tr><td colspan="9">No runs yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
