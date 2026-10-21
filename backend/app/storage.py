@@ -93,6 +93,11 @@ def derived_dir(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
     return session_dir(root, study_id, session_id) / "derived"
 
 
+def compare_run_dir(root: Path, study_id: int, run_id: str) -> Path:
+    """Where one `compare_pipelines` run writes its outputs (PLAN §9.5; DECISIONS 2026-10-20)."""
+    return root / "analysis" / str(study_id) / "compare" / run_id
+
+
 def analysis_run_dir(root: Path, study_id: int, video_id: int, run_id: str) -> Path:
     """Where one `analyze_video` run writes its outputs (PLAN §7, §9)."""
     return root / "analysis" / str(study_id) / str(video_id) / run_id

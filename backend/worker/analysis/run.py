@@ -68,11 +68,10 @@ class RunRecord:
         self.write(run_dir)
 
 
-def discard_unfinished_run(root: Path, study_id: int, video_id: int, run_id: str) -> bool:
+def discard_unfinished_dir(run_dir: Path, run_id: str) -> bool:
     """Remove what an earlier attempt of the same run left behind. A requeued job (its worker died)
     has the same run id; its directory holds `run.json` with status `running`, or nothing yet.
     Raises FileExistsError when the run finished: an id is never reused for a finished run."""
-    run_dir = analysis_run_dir(root, study_id, video_id, run_id)
     if not run_dir.exists():
         return False
     try:
@@ -83,6 +82,10 @@ def discard_unfinished_run(root: Path, study_id: int, video_id: int, run_id: str
         raise FileExistsError(f"analysis run {run_id} has already finished")
     shutil.rmtree(run_dir)
     return True
+
+
+def discard_unfinished_run(root: Path, study_id: int, video_id: int, run_id: str) -> bool:
+    return discard_unfinished_dir(analysis_run_dir(root, study_id, video_id, run_id), run_id)
 
 
 def start_run(

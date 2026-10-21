@@ -17,10 +17,11 @@ from app.models import Chunk, Job, SessionStatus, Study, Video
 from app.models import Session as SessionRow
 from app.pipeline_b import stale_info, summary_of
 from app.settings import Settings
-from app.storage import derived_dir
+from app.storage import compare_run_dir, derived_dir
 from worker.analysis.analyze import VideoInfo, analyze, load_included
+from worker.analysis.compare import run_compare
 from worker.analysis.config import AnalysisConfig
-from worker.analysis.run import discard_unfinished_run, start_run
+from worker.analysis.run import discard_unfinished_dir, discard_unfinished_run, start_run
 from worker.analysis.select import query_sessions, select_sessions
 from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
@@ -251,5 +252,30 @@ def make_process_pipeline_b(
                 session.quality = {**(session.quality or {}), "pipeline_b": summary}
                 db.commit()
         return f"pipeline B: {', '.join(stages)}"
+
+    return handle
+
+
+def make_compare_pipelines(
+    factory: sessionmaker[Session], settings: Settings
+) -> Callable[[Job], str]:
+    """The handler for `compare_pipelines` jobs (PLAN §9.5). Args: `study_id`, `run_id`. Writes
+    `analysis/{study}/compare/{run}/`; a comparison with nothing to compare fails the job (and
+    marks its run `failed`). A job requeued after its worker died starts the run again."""
+
+    def handle(job: Job) -> str:
+        study_id, run_id = job.args.get("study_id"), job.args.get("run_id")
+        if not isinstance(study_id, int):
+            raise ValueError("compare_pipelines needs a study_id in its args")
+        if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
+            raise ValueError("compare_pipelines needs a run_id made by queue_comparison")
+        with factory() as db:
+            if db.get(Study, study_id) is None:
+                raise LookupError(f"study {study_id} does not exist")
+            run_dir = compare_run_dir(settings.data_root, study_id, run_id)
+            if discard_unfinished_dir(run_dir, run_id):
+                log.warning("an unfinished comparison is started again", extra={"run_id": run_id})
+            record = run_compare(db, settings.data_root, study_id, run_id, AnalysisConfig())
+        return f"compared {len(record.included)} sessions: {', '.join(record.outputs)}"
 
     return handle

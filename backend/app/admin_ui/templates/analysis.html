@@ -39,6 +39,33 @@
   <button type="submit"{% if not studies or not videos %} disabled{% endif %}>Start analysis</button>
 </form>
 
+<h2>Compare Pipeline A and B</h2>
+<p class="muted">Puts the validation accuracy, precision and valid gaze of the two pipelines side by side for every session of a study that has Pipeline B (run it first from the session page or the study page; a stale Pipeline B is skipped) and tests the difference with a paired Wilcoxon test. It does not depend on A's inclusion decision.</p>
+<form method="post" action="/admin/comparisons">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Study
+    <select name="study_id" required>
+      {% for s in studies %}<option value="{{ s.id }}">{{ s.name }} ({{ s.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit"{% if not studies %} disabled{% endif %}>Compare the pipelines</button>
+</form>
+<table>
+  <thead><tr><th>Comparison</th><th>Study</th><th>Status</th><th class="num">Sessions</th><th class="num">Left out</th></tr></thead>
+  <tbody>
+  {% for c in comparisons %}
+    <tr>
+      <td>{% if c.has_record %}<a href="/admin/comparisons/{{ c.study_id }}/{{ c.run_id }}"><code>{{ c.run_id }}</code></a>{% else %}<code>{{ c.run_id }}</code>{% endif %}</td>
+      <td>{{ study_names.get(c.study_id, c.study_id) }}</td>
+      <td>{% if c.status == "done" %}<span class="ok">done</span>{% elif c.status == "failed" %}<span class="error" title="{{ c.error }}">failed: {{ (c.error or "")[:80] }}</span>{% else %}{{ c.status }}{% endif %}</td>
+      <td class="num">{{ c.compared }}</td><td class="num">{{ c.left_out }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No comparisons yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
 <h2>Runs</h2>
 <table>
   <thead>

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Pipeline comparison{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block body %}
+<p><a href="/admin/analysis">Analysis</a></p>
+<h1>Pipeline comparison <code>{{ record.run_id }}</code></h1>
+<table>
+  <tr><th>Study</th><td>{% if study %}<a href="/admin/studies/{{ study.id }}">{{ study.name }}</a> ({{ study.code }}){% else %}{{ record.study_id }}{% endif %}</td></tr>
+  <tr><th>Status</th><td>{% if record.status == "done" %}<span class="ok">done</span>{% elif record.status == "failed" %}<span class="error">failed</span>{% else %}{{ record.status }}{% endif %}</td></tr>
+  <tr><th>Started</th><td>{{ record.started_at }}</td></tr>
+  <tr><th>Finished</th><td>{{ record.finished_at or "–" }}</td></tr>
+  <tr><th>Code version</th><td>{% if record.git_hash %}<code>{{ record.git_hash }}</code>{% else %}<span class="warning">not recorded (the image was built without GIT_SHA)</span>{% endif %}</td></tr>
+  <tr><th>Minimum pairs for a p-value</th><td>{{ record.parameters.compare_min_pairs }}</td></tr>
+</table>
+{% if record.error %}<p class="error" role="alert">Failed: {{ record.error }}</p>{% endif %}
+<p><a href="{{ base }}/download.zip">Download everything (ZIP)</a>
+  {% for name in record.outputs %} · <a href="{{ base }}/files/{{ name }}">{{ name }}</a>{% endfor %}
+  · <a href="{{ base }}/files/run.json">run.json</a></p>
+
+{% if statistics %}
+<h2>Statistics</h2>
+<p class="muted">Differences are B minus A; lower is better except for the valid fraction. A paired Wilcoxon signed-rank test (two-sided) per metric, no correction for several metrics. An empty p means fewer than {{ record.parameters.compare_min_pairs }} pairs, or no difference at all.</p>
+<table>
+  <thead><tr>{% for h in statistics[0].keys() %}<th{% if not loop.first %} class="num"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in statistics %}<tr>{% for v in row.values() %}<td{% if not loop.first %} class="num"{% endif %}>{{ v }}</td>{% endfor %}</tr>{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if has_plot %}<img class="plot" src="{{ base }}/files/boxplots.png" alt="Box plots of the metrics for pipeline A and B">{% endif %}
+
+<h2>Sessions compared</h2>
+{% if sessions %}
+<table>
+  <thead><tr>{% for h in sessions[0].keys() if h != "session_id" %}<th{% if loop.index > 1 %} class="num"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in sessions %}<tr>{% for k, v in row.items() if k != "session_id" %}<td{% if loop.index > 1 %} class="num"{% endif %}>{% if k == "participant_code" %}<a href="/admin/sessions/{{ row.session_id }}">{{ v }}</a>{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No session could be compared.</p>
+{% endif %}
+{% if record.excluded %}
+<h3>Left out</h3>
+<table>
+  <thead><tr><th>Participant</th><th>Session</th><th>Why</th></tr></thead>
+  <tbody>
+  {% for e in record.excluded %}
+    <tr><td>{{ e.participant_code }}</td><td><a href="/admin/sessions/{{ e.session_id }}"><code>{{ e.session_id[:8] }}</code></a></td><td>{{ e.reasons | join(", ") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import typer
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.analysis_runs import OPEN_JOBS, analysis_jobs, new_run_id
+from app.analysis_runs import OPEN_JOBS, analysis_jobs, compare_jobs, new_run_id
 from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
@@ -22,7 +22,9 @@ from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
-from app.storage import analysis_run_dir, derived_dir, events_path
+from app.storage import analysis_run_dir, compare_run_dir, derived_dir, events_path
+from worker.analysis.compare import run_compare
+from worker.analysis.config import AnalysisConfig
 from worker.handlers import make_analyze_video, make_process_pipeline_b, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
@@ -322,6 +324,40 @@ def analyze_command(
     typer.echo(f"Wrote {run_dir}:")
     for name in record["outputs"]:
         typer.echo(f"  {name}")
+
+
+@app.command("compare")
+def compare_command(
+    study_id: int = typer.Argument(..., help="The study."),
+) -> None:
+    """Compare Pipeline A and B on the sessions of a study here and now (PLAN §9.5).
+
+    Writes `analysis/{study}/compare/{run}/`: a CSV per session, the statistics, a Markdown report
+    and box plots. Sessions without a fresh Pipeline B are listed as left out."""
+    config = settings()
+    with open_session() as db:
+        busy = [j for j in compare_jobs(db, study_id) if j.status in OPEN_JOBS]
+    if busy:
+        typer.echo("error: a comparison of this study is already queued or running", err=True)
+        raise typer.Exit(1)
+    run_id = new_run_id()
+    try:
+        with open_session() as db:
+            record = run_compare(db, config.data_root, study_id, run_id, AnalysisConfig())
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        f"Comparison {run_id}: {len(record.included)} session(s), {len(record.excluded)} left out"
+    )
+    for row in record.results["statistics"]:
+        p = "n/a" if row["p_value"] is None else f"{row['p_value']:.3g}"
+        typer.echo(
+            f"  {row['metric']:<24} n={row['n']:<3} A {row['median_a']} B {row['median_b']} p={p}"
+        )
+    for left in record.excluded:
+        typer.echo(f"  left out {left['participant_code']}: {', '.join(left['reasons'])}")
+    typer.echo(f"Wrote {compare_run_dir(config.data_root, study_id, run_id)}")
 
 
 def _default_dot_path() -> Path:

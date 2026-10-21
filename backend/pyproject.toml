@@ -57,7 +57,7 @@ files = ["app", "worker", "tests", "alembic", "cli.py", "../shared"]
 
 # These ship no type information; the few calls into them are wrapped in typed functions.
 [[tool.mypy.overrides]]
-module = ["mediapipe.*", "onnxruntime.*", "pyarrow.*", "sklearn.*"]
+module = ["mediapipe.*", "onnxruntime.*", "pyarrow.*", "scipy.*", "sklearn.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -78,3 +78,25 @@ def queue_analysis(
         },
     )
     return job, run_id
+
+
+def compare_jobs(db: Db, study_id: int | None = None) -> list[Job]:
+    """The `compare_pipelines` jobs, newest first, optionally of one study."""
+    stmt = select(Job).where(Job.kind == JobKind.COMPARE_PIPELINES).order_by(Job.id.desc())
+    if study_id is not None:
+        stmt = stmt.where(Job.args["study_id"].as_integer() == study_id)
+    return list(db.scalars(stmt))
+
+
+def queue_comparison(db: Db, study_id: int) -> tuple[Job, str]:
+    """Queue `compare_pipelines` for a study. The caller commits. Returns the job and the run id.
+
+    Raises NotFoundError or ConflictError (a comparison of this study is already queued or
+    running)."""
+    if db.get(Study, study_id) is None:
+        raise NotFoundError(f"study {study_id} not found")
+    if any(j.status in OPEN_JOBS for j in compare_jobs(db, study_id)):
+        raise ConflictError("a comparison of this study is already queued or running")
+    run_id = new_run_id()
+    job = enqueue(db, JobKind.COMPARE_PIPELINES, {"study_id": study_id, "run_id": run_id})
+    return job, run_id

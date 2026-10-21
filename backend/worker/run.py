@@ -19,6 +19,7 @@ from app.models import Job, JobKind, WorkerHeartbeat
 from app.settings import Settings
 from worker.handlers import (
     make_analyze_video,
+    make_compare_pipelines,
     make_process_pipeline_b,
     make_process_session,
     make_render_debug,
@@ -36,6 +37,7 @@ def make_handlers(factory: sessionmaker[Session], settings: Settings) -> dict[Jo
         JobKind.RENDER_DEBUG: make_render_debug(factory, settings),
         JobKind.ANALYZE_VIDEO: make_analyze_video(factory, settings),
         JobKind.PROCESS_PIPELINE_B: make_process_pipeline_b(factory, settings),
+        JobKind.COMPARE_PIPELINES: make_compare_pipelines(factory, settings),
     }
 
 
