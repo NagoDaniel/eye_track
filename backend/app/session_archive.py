@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session as Db
 
 from app.models import Chunk, ChunkStream, SessionStatus, Study, StudyMode, now
 from app.models import Session as SessionRow
+from app.pipeline_b import summary_of
 from app.schemas import StudyConfig
 from app.storage import atomic_writer, meta_path, session_dir
 
@@ -225,6 +226,9 @@ def _add_rows(
         )
     report_file = directory / "derived" / "quality.json"
     report = json.loads(report_file.read_text("utf-8")) if report_file.is_file() else None
+    b_line = summary_of(directory / "derived")  # Pipeline B's line in the record, from its files
+    if report is not None and b_line is not None:
+        report = {**report, "pipeline_b": b_line}
     has_webcam = (directory / "raw" / "webcam.webm").is_file() or any(
         r["stream"] == "webcam" for r in kept
     )

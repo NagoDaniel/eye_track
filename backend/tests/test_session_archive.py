@@ -304,3 +304,26 @@ def test_a_failure_while_adding_the_rows_puts_the_old_session_back(
         import_session(db, here.root, tmp_path / "s.zip", force=True)
     assert files_of(session_directory(here)) == before
     assert [p.name for p in session_directory(here).parent.iterdir()] == [str(here.session_id)]
+
+
+def test_a_session_with_pipeline_b_comes_back_with_b_s_line_in_its_record(
+    b_session: FixtureSession, migrated_engine: Engine, tmp_path: Path
+) -> None:
+    """Pipeline B can be run on another machine and the session sent back (an export carries all of
+    `derived/`, B's files included): the import puts B's line into the record again."""
+    from app.pipeline_b import summary_of
+
+    s = replace(b_session)
+    seed_session(migrated_engine, s, status=SessionStatus.PROCESSED)
+    derived = session_directory(s) / "derived"
+    expected = summary_of(derived)
+    assert expected is not None and expected["model"] == "l2cs_mobileone_s0"
+    export(migrated_engine, s, tmp_path / "b.zip")
+    forget(migrated_engine, s)
+    with Db(migrated_engine) as db:
+        sid = import_session(db, tmp_path / "other", tmp_path / "b.zip")
+        db.commit()
+    with Db(migrated_engine) as db:
+        row = db.get_one(SessionRow, sid)
+        assert row.quality is not None and row.quality["pipeline_b"] == expected
+        assert row.quality["inclusion"]  # A's report is there too
