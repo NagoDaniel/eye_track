@@ -100,6 +100,21 @@ Six sessions by Nágó Dániel in study 7 (video 2, the moving dot), another web
 
 **Not decided:** whether B is worth running (A is at least as good here; B costs about twice the recording length in CPU time; whether the two together would be better was not tested), and tuning of ridge alpha (the chosen alpha is 10 in four of the six A fits; the grid goes to 1000) and of the smoothing for the lag. Both are tuning for the pilot (DECISIONS 2026-10-18, tuning deferred).
 
+## Review of Milestone 5 (plan-reviewer, 2026-10-22): proposed fixes
+Verdict: **READY AFTER FIXES**. No blocker. The reviewer's own run: `make lint` clean, 928 backend tests passed (1 skipped: the ResNet-50 test needs `L2CS_RESNET50`), 474 frontend tests passed; `make e2e` not run. **Proposed, not started: approve, change or drop by number.**
+
+| # | Severity | Task | Test |
+|---|---|---|---|
+| R1 | major | `import_study` uses `session_id` from `study.json` unvalidated in paths (`app/study_archive.py:186-200`): `sessions//tmp/x.zip` passes `_safe_name` and writes outside the scratch directory. Parse it with `uuid.UUID` and build every path from `str(uuid)`; also refuse a nested session whose `meta.json` names another study (minor 4) | archives with `sessions//abs/path.zip` and a non-UUID id are refused and write nothing; a mismatched study is refused; no leftover directories |
+| R2 | major | Cancelling an A re-run after the B stale mark leaves `quality["pipeline_b"]["stale"]` false in the DB while the file says stale, so analyses and comparisons accept stale B (`worker/handlers.py:90-92, 120-137`). Update the line from `stale_info()` in the cancel branch, and read staleness from the file in `analysis/select.py` and `analysis/compare.py` | cancel an A run after `mark_stale`: the DB line says stale, selection and comparison leave the session out |
+| R3 | major (record) | Record in DECISIONS: the comparison was made on six new sessions of study 7 instead of the H2 sessions; the GPU profile T13 stays dropped after the measurement (0.07 s per face on CPU); and the human's look at the B plots and the replay (not yet evidenced: **you tell me** whether you looked) | none (docs) |
+| R4 | minor | Cancel race: `request_cancel` reads the job without a lock, so a job claimed in between can be marked failed (`app/jobs.py:64-75`). Conditional `UPDATE ... WHERE status = 'queued'` or `with_for_update` | a test that claims between read and update |
+| R5 | minor | A failed or cancelled B run after `features_b` was rewritten leaves `gaze_b`, `quality_b` and the DB line from the old model, and selection accepts them (`runner_b.py`). Mark B stale (or inconsistent) when a B run stops after `features_b` | a failing `calibration_b` after a changed model leaves B stale |
+| R6 | minor | `docs/DATA_FORMATS.md`: describe job cancellation (`jobs.cancel_requested`, the log text, the session status restore) | none (docs) |
+| R7 | minor | Compare exclusions (debug sessions, failed A or B calibration) are not in DECISIONS item 9; add them | none (docs) |
+
+Not proposed (recorded as open, M6 or later): cancel tests for the heatmap loops, the replay loop, `run_pipeline`'s stage check and the compare job, which has no cancel check (reviewer minor 3); the export ZIP temp file on an aborted download (minor 5, same as the old R4 of Milestone 3); duplicated constants `INPUT_SIZE`, batch size 8 and the default model name (minor 7); the open B findings (replay draws a stale B, `--only features_b` does not clear the stale mark, fixed batch of 1, `session_flags`) (minor 8); small hard-coded list caps and the poll interval (minor 10).
+
 ## Review of Milestone 3 (plan-reviewer, 2026-10-18): fixes
 Approved by Nágó Dániel on 2026-10-18 and **done**: R1, R2, R3 (`docs/evidence/m3-h1/`), R4, R6, R8. **Dropped by the human:** R5, R7, R9 and the minor items below (replay loaded on every page view, participant-video access not logged, M6 retention follow-up).
 Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backend, 474 frontend) and `make e2e` all passed in the reviewer's own run. The full report is in the conversation of 2026-10-18; these are the tasks it asks for. Approve, change or drop them by number.
