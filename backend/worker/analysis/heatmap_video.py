@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from app.storage import atomic_writer
 from worker.analysis.config import AnalysisConfig
 from worker.analysis.density import StimSamples, group_density
+from worker.cancel import check_cancelled
 from worker.pipeline.replay import FrameReader, encode
 
 log = logging.getLogger("worker")
@@ -54,6 +55,8 @@ def frame_densities(
     """The group density of every stimulus frame, shape `(frames, grid_height, grid_width)`."""
     out = np.zeros((frames, config.grid_height, config.grid_width), dtype=np.float32)
     for k in range(frames):
+        if k % 50 == 0:
+            check_cancelled()
         s = k / fps
         window = [p.window(s - config.heatmap_window_s, s + config.heatmap_window_s)
                   for p in participants]  # fmt: skip
@@ -107,6 +110,8 @@ def _frames(
     last one that decodes, and `written[0]` says how many there were."""
     width, height = size
     for k in range(len(densities)):
+        if k % 50 == 0:
+            check_cancelled()
         picture = reader.at(k)
         if picture is None or reader.last_index < k:
             return

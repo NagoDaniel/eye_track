@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-22 — Milestone 5 addition: jobs on the study page and cancelling them
+- Plan section: §4, §6 (admin: jobs), §12.2
+- Decision: requested by the human on 2026-10-22 ("the admin cannot see the running workers"). (1) The study page lists the study's jobs (open first, then the last finished ones, through the session or the study in the job's arguments) and the analyses and comparisons made with it; the studies list shows which study is busy. (2) A job can be cancelled from there: a queued job is finished at once (log "cancelled by the admin"); a running one gets `jobs.cancel_requested` (new column, migration `0004`) and the worker looks at it between steps (`worker/cancel.py`; the stage runners, the gaze-network loop, the landmark, heatmap and replay loops) and stops with the same log; a step that does not look finishes first. A job that was running when the worker died and was cancelled is not requeued. A stopped processing job puts the session back to the status it had; a stopped analysis marks its run `failed`. The worker process is never killed from the admin (the api cannot reach it).
+- Reason: Pipeline B jobs run for hours and the admin had no way to see or stop them (it needed SQL and a container restart).
+- Approved by: Nágó Dániel (requested 2026-10-22)
+
 ## 2026-10-20 — Milestone 5 scope and open choices
 - Plan section: §4, §8.5, §9.5, §11.2, §12.2, §14
 - Decision:

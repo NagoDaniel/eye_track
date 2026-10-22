@@ -11,6 +11,7 @@ from sqlalchemy import Engine, text
 
 from app.api.admin import router as admin_router
 from app.api.admin_analysis import router as admin_analysis_router
+from app.api.admin_jobs import router as admin_jobs_router
 from app.api.admin_participants import router as admin_participants_router
 from app.api.admin_sessions import router as admin_sessions_router
 from app.api.admin_studies import router as admin_studies_router
@@ -94,6 +95,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.include_router(admin_sessions_router)
     app.include_router(admin_participants_router)
     app.include_router(admin_analysis_router)
+    app.include_router(admin_jobs_router)
     return app
 
 

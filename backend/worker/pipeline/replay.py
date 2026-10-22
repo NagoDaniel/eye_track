@@ -34,6 +34,7 @@ from app.events import parse_events, parse_records
 from app.pipeline_names import REPLAY_FILE
 from app.schemas import StimulusFrameRecord
 from app.storage import derived_dir, events_path, stimulus_frames_path, video_path, webcam_path
+from worker.cancel import check_cancelled
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, SUBSET_MESH_INDICES
 from worker.pipeline.fixations import runs
@@ -508,6 +509,8 @@ def film(
     picture = np.zeros((height, width, 3), dtype=np.uint8)
     trail: list[tuple[float, float]] = []
     for k in range(len(tl.times)):
+        if k % 30 == 0:
+            check_cancelled()
         reader = readers[tl.intervals[int(tl.which[k])][0]]
         if np.isfinite(tl.stim[k]):
             frame = reader.at(round(float(tl.stim[k]) * reader.fps))

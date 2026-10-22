@@ -23,6 +23,7 @@ from worker.analysis.compare import run_compare
 from worker.analysis.config import AnalysisConfig
 from worker.analysis.run import discard_unfinished_dir, discard_unfinished_run, start_run
 from worker.analysis.select import query_sessions, select_sessions
+from worker.cancel import JobCancelled
 from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ingest import ChunkRecord
@@ -86,6 +87,9 @@ def make_process_session(
         )
         try:
             stages = runner.run_pipeline(ctx, from_stage=from_stage, only=only)
+        except JobCancelled:  # the admin stopped it: the session is as it was before the job
+            _finish(factory, session_id, previous, None, [])
+            raise
         except BaseException:  # a stage that raised (StageFailed), or the worker being stopped
             _finish(factory, session_id, SessionStatus.FAILED, None, [])
             raise

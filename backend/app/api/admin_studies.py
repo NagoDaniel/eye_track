@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session as DbSession
 
-from app import studies
+from app import analysis_view, jobs_view, studies
 from app import videos as video_service
 from app.api.pages import Page, check_form_csrf, page_admin, render
 from app.auth import csrf_protected, current_admin, get_db
@@ -140,7 +140,11 @@ def _list_page(
     playlist: list[str] | None = None,
 ) -> Response:
     counts = studies.session_counts(db)
-    rows = [studies.study_out(s, counts.get(s.id, 0)) for s in studies.list_studies(db)]
+    open_jobs = jobs_view.open_counts(db)
+    rows = [
+        {**studies.study_out(s, counts.get(s.id, 0)), "jobs": open_jobs.get(s.id)}
+        for s in studies.list_studies(db)
+    ]
     form = form or {
         "name": "",
         "code": "",
@@ -173,6 +177,7 @@ def _detail_page(
     b_left: int | None = None,
 ) -> Response:
     study = _out(db, study_id)
+    data_root = request.app.state.settings.data_root
     form = form or {
         "name": study["name"],
         "code": study["code"],
@@ -194,6 +199,10 @@ def _detail_page(
         error=error,
         saved=saved,
         participant_link=link,
+        jobs=jobs_view.jobs_of_study(db, study_id),
+        runs=analysis_view.list_runs(db, data_root, study_id),
+        comparisons=analysis_view.list_comparisons(db, data_root, study_id),
+        video_names={v.id: v.title for v in video_service.list_videos(db)},
         # PLAN §12.1: `?debug=1` works for studies with `debug_allowed` (or an admin on the browser)
         debug_link=f"{link}?debug=1",
         videos=_video_rows(db, playlist),

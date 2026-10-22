@@ -23,6 +23,7 @@ from app.logging import bind_context
 from app.pipeline_b import A_STAGES_FEEDING_B, mark_stale
 from app.stage_status import STAGES_FILE, read_entries, status_of, write_entries
 from app.storage import atomic_write_bytes, derived_dir, webcam_path
+from worker.cancel import CANCELLED_LOG, JobCancelled, check_cancelled
 from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, compute_features
@@ -211,11 +212,21 @@ def run_pipeline(
     if feeding and marks_b_stale:  # Pipeline A is about to remake what Pipeline B reads
         mark_stale(ctx.derived, feeding[0])
     for name in selected:
+        check_cancelled(force=True)  # the admin may have asked the job to stop
         with bind_context(stage=name, session_id=str(ctx.session_id)):
             log.info("stage started")
             started = time.perf_counter()
             try:
                 summary = stages[name](ctx)
+            except JobCancelled:
+                entries[name] = {
+                    "status": "failed",
+                    "seconds": round(time.perf_counter() - started, 3),
+                    "summary": None,
+                    "error": CANCELLED_LOG,
+                }
+                write_entries(ctx.derived, entries, stages_file)
+                raise
             except Exception as exc:
                 log.exception("stage failed")
                 entries[name] = {

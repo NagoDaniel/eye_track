@@ -23,6 +23,7 @@ from worker.analysis.load import SessionGaze, load_session
 from worker.analysis.run import RunRecord
 from worker.analysis.select import Excluded, Selection
 from worker.analysis.synchrony import synchrony, write_synchrony
+from worker.cancel import JobCancelled, check_cancelled
 
 log = logging.getLogger("worker")
 
@@ -148,9 +149,12 @@ def analyze(
         ("synchrony", sync),
     ]
     for name, stage in stages:
+        check_cancelled(force=True)
         started = time.perf_counter()
         try:
             out = stage()
+        except JobCancelled:
+            raise
         except Exception as exc:
             raise AnalysisError(f"{name}: {exc}") from exc
         record.outputs.extend(out["files"])

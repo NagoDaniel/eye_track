@@ -139,4 +139,13 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   expect(compared.left_out).toBe(1);
   const comparisonPage = await (await admin.request.get(`/admin/comparisons/${studyId}/${compareId}`)).text();
   expect(comparisonPage).toContain("pipeline_b_not_run");
+
+  // The study page refers to the analysis and the comparison made with it, and lists the jobs the
+  // worker did for it (finished ones have no cancel button).
+  const studyPage = await (await admin.request.get(`/admin/studies/${studyId}`)).text();
+  expect(studyPage).toContain(`/admin/analysis/${studyId}/${videoId}/${run.run_id}`);
+  expect(studyPage).toContain(`/admin/comparisons/${studyId}/${compareId}`);
+  const jobs = studyPage.split('<h2 id="jobs">')[1]!.split("<h2>Analyses of this study</h2>")[0]!;
+  expect(jobs).toContain("Analysis");
+  expect(jobs).not.toContain("Cancel</button>");
 });

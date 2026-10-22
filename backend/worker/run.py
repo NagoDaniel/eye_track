@@ -17,6 +17,7 @@ from app.jobs import claim_next, mark_done, mark_failed, recover_stale_running
 from app.logging import bind_context, configure_logging
 from app.models import Job, JobKind, WorkerHeartbeat
 from app.settings import Settings
+from worker.cancel import CANCELLED_LOG, JobCancelled, job_context
 from worker.handlers import (
     make_analyze_video,
     make_compare_pipelines,
@@ -85,7 +86,13 @@ def process_one(factory: sessionmaker[Session], handlers: Mapping[JobKind, Handl
             try:
                 if handler is None:
                     raise LookupError(f"no handler registered for job kind '{job.kind.value}'")
-                result = handler(job)
+                with job_context(factory, job.id):
+                    result = handler(job)
+            except JobCancelled:
+                db.rollback()
+                mark_failed(db, job, CANCELLED_LOG)
+                db.commit()
+                log.warning("job cancelled by the admin")
             except Exception:
                 db.rollback()
                 mark_failed(db, job, traceback.format_exc())

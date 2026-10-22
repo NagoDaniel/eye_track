@@ -30,6 +30,7 @@ import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
 from app.storage import atomic_writer
+from worker.cancel import check_cancelled
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.spec import SPEC_B
 
@@ -143,6 +144,7 @@ def compute_features_b(
         nonlocal network_seconds
         if not pending:
             return
+        check_cancelled()
         started = time.perf_counter()
         p, y = model.predict([crop for _, crop in pending], config.b_batch_size)
         network_seconds += time.perf_counter() - started

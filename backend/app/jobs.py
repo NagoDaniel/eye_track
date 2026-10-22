@@ -57,6 +57,23 @@ def mark_failed(db: Session, job: Job, log: str) -> None:
     _finish(db, job, JobStatus.FAILED, log)
 
 
+CANCELLED_LOG = "cancelled by the admin"
+
+
+def request_cancel(db: Session, job: Job) -> str:
+    """Stop a job: a queued one is finished at once, a running one is asked to stop (the worker
+    looks at the flag between its steps) and a finished one cannot be. Returns `cancelled` or
+    `cancelling`; the caller commits. Raises ValueError for a finished job."""
+    if job.status is JobStatus.QUEUED:
+        mark_failed(db, job, CANCELLED_LOG)
+        return "cancelled"
+    if job.status is JobStatus.RUNNING:
+        job.cancel_requested = True
+        db.flush()
+        return "cancelling"
+    raise ValueError(f"job {job.id} is {job.status.value}: nothing to cancel")
+
+
 @dataclass(frozen=True)
 class Recovery:
     requeued: list[int]
@@ -88,7 +105,12 @@ def recover_stale_running(db: Session, max_attempts: int) -> Recovery:
     for job in stale:
         session = _session_of(db, job)
         in_progress = session is not None and session.status is SessionStatus.PROCESSING
-        if job.attempts < max_attempts:
+        if job.cancel_requested:  # the admin wanted it stopped: do not run it again
+            mark_failed(db, job, CANCELLED_LOG)
+            if session is not None and in_progress:
+                session.status = SessionStatus.FAILED
+            failed.append(job.id)
+        elif job.attempts < max_attempts:
             job.status = JobStatus.QUEUED
             job.started_at = None
             job.log = f"worker died during attempt {job.attempts}; requeued"
