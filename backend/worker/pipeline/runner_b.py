@@ -15,8 +15,12 @@ from app.pipeline_b import (
     NEEDED_FROM_A,
     QUALITY_B_FILE,
     STAGES_B_FILE,
+    STOPPED_RUN,
+    UNUSED_BY_ANALYSES,
     clear_stale,
+    mark_stale,
     stale_info,
+    stale_reason,
     weights_refusal,
 )
 from app.storage import webcam_path
@@ -105,14 +109,35 @@ def run_pipeline_b(
     stale = stale_info(ctx.derived)
     if stale is not None and selected[0] != "features_b":
         raise PipelineBError(
-            f"Pipeline B is stale (Pipeline A ran '{stale['by_stage']}' after it); "
-            "run it again from features_b"
+            f"Pipeline B is stale ({stale_reason(stale)}); run it again from features_b"
         )
-    result = run_pipeline(
-        ctx, from_stage, only, stages,
-        stages_file=STAGES_B_FILE, quality_file=QUALITY_B_FILE,
-        quality_stages=("quality_b", "plots_b"), marks_b_stale=False,
-    )  # fmt: skip
+    done: list[str] = []
+
+    def remembering(name: str, stage: StageFn) -> StageFn:
+        def run(c: Context) -> dict[str, Any]:
+            summary = stage(c)
+            done.append(name)
+            return summary
+
+        return run
+
+    try:
+        result = run_pipeline(
+            ctx, from_stage, only, {n: remembering(n, f) for n, f in stages.items()},
+            stages_file=STAGES_B_FILE, quality_file=QUALITY_B_FILE,
+            quality_stages=("quality_b", "plots_b"), marks_b_stale=False,
+        )  # fmt: skip
+    except BaseException:
+        # Stages that ran made new files, those after the stop still hold the old ones: the set no
+        # longer fits together (the plots do not feed the analyses, so they do not count).
+        unfinished = selected[len(done) :]
+        if (
+            done
+            and any(name not in UNUSED_BY_ANALYSES for name in unfinished)
+            and stale_info(ctx.derived) is None  # an older mark by A keeps its own reason
+        ):
+            mark_stale(ctx.derived, STOPPED_RUN)
+        raise
     if selected == list(B_STAGE_NAMES):  # all of B was made again from fresh inputs
         clear_stale(ctx.derived)
     return result

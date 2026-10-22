@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-22 — Milestone 6 scope: no retention task, no withdrawal
+- Plan section: §14 (milestone 6), §6 (admin: "withdraw participant"), §7 and §10 (`retention.raw_video_days_after_processing`), §12.3, §14 backend API tests ("withdrawal deletes everything")
+- Decision: Milestone 6 does **not** include (1) the retention task that deletes raw video when it is due and (2) withdrawal (deleting all data of a participant code, raw and derived, including the analysis and Pipeline B outputs that carry codes). The rest of Milestone 6 stays: browser-support messages, performance tuning for low-end laptops (playback must not drop frames), `RUNNING_A_STUDY.md`, and the carry-overs in PROGRESS. The study setting `retention.raw_video_days_after_processing` stays in the config schema and does nothing (`null`, "kept until manually deleted"); the `withdrawn` session status stays in the model, and the study export still leaves withdrawn sessions out. Nothing was built for them, so there is no "delete raw video" or "withdraw participant" button or command either (PLAN §6, §12.3 mention both). A participant's data can only be removed by hand (database rows and files) until this is decided again.
+- Reason: the human does not need them for the pilot.
+- Approved by: Nágó Dániel (2026-10-22)
+
 ## 2026-10-22 — Milestone 5 review: H3 on other sessions, no GPU profile, the plots and the replay
 - Plan section: §8.5, §9.5, §11, §14
 - Decision: (1) The comparison of the pipelines in the done-when of "Milestone 5 scope" (2026-10-20, item 1) was made on six new sessions of study 7 (the moving-dot video, another webcam, three with glasses, three without) instead of the four H2 sessions of study 6: they were recorded for this check and Pipeline B was run on the desktop and brought back with `export-study` / `import-study`. Run `20261022T170800Z-09de36`, numbers in PROGRESS "H3 result". (2) The GPU compose profile (T13, `ONNX_PROVIDER=cuda`) is **not built**: the measured speed of `l2cs_resnet50` on the desktop CPU is 0.07 s per face, 72 to 147 s per session, about twice the recording length. It can be revisited if studies grow. (3) Item 1 asks that the human has looked at the B plots (`calibration_b.png`, `validation_b.png`, `gaze_b.png`) and the replay with B's squares. The human looked at them on 2026-10-22 and found them fine; A looks better than B (see PROGRESS "H3 result"). One small defect: the title of `calibration_b.png` is cut off on the left.

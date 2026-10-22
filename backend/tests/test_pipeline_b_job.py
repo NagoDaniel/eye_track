@@ -20,6 +20,7 @@ from app.pipeline_b import (
     QUALITY_B_FILE,
     STAGES_B_FILE,
     STALE_FILE,
+    STOPPED_RUN,
     queue_pipeline_b,
 )
 from app.service_errors import ConflictError, InvalidError, NotFoundError
@@ -29,6 +30,8 @@ from tests.dbutil import make_settings
 from tests.session_db import seed_session
 from tests.session_fixture import FixtureSession
 from worker.handlers import make_process_pipeline_b, make_process_session
+from worker.pipeline.runner import Context
+from worker.pipeline.runner_b import STAGES_B
 from worker.run import process_one
 
 MODEL = "l2cs_mobileone_s0"
@@ -179,6 +182,68 @@ def test_when_a_remakes_b_s_inputs_b_is_stale_until_it_runs_again(
     fresh = run_b(migrated_engine, a_only, settings, from_stage="features_b")
     assert fresh.status is JobStatus.DONE, fresh.log
     assert not (derived / STALE_FILE).exists() and b_line()["stale"] is False
+
+
+def test_a_b_run_that_stops_part_way_leaves_b_stale_unless_only_the_plots_were_left(
+    migrated_engine: Engine,
+    a_only: FixtureSession,
+    model_b_root: Path,
+    face_model: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = settings_for(a_only, model_b_root, face_model)
+    assert run_b(migrated_engine, a_only, settings).status is JobStatus.DONE
+    derived = derived_dir(a_only.root, a_only.study_id, a_only.session_id)
+
+    def b_line() -> dict[str, object]:
+        with Db(migrated_engine) as db:
+            return dict((db.get_one(SessionRow, a_only.session_id).quality or {})["pipeline_b"])
+
+    def breaks(name: str) -> None:
+        def boom(ctx: Context) -> dict[str, object]:
+            raise RuntimeError(f"{name} broke")
+
+        monkeypatch.setitem(STAGES_B, name, boom)
+
+    real = dict(STAGES_B)
+    breaks("plots_b")  # only the plots are left: B's data files are all new
+    assert run_b(migrated_engine, a_only, settings, from_stage="features_b").status is (
+        JobStatus.FAILED
+    )
+    assert not (derived / STALE_FILE).exists() and b_line()["stale"] is False
+
+    monkeypatch.setitem(STAGES_B, "plots_b", real["plots_b"])
+    breaks("calibration_b")  # features_b is new, calibration, gaze and quality are old
+    failed = run_b(migrated_engine, a_only, settings, from_stage="features_b")
+    assert failed.status is JobStatus.FAILED and "calibration_b broke" in failed.log
+    assert json.loads((derived / STALE_FILE).read_text())["by_stage"] == STOPPED_RUN
+    assert b_line()["stale"] is True  # the record says it too, so analyses skip the session
+
+    monkeypatch.setitem(STAGES_B, "calibration_b", real["calibration_b"])
+    refused = run_b(migrated_engine, a_only, settings, from_stage="calibration_b")
+    assert refused.status is JobStatus.FAILED and "stopped before" in refused.log
+    fresh = run_b(migrated_engine, a_only, settings)
+    assert fresh.status is JobStatus.DONE, fresh.log
+    assert not (derived / STALE_FILE).exists() and b_line()["stale"] is False
+
+
+def test_a_stop_that_comes_before_any_stage_made_a_new_file_marks_nothing(
+    migrated_engine: Engine,
+    a_only: FixtureSession,
+    model_b_root: Path,
+    face_model: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = settings_for(a_only, model_b_root, face_model)
+    assert run_b(migrated_engine, a_only, settings).status is JobStatus.DONE
+
+    def boom(ctx: Context) -> dict[str, object]:
+        raise RuntimeError("features_b broke")
+
+    monkeypatch.setitem(STAGES_B, "features_b", boom)
+    assert run_b(migrated_engine, a_only, settings).status is JobStatus.FAILED
+    derived = derived_dir(a_only.root, a_only.study_id, a_only.session_id)
+    assert not (derived / STALE_FILE).exists()
 
 
 def test_a_that_never_ran_b_is_not_marked(

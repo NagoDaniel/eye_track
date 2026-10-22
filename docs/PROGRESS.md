@@ -14,7 +14,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 3 Pipeline A | done (accepted 2026-10-18; H1 passed, review fixes done) | m3-pipeline-a | `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
 | 4 Analysis | done (accepted 2026-10-20; H2 passed, review fixes done) | m4-analysis | `make lint`, `make test` (789 backend, 474 frontend tests) and `make e2e` pass; heatmaps, AOI metrics, synchrony, AOI editor, analysis runs in admin, ZIP export; drift-corrected gaze is the default (DECISIONS 2026-10-20) |
 | 5 Pipeline B and comparison | in progress | m5-pipeline-b | task list approved 2026-10-20 |
-| 6 Hardening for pilot | not started | | |
+| 6 Hardening for pilot | not started | | scope without the retention task and withdrawal (DECISIONS 2026-10-22) |
 
 ## Approved task list (Milestone 5)
 Approved by Nágó Dániel on 2026-10-20 (choices in DECISIONS 2026-10-20, "Milestone 5 scope and open choices"). Status: `todo` / `doing` / `done`. Each task updates `docs/DATA_FORMATS.md` for what it writes and ends with its tests shown and a commit `M5: <what> (PLAN §x.y)`. The Milestone 4 task list is in git history (`4f411ea`).
@@ -47,7 +47,7 @@ Approved by Nágó Dániel on 2026-10-20 (choices in DECISIONS 2026-10-20, "Mile
 - From the M2 review, not fixed (major 2, decide before real participants; Milestone 6 at the latest): `/complete` inflates and validates all chunks of a stream in the API process; each chunk is capped (`MAX_EVENTS_CHUNK_INFLATED_MB`) but there is no total per stream, so someone with a study code could ask for GBs of memory and a long validation within the 2 GiB per-session cap. Proposed fix: a total inflated cap per stream, or validating in the M3 ingest worker. Decide before real participants (Milestone 6 at the latest).
 - `npm audit` reports 3 findings (2 critical) in `tinypool`, a vitest 3 dependency (dev only, never shipped). Fix is a breaking upgrade to vitest 4; not done. Decide whether to upgrade (suggest doing it in a small separate task).
 - Alembic autogenerate quirk, cause NOT verified. With `Enum(native_enum=False, create_constraint=True)` (`str_enum` in `backend/app/models.py`), autogenerate (alembic 1.20, SQLAlchemy 2.1.4) wrote each enum CHECK twice as explicit `sa.CheckConstraint(...)` lines on top of the `sa.Enum(..., create_constraint=True)` column, which already creates it. `create_table` then failed with `check constraint "job_kind" already exists`. Workaround used in migration `0001`: delete all explicit `sa.CheckConstraint` lines (the Enum column creates them; `test_migrations_match_models` and the CHECK test confirm the result). Table metadata holds each constraint once, so the duplication happens at render time. Not yet isolated in a minimal repro; do that if it recurs in a later migration (or switch to `create_constraint=False` plus an explicit `CheckConstraint` in `__table_args__`).
-- Participant codes (initials + birth month + day, human's choice) are derived from personal data and can collide; a collision matters at withdrawal (M6), which deletes all data for a code. Revisit before real data collection.
+- Participant codes (initials + birth month + day, human's choice) are derived from personal data and can collide; a collision would only matter for withdrawal, which is out of scope (DECISIONS 2026-10-22), and for choosing the latest session of a participant in analyses. Revisit before real data collection.
 
 ## H1 result (real webcam, moving-dot video, 2026-10-18)
 Two debug sessions by Nágó Dániel, screen 1710 px wide, `cli.py moving-dot-report`: both **PASS** (median error at most 0.15 of the diagonal, at least 80 % valid).
@@ -101,7 +101,7 @@ Six sessions by Nágó Dániel in study 7 (video 2, the moving dot), another web
 **Not decided:** whether B is worth running (A is at least as good here; B costs about twice the recording length in CPU time; whether the two together would be better was not tested), and tuning of ridge alpha (the chosen alpha is 10 in four of the six A fits; the grid goes to 1000) and of the smoothing for the lag. Both are tuning for the pilot (DECISIONS 2026-10-18, tuning deferred).
 
 ## Review of Milestone 5 (plan-reviewer, 2026-10-22): proposed fixes
-Verdict: **READY AFTER FIXES**. No blocker. The reviewer's own run: `make lint` clean, 928 backend tests passed (1 skipped: the ResNet-50 test needs `L2CS_RESNET50`), 474 frontend tests passed; `make e2e` not run. **Approved by Nágó Dániel on 2026-10-22: R1 to R4 (done); R5 to R7 were not approved (open).**
+Verdict: **READY AFTER FIXES**. No blocker. The reviewer's own run: `make lint` clean, 928 backend tests passed (1 skipped: the ResNet-50 test needs `L2CS_RESNET50`), 474 frontend tests passed; `make e2e` not run. **Approved by Nágó Dániel on 2026-10-22: R1 to R5 (done); R6 and R7 were not approved (open).**
 
 | # | Severity | Task | Test |
 |---|---|---|---|
@@ -109,7 +109,7 @@ Verdict: **READY AFTER FIXES**. No blocker. The reviewer's own run: `make lint` 
 | R2 (**done**) | major | Cancelling an A re-run after the B stale mark leaves `quality["pipeline_b"]["stale"]` false in the DB while the file says stale, so analyses and comparisons accept stale B (`worker/handlers.py:90-92, 120-137`). Update the line from `stale_info()` in the cancel branch, and read staleness from the file in `analysis/select.py` and `analysis/compare.py` | cancel an A run after `mark_stale`: the DB line says stale, selection and comparison leave the session out |
 | R3 (**done**) | major (record) | Record in DECISIONS: the comparison was made on six new sessions of study 7 instead of the H2 sessions; the GPU profile T13 stays dropped after the measurement (0.07 s per face on CPU); and the human's look at the B plots and the replay (not yet evidenced: **you tell me** whether you looked) | none (docs) |
 | R4 (**done**) | minor | Cancel race: `request_cancel` reads the job without a lock, so a job claimed in between can be marked failed (`app/jobs.py:64-75`). Conditional `UPDATE ... WHERE status = 'queued'` or `with_for_update` | a test that claims between read and update |
-| R5 | minor | A failed or cancelled B run after `features_b` was rewritten leaves `gaze_b`, `quality_b` and the DB line from the old model, and selection accepts them (`runner_b.py`). Mark B stale (or inconsistent) when a B run stops after `features_b` | a failing `calibration_b` after a changed model leaves B stale |
+| R5 (**done**) | minor | A failed or cancelled B run after `features_b` was rewritten leaves `gaze_b`, `quality_b` and the DB line from the old model, and selection accepts them (`runner_b.py`). Mark B stale (or inconsistent) when a B run stops after `features_b` | a failing `calibration_b` after a changed model leaves B stale |
 | R6 | minor | `docs/DATA_FORMATS.md`: describe job cancellation (`jobs.cancel_requested`, the log text, the session status restore) | none (docs) |
 | R7 | minor | Compare exclusions (debug sessions, failed A or B calibration) are not in DECISIONS item 9; add them | none (docs) |
 

@@ -44,6 +44,18 @@ B_STAGE_DESCRIPTIONS = {
 }
 # The stages of Pipeline A whose output B reads: running one makes B stale.
 A_STAGES_FEEDING_B = ("ingest", "landmarks", "features", "sync")
+# What the stale mark says when a B run itself stopped part-way, instead of an A stage.
+STOPPED_RUN = "pipeline_b"
+# B's stages whose output no analysis or comparison reads: a stop in them leaves B usable.
+UNUSED_BY_ANALYSES = ("plots_b",)
+
+
+def stale_reason(stale: dict[str, Any]) -> str:
+    """The stale mark in words (for the admin page and the refusal of a later-stage run)."""
+    if stale["by_stage"] == STOPPED_RUN:
+        return "a Pipeline B run stopped before it had made all its files"
+    return f"Pipeline A ran '{stale['by_stage']}' after it"
+
 
 OPEN_JOBS = (JobStatus.QUEUED, JobStatus.RUNNING)
 # A session's B files only make sense once A has made what B reads.

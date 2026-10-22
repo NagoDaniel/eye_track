@@ -185,9 +185,11 @@ def pipeline_b_view(
     stages (`stages_b.json`) and why it cannot be run now, if it cannot."""
     derived = derived_dir(data_root, session.study_id, session.id)
     entries = read_entries(derived, None, pipeline_b.STAGES_B_FILE)
+    stale = pipeline_b.stale_info(derived)
     return {
         "summary": pipeline_b.summary_of(derived),
-        "stale": pipeline_b.stale_info(derived),
+        "stale": stale,
+        "stale_reason": None if stale is None else pipeline_b.stale_reason(stale),
         "stages": stage_rows(entries, pipeline_b.B_STAGE_NAMES, pipeline_b.B_STAGE_DESCRIPTIONS),
         "refused": pipeline_b.refusal(db, session, data_root, weights),
     }

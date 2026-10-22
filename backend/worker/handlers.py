@@ -260,7 +260,11 @@ def make_process_pipeline_b(
             b_model=settings.pipeline_b_model,
             onnx_provider=settings.onnx_provider,
         )
-        stages = run_pipeline_b(ctx, job.args.get("from_stage"), job.args.get("only"))
+        try:
+            stages = run_pipeline_b(ctx, job.args.get("from_stage"), job.args.get("only"))
+        except BaseException:
+            _sync_b_stale(factory, session_id, ctx.derived)  # a stopped run may have marked B
+            raise
         summary = summary_of(ctx.derived)
         with factory() as db:
             session = db.get(SessionRow, session_id)
@@ -270,6 +274,20 @@ def make_process_pipeline_b(
         return f"pipeline B: {', '.join(stages)}"
 
     return handle
+
+
+def _sync_b_stale(factory: sessionmaker[Session], session_id: uuid.UUID, derived: Path) -> None:
+    """Make B's line in the session record say what `pipeline_b_stale.json` says."""
+    with factory() as db:
+        session = db.get(SessionRow, session_id)
+        quality = dict(session.quality or {}) if session is not None else {}
+        if session is not None and "pipeline_b" in quality:
+            quality["pipeline_b"] = {
+                **quality["pipeline_b"],
+                "stale": stale_info(derived) is not None,
+            }
+            session.quality = quality
+            db.commit()
 
 
 def make_compare_pipelines(

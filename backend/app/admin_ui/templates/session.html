@@ -103,7 +103,7 @@
 {% else %}
 <p class="muted">Pipeline B has not been run for this session.</p>
 {% endif %}
-{% if b.stale %}<p class="warning" role="status">Pipeline B is <strong>stale</strong>: Pipeline A ran "{{ b.stale.by_stage }}" after it. Analyses and comparisons skip this session until Pipeline B is run again from its first stage.</p>{% endif %}
+{% if b.stale %}<p class="warning" role="status">Pipeline B is <strong>stale</strong>: {{ b.stale_reason }}. Analyses and comparisons skip this session until Pipeline B is run again from its first stage.</p>{% endif %}
 {% if b.refused %}<p class="muted">Cannot be run now: {{ b.refused }}.</p>{% endif %}
 <table>
   <thead><tr><th>Stage</th><th>What it does</th><th>Status</th><th class="num">Last run (s)</th><th>Result</th><th></th></tr></thead>
