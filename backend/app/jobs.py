@@ -63,7 +63,11 @@ CANCELLED_LOG = "cancelled by the admin"
 def request_cancel(db: Session, job: Job) -> str:
     """Stop a job: a queued one is finished at once, a running one is asked to stop (the worker
     looks at the flag between its steps) and a finished one cannot be. Returns `cancelled` or
-    `cancelling`; the caller commits. Raises ValueError for a finished job."""
+    `cancelling`; the caller commits. Raises ValueError for a finished job.
+
+    The row is read again under a lock: a worker that claimed the job after the caller loaded it
+    must not have its running job marked failed (and a worker cannot claim it while we hold it)."""
+    db.refresh(job, with_for_update=True)
     if job.status is JobStatus.QUEUED:
         mark_failed(db, job, CANCELLED_LOG)
         return "cancelled"

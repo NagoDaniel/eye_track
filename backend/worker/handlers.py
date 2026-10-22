@@ -85,15 +85,21 @@ def make_process_session(
             manifest=manifest,
             keep_intermediates=bool(job.args.get("keep_intermediates")),
         )
+        derived = derived_dir(settings.data_root, study_id, session_id)
         try:
             stages = runner.run_pipeline(ctx, from_stage=from_stage, only=only)
         except JobCancelled:  # the admin stopped it: the session is as it was before the job
-            _finish(factory, session_id, previous, None, [])
+            # (the run may already have marked B stale: B's line must say what the file says)
+            _finish(
+                factory, session_id, previous, None, [], b_stale=stale_info(derived) is not None
+            )
             raise
         except BaseException:  # a stage that raised (StageFailed), or the worker being stopped
-            _finish(factory, session_id, SessionStatus.FAILED, None, [])
+            _finish(
+                factory, session_id, SessionStatus.FAILED, None, [],
+                b_stale=stale_info(derived) is not None,
+            )  # fmt: skip
             raise
-        derived = derived_dir(settings.data_root, study_id, session_id)
         report = _read_report(derived / QUALITY_FILE)
         # A run of early stages on a session never processed before has no report yet.
         status = SessionStatus.PROCESSED if report is not None else previous
@@ -120,7 +126,7 @@ def _finish(
     status: SessionStatus,
     report: dict[str, Any] | None,
     flags: list[str],
-    b_stale: bool = False,
+    b_stale: bool | None = None,
 ) -> None:
     with factory() as db:
         session = db.get(SessionRow, session_id)
@@ -130,10 +136,16 @@ def _finish(
         if report is not None:
             old_b = (session.quality or {}).get("pipeline_b")  # Pipeline B's line stays
             session.quality = (
-                report if old_b is None else {**report, "pipeline_b": {**old_b, "stale": b_stale}}
+                report
+                if old_b is None
+                else {**report, "pipeline_b": {**old_b, "stale": bool(b_stale)}}
             )
             kept = [f for f in session.flags if not is_pipeline_flag(f)]
             session.flags = kept + [f for f in flags if f not in kept]
+        elif b_stale is not None and "pipeline_b" in (session.quality or {}):
+            quality = dict(session.quality or {})  # a new dict: the JSON column is not tracked
+            quality["pipeline_b"] = {**quality["pipeline_b"], "stale": b_stale}
+            session.quality = quality
         db.commit()
 
 

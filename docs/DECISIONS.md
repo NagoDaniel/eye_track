@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-22 — Milestone 5 review: H3 on other sessions, no GPU profile, the plots and the replay
+- Plan section: §8.5, §9.5, §11, §14
+- Decision: (1) The comparison of the pipelines in the done-when of "Milestone 5 scope" (2026-10-20, item 1) was made on six new sessions of study 7 (the moving-dot video, another webcam, three with glasses, three without) instead of the four H2 sessions of study 6: they were recorded for this check and Pipeline B was run on the desktop and brought back with `export-study` / `import-study`. Run `20261022T170800Z-09de36`, numbers in PROGRESS "H3 result". (2) The GPU compose profile (T13, `ONNX_PROVIDER=cuda`) is **not built**: the measured speed of `l2cs_resnet50` on the desktop CPU is 0.07 s per face, 72 to 147 s per session, about twice the recording length. It can be revisited if studies grow. (3) Item 1 asks that the human has looked at the B plots (`calibration_b.png`, `validation_b.png`, `gaze_b.png`) and the replay with B's squares. This has **not been confirmed yet**; it stays open in PROGRESS until the human reports it.
+- Reason: the review of Milestone 5 (plan-reviewer, 2026-10-22, finding M3) found these three points unrecorded.
+- Approved by: Nágó Dániel (fix R3 of the Milestone 5 review, 2026-10-22)
+
 ## 2026-10-22 — Milestone 5 addition: export and import of a whole study
 - Plan section: §12.3 (`export-session` / `import-session` for a field problem), §10
 - Decision: requested by the human on 2026-10-22. `cli.py export-study` / `import-study` and a download on the study page write and read one ZIP: `study.json` (study row, the playlist's video rows with their AOIs, the session ids), the stimulus videos, one nested session archive per session (the existing `export-session` format and code, so a session is checked the same way), and the `analysis/` tree. Defaults agreed with the human: the stimulus videos and the participants' webcam video are included (Pipeline B needs the video; `--no-raw-video` leaves it out); debug sessions are **not** exported unless asked for (`--include-debug`, a box on the page); the analyses are included (`--no-analysis`). Import keeps the ids, refuses a study whose id or code is there and a video id with another file, and leaves nothing behind on failure. The admin download builds the ZIP in a temporary file in the request (it can be large; it is logged because it may hold personal data).

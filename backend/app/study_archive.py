@@ -19,6 +19,7 @@ import hashlib
 import json
 import shutil
 import tempfile
+import uuid
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -140,6 +141,31 @@ def _safe_name(name: str) -> PurePosixPath:
     return path
 
 
+def _session_id(value: object) -> str:
+    """A session id from `study.json` in its canonical form, or `ArchiveError`."""
+    try:
+        return str(uuid.UUID(str(value)))
+    except ValueError:
+        raise ArchiveError(
+            f"{STUDY_FILE} lists a session id that is not a UUID: {value!r}"
+        ) from None
+
+
+def _check_session_part(part: Path, session_id: str, study_id: int, member: str) -> None:
+    """The nested session archive belongs to this session and this study (it names both itself)."""
+    try:
+        with zipfile.ZipFile(part) as nested:
+            meta = json.loads(nested.read("meta.json"))
+        found = (str(uuid.UUID(str(meta["id"]))), int(meta["study_id"]))
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
+        raise ArchiveError(f"{member} is not a session archive: {exc}") from exc
+    if found != (session_id, study_id):
+        raise ArchiveError(
+            f"{member} holds session {found[0]} of study {found[1]}, not session {session_id} "
+            f"of study {study_id}"
+        )
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
@@ -183,14 +209,16 @@ def import_study(db: Db, root: Path, archive_path: Path) -> int:
         try:
             _add_study(db, document, config, mode)
             _add_videos(db, root, archive, document["videos"], created)
-            for session_id in document["sessions"]:
+            for listed in document["sessions"]:
+                session_id = _session_id(listed)  # a UUID: it becomes part of two paths
                 member = f"sessions/{session_id}.zip"
                 if member not in names:
                     raise ArchiveError(f"{member} is listed in {STUDY_FILE} but not in the archive")
                 part = Path(scratch) / f"{session_id}.zip"
                 with archive.open(member) as source, part.open("wb") as out:
                     shutil.copyfileobj(source, out)
-                directory = root / "studies" / str(study_id) / "sessions" / str(session_id)
+                _check_session_part(part, session_id, study_id, member)
+                directory = root / "studies" / str(study_id) / "sessions" / session_id
                 if directory.exists():
                     raise ArchiveError(f"session {session_id} already has files here")
                 created.append(directory)

@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session as Db
 
 import worker.cancel as cancel
 from app.db import make_session_factory
-from app.jobs import CANCELLED_LOG, enqueue, recover_stale_running, request_cancel
+from app.jobs import CANCELLED_LOG, claim_next, enqueue, recover_stale_running, request_cancel
 from app.models import Job, JobKind, JobStatus, SessionStatus
 from app.models import Session as SessionRow
-from app.pipeline_b import FEATURES_B_FILE
+from app.pipeline_b import FEATURES_B_FILE, stale_info, summary_of
 from app.storage import derived_dir, webcam_path
 from tests.dbutil import make_settings
 from tests.session_db import seed_session
@@ -54,6 +54,23 @@ def test_a_queued_job_is_cancelled_at_once_and_a_running_one_is_asked(
         for finished in (done, failed):
             with pytest.raises(ValueError, match="nothing to cancel"):
                 request_cancel(db, finished)
+
+
+def test_a_job_claimed_after_it_was_loaded_is_asked_to_stop_not_marked_failed(
+    migrated_engine: Engine,
+) -> None:
+    with Db(migrated_engine) as api, Db(migrated_engine) as worker:
+        job = make_job(api, JobStatus.QUEUED)
+        api.commit()
+        loaded = api.get_one(Job, job.id)  # the admin page's view: queued
+        assert loaded.status.value == "queued"
+        claimed = claim_next(worker)  # the worker gets there first
+        worker.commit()
+        assert claimed is not None and claimed.id == job.id
+        assert request_cancel(api, loaded) == "cancelling"
+        api.commit()
+        assert loaded.status is JobStatus.RUNNING and loaded.cancel_requested is True
+        assert loaded.log == "" and loaded.finished_at is None
 
 
 def test_the_check_does_nothing_outside_a_job_and_raises_inside_one_that_was_cancelled(
@@ -150,6 +167,41 @@ def test_a_processing_job_stopped_before_its_first_stage_leaves_the_session_as_i
         assert db.get_one(Job, job_id).log == CANCELLED_LOG
         assert db.get_one(SessionRow, s.session_id).status is SessionStatus.UPLOADED
     assert not (derived_dir(s.root, s.study_id, s.session_id) / FEATURES_FILE).exists()
+
+
+def test_a_cancelled_a_run_that_made_b_stale_leaves_b_marked_in_the_record_too(
+    migrated_engine: Engine, b_session: FixtureSession, tmp_path: Path, face_model: Path
+) -> None:
+    root = tmp_path / "data"
+    shutil.copytree(b_session.root, root)
+    s = FixtureSession(
+        root, b_session.study_id, b_session.session_id, b_session.manifest,
+        root / b_session.raw.relative_to(b_session.root),
+    )  # fmt: skip
+    derived = derived_dir(root, s.study_id, s.session_id)
+    seed_session(migrated_engine, s, status=SessionStatus.PROCESSED)
+    line = summary_of(derived)
+    assert line is not None and line["stale"] is False
+    with Db(migrated_engine) as db:
+        db.get_one(SessionRow, s.session_id).quality = {"inclusion": {}, "pipeline_b": line}
+        db.commit()
+    factory = make_session_factory(migrated_engine)
+    with factory() as db:
+        job = enqueue(
+            db, JobKind.PROCESS_SESSION, {"session_id": str(s.session_id), "from_stage": "sync"}
+        )
+        job.cancel_requested = True  # the run marks B stale, then looks at the flag
+        db.commit()
+    handler = make_process_session(
+        factory, make_settings(data_root=root, face_landmarker_model=face_model)
+    )
+    assert process_one(factory, {JobKind.PROCESS_SESSION: handler}) is True
+    assert stale_info(derived) is not None  # the file says it
+    with factory() as db:
+        row = db.get_one(SessionRow, s.session_id)
+        assert row.status is SessionStatus.PROCESSED
+        assert (row.quality or {})["pipeline_b"]["stale"] is True  # and so does the record
+        assert (row.quality or {})["inclusion"] == {}  # nothing else of the record changed
 
 
 class CancelAfter:

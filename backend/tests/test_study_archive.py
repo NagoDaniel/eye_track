@@ -256,6 +256,57 @@ def test_foreign_or_unsafe_archives_are_refused(migrated_engine: Engine, tmp_pat
     assert not (tmp_path / "root").exists()
 
 
+def with_study_json(source: Path, target: Path, change: dict[str, object]) -> None:
+    """A copy of the archive whose study.json has `change` applied (and members renamed by it)."""
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(target, "w") as out:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename == STUDY_FILE:
+                data = json.dumps({**json.loads(data), **change}).encode()
+            out.writestr(info.filename, data)
+
+
+def test_a_session_id_that_is_not_a_uuid_cannot_aim_a_write_outside_the_import(
+    migrated_engine: Engine, study: StudyOnDisk, tmp_path: Path
+) -> None:
+    export(migrated_engine, study, tmp_path / "s.zip")
+    forget_everything(migrated_engine)
+    aimed = (
+        tmp_path / "outside" / "evil"
+    )  # an absolute id makes `scratch / f"{id}.zip"` leave scratch
+    aimed.parent.mkdir()
+    planted = tmp_path / "planted.zip"
+    with_study_json(tmp_path / "s.zip", planted, {"sessions": [str(aimed)]})
+    with zipfile.ZipFile(planted, "a") as z:
+        z.writestr(f"sessions/{aimed}.zip", b"bytes that must not be written anywhere else")
+    assert f"sessions/{aimed}.zip".startswith("sessions//")  # passes the member-name check
+    for hostile in (str(aimed), "not-a-uuid", "../x"):
+        changed = tmp_path / "changed.zip"
+        with_study_json(planted, changed, {"sessions": [hostile]})
+        with Db(migrated_engine) as db, pytest.raises(ArchiveError, match="not a UUID"):
+            import_study(db, tmp_path / "root", changed)
+    assert list(aimed.parent.iterdir()) == []
+    assert not any(p.is_file() for p in (tmp_path / "root").rglob("*"))
+
+
+def test_a_session_of_another_study_or_another_id_inside_the_archive_is_refused(
+    migrated_engine: Engine, study: StudyOnDisk, tmp_path: Path
+) -> None:
+    export(migrated_engine, study, tmp_path / "s.zip")
+    forget_everything(migrated_engine)
+    moved = tmp_path / "moved.zip"
+    with_study_json(tmp_path / "s.zip", moved, {"id": 5, "code": "other"})  # sessions say study 1
+    root = tmp_path / "root"
+    with Db(migrated_engine) as db:
+        with pytest.raises(ArchiveError, match="of study 1, not session .* of study 5"):
+            import_study(db, root, moved)
+        db.rollback()
+    assert not any(p.is_file() for p in root.rglob("*"))
+    assert not list(root.rglob("sessions/*"))  # no directory left behind either
+    with Db(migrated_engine) as db:
+        assert db.scalars(select(Study)).all() == []
+
+
 # --- the CLI and the admin button -------------------------------------------------------------
 
 
