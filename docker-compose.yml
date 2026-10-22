@@ -76,6 +76,9 @@ services:
     <<: *backend
     volumes:
       - ${DATA_DIR:-./data}:/data
+      # The admin pages check that Pipeline B's weights are there (they disable the button and say
+      # why); only the worker loads them.
+      - ${MODELS_DIR:-./models}:/models:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
