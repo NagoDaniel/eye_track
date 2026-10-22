@@ -65,7 +65,11 @@ def test_the_accuracy_that_sets_the_heatmap_sigma_is_b_s_not_a_s(
             (derived / p["session_id"] / "derived" / "quality_b.json").read_text()
         )
         blocks = quality_b["validation"]["blocks"]
-        corrected = [x["mean_error_corrected_px"] for x in blocks if x["mean_error_corrected_px"]]
+        corrected = [
+            x["mean_error_corrected_px"]
+            for x in blocks
+            if x["mean_error_corrected_px"] is not None  # an exact 0.0 counts (as in the analysis)
+        ]
         assert b[p["participant_code"]] == pytest.approx(sum(corrected) / len(corrected))
     assert a != b  # the two pipelines do not have the same accuracy on this recording
 
