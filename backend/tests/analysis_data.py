@@ -75,7 +75,9 @@ def make_participants(
         target = session_dir(root, source.study_id, sid)
         shutil.copytree(session_dir(source.root, source.study_id, source.session_id), target)
         meta = meta_path(root, source.study_id, sid)
-        meta.write_text(json.dumps({**json.loads(meta.read_text()), "id": str(sid)}))
+        meta.write_text(
+            json.dumps({**json.loads(meta.read_text()), "id": str(sid), "participant_code": code})
+        )
         derived = derived_dir(root, source.study_id, sid)
         _shift(derived / GAZE_FILE, ["x_vid", "x_vid_dc"], offset)
         _shift(derived / FIXATIONS_FILE, ["cx_vid", "cx_vid_dc"], offset)

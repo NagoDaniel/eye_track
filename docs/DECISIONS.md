@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-22 — Milestone 5 addition: export and import of a whole study
+- Plan section: §12.3 (`export-session` / `import-session` for a field problem), §10
+- Decision: requested by the human on 2026-10-22. `cli.py export-study` / `import-study` and a download on the study page write and read one ZIP: `study.json` (study row, the playlist's video rows with their AOIs, the session ids), the stimulus videos, one nested session archive per session (the existing `export-session` format and code, so a session is checked the same way), and the `analysis/` tree. Defaults agreed with the human: the stimulus videos and the participants' webcam video are included (Pipeline B needs the video; `--no-raw-video` leaves it out); debug sessions are **not** exported unless asked for (`--include-debug`, a box on the page); the analyses are included (`--no-analysis`). Import keeps the ids, refuses a study whose id or code is there and a video id with another file, and leaves nothing behind on failure. The admin download builds the ZIP in a temporary file in the request (it can be large; it is logged because it may hold personal data).
+- Reason: moving a study to another machine (for example to run Pipeline B on the desktop) took a loop over `export-session` and copying `videos/` by hand, and lost the study row, the video rows and the AOIs.
+- Approved by: Nágó Dániel (2026-10-22)
+
 ## 2026-10-22 — Milestone 5 addition: jobs on the study page and cancelling them
 - Plan section: §4, §6 (admin: jobs), §12.2
 - Decision: requested by the human on 2026-10-22 ("the admin cannot see the running workers"). (1) The study page lists the study's jobs (open first, then the last finished ones, through the session or the study in the job's arguments) and the analyses and comparisons made with it; the studies list shows which study is busy. (2) A job can be cancelled from there: a queued job is finished at once (log "cancelled by the admin"); a running one gets `jobs.cancel_requested` (new column, migration `0004`) and the worker looks at it between steps (`worker/cancel.py`; the stage runners, the gaze-network loop, the landmark, heatmap and replay loops) and stops with the same log; a step that does not look finishes first. A job that was running when the worker died and was cancelled is not requeued. A stopped processing job puts the session back to the status it had; a stopped analysis marks its run `failed`. The worker process is never killed from the admin (the api cannot reach it).

@@ -197,6 +197,19 @@ derived/...    everything the stages wrote
 
 `cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
 
+## Study archive (`cli.py export-study` / `import-study`, the study page's "Download the study", PLAN §12.3)
+
+One ZIP with a whole study (`backend/app/study_archive.py`):
+
+| member | content |
+|---|---|
+| `study.json` | `format` (1), the study row (`id`, `name`, `code`, `mode`, `config`, `created_at`), `videos` (the rows of the playlist's videos: `id`, `title`, `duration`, `width`, `height`, `fps`, `sha256`, `aois`), `sessions` (the ids in the archive), `contains_raw_video` |
+| `videos/{id}/video.mp4` | the stimulus videos |
+| `sessions/{session_id}.zip` | one session archive each, exactly as `export-session` writes it (above), stored without compressing again |
+| `analysis/...` | the study's `analysis/{study_id}/` tree (analysis and comparison runs), unless left out |
+
+Debug sessions are not exported unless asked for (`--include-debug`, a box on the study page); sessions that never uploaded data (and withdrawn ones) are left out and counted. `--no-raw-video` leaves the participants' webcam video out of every session archive (Pipeline B cannot be run on such a session), `--no-analysis` the runs. **With the webcam video the archive is personal data.** Import creates the study, its videos and its sessions under the ids they had and refuses when the study id or code is already there or a video id is there with another file (the same file, by sha256, is reused); everything is checked first and if anything fails no file or row is left behind.
+
 ## `videos/{id}/aois.json` (PLAN §9.3)
 
 Mirrors `videos.aois`. Validated when the admin saves it (`backend/app/aois.py`, 422 with the reason); unknown keys are refused. Coordinates are video-normalized (0 to 1 over the content rectangle), times are stimulus media seconds.

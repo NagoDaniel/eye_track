@@ -46,6 +46,20 @@
 </table>
 {% endif %}
 
+<h2>Export the study</h2>
+<p class="muted">One ZIP with the study's settings, its stimulus videos, its sessions (raw and derived files, Pipeline B's included) and its analyses, to load into another instance with <code>cli.py import-study</code>. Building it can take a while for a large study.</p>
+<form method="get" action="/admin/studies/{{ study.id }}/export.zip">
+  {# an unchecked box sends nothing, so each has a hidden "false" in front that the box overrides #}
+  <input type="hidden" name="raw_video" value="false">
+  <label><input type="checkbox" name="raw_video" value="true" checked style="width: auto"> Include the participants' webcam video (Pipeline B needs it)</label>
+  <input type="hidden" name="debug" value="false">
+  <label><input type="checkbox" name="debug" value="true" style="width: auto"> Include the debug sessions</label>
+  <input type="hidden" name="analysis" value="false">
+  <label><input type="checkbox" name="analysis" value="true" checked style="width: auto"> Include the analyses and comparisons</label>
+  <p class="warning">With the webcam video the ZIP holds personal data: store and send it as such.</p>
+  <button type="submit">Download the study</button>
+</form>
+
 <h2>Pipeline B</h2>
 <p class="muted">Pipeline B runs the gaze network on every processed session of this study (one job per session; it can take an hour or more per session on a CPU, and the worker runs it only when nothing else is waiting). Sessions that already have it are run again; one that is being processed is left out.</p>
 {% if b_queued is not none %}<p class="ok" role="status">Queued for {{ b_queued }} session(s){% if b_left %}; {{ b_left }} could not be queued (see each session's page for the reason){% endif %}.</p>{% endif %}

@@ -23,6 +23,7 @@ from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
 from app.storage import analysis_run_dir, compare_run_dir, derived_dir, events_path
+from app.study_archive import export_study, import_study
 from worker.analysis.compare import run_compare
 from worker.analysis.config import AnalysisConfig
 from worker.handlers import make_analyze_video, make_process_pipeline_b, make_process_session
@@ -246,6 +247,60 @@ def import_session_command(
             raise typer.Exit(1) from exc
         db.commit()
     typer.echo(f"Imported session {sid}. Process it again with: python cli.py process {sid}")
+
+
+@app.command("export-study")
+def export_study_command(
+    study_id: int = typer.Argument(..., help="The study to export."),
+    out: Path | None = typer.Option(None, "--out", help="The ZIP file (default study-<id>.zip)."),
+    no_raw_video: bool = typer.Option(
+        False, "--no-raw-video", help="Leave the participants' webcam video out."
+    ),
+    include_debug: bool = typer.Option(
+        False, "--include-debug", help="Also export the debug sessions (left out by default)."
+    ),
+    no_analysis: bool = typer.Option(
+        False, "--no-analysis", help="Leave the analysis and comparison runs out."
+    ),
+) -> None:
+    """Write a ZIP with the whole study: its videos, sessions and analyses (PLAN §12.3)."""
+    target = out or Path(f"study-{study_id}.zip")
+    with open_session() as db:
+        try:
+            summary = export_study(
+                db, settings().data_root, study_id, target,
+                include_raw_video=not no_raw_video, include_debug=include_debug,
+                include_analysis=not no_analysis,
+            )  # fmt: skip
+        except ArchiveError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+    typer.echo(
+        f"Wrote {target}: {summary.sessions} session(s), {summary.videos} video(s), "
+        f"{summary.analysis_files} analysis file(s), {summary.bytes / 1e6:.1f} MB"
+    )
+    if summary.left_out_debug:
+        typer.echo(f"  left out {summary.left_out_debug} debug session(s) (--include-debug)")
+    if summary.left_out_no_data:
+        typer.echo(f"  left out {summary.left_out_no_data} session(s) without uploaded data")
+    if not no_raw_video:
+        typer.echo("Warning: the archive contains the participants' webcam video (personal data).")
+
+
+@app.command("import-study")
+def import_study_command(
+    archive: Path = typer.Argument(..., help="A ZIP made by export-study."),
+) -> None:
+    """Load an exported study into this instance (PLAN §12.3)."""
+    with open_session() as db:
+        try:
+            study_id = import_study(db, settings().data_root, archive)
+        except ArchiveError as exc:
+            db.rollback()
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+        db.commit()
+    typer.echo(f"Imported study {study_id}. Its sessions can be processed again with `process`.")
 
 
 @app.command("render-debug")

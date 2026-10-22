@@ -4,12 +4,17 @@ The routes are thin; the logic is in `app.studies`.
 """
 
 import json
+import logging
+import os
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session as DbSession
+from starlette.background import BackgroundTask
 
 from app import analysis_view, jobs_view, studies
 from app import videos as video_service
@@ -19,8 +24,11 @@ from app.models import AdminUser
 from app.pipeline_b import queue_study
 from app.schemas import StudyConfig
 from app.service_errors import ConflictError, InvalidError
+from app.session_archive import ArchiveError
 from app.settings import Settings
+from app.study_archive import export_study
 
+log = logging.getLogger("app")
 router = APIRouter(prefix="/admin")
 
 
@@ -366,4 +374,43 @@ def run_b_form(
     return RedirectResponse(
         f"/admin/studies/{study_id}?b_queued={len(result['queued'])}&b_left={len(result['left_out'])}",
         status_code=303,
+    )
+
+
+@router.get("/studies/{study_id}/export.zip")
+def export_study_zip(
+    request: Request,
+    study_id: int,
+    raw_video: bool = True,
+    debug: bool = False,
+    analysis: bool = True,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    """The whole study as one ZIP (videos, sessions, analyses; see `app.study_archive`). It holds
+    the participants' webcam video unless `raw_video` is false, so it is logged. Built in a
+    temporary file, which is removed once it has been sent."""
+    settings: Settings = request.app.state.settings
+    study = studies.get_study(db, study_id)
+    descriptor, name = tempfile.mkstemp(prefix="study-export-", suffix=".zip")
+    os.close(descriptor)
+    archive = Path(name)
+    try:
+        summary = export_study(
+            db, settings.data_root, study_id, archive, include_raw_video=raw_video,
+            include_debug=debug, include_analysis=analysis,
+        )  # fmt: skip
+    except ArchiveError as exc:
+        archive.unlink(missing_ok=True)
+        raise InvalidError(str(exc)) from exc
+    log.info(
+        "study exported",
+        extra={"study_id": study_id, "sessions": summary.sessions, "raw_video": raw_video},
+    )
+    return FileResponse(
+        archive,
+        media_type="application/zip",
+        filename=f"study-{study.code}.zip",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(archive.unlink, missing_ok=True),
     )
