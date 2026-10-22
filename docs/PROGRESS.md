@@ -3,7 +3,7 @@
 Maintained by the implementing agent. Update at the end of every task and before ending a session. Keep it short: this is the hand-over note for the next session.
 
 ## Current milestone
-**5 — Pipeline B and comparison** (PLAN §14): in progress on branch `m5-pipeline-b`, task list below (DECISIONS 2026-10-20, "Milestone 5 scope and open choices"). Milestone 4 (Analysis) was accepted by Nágó Dániel on 2026-10-20 and merged via PR #5; its task list is in git history (`4f411ea`), its H2 result and review fixes are below.
+**6 — Hardening for pilot** (PLAN §14): not started; scope in DECISIONS 2026-10-22 (no retention task, no withdrawal). Milestone 5 (Pipeline B and comparison) was accepted by Nágó Dániel on 2026-10-22 on branch `m5-pipeline-b` and is waiting to be merged (open the PR, wait for CI); its task list, the H3 result and the review are below.
 
 ## Milestone status
 | Milestone | Status | Branch | Notes |
@@ -13,7 +13,7 @@ Maintained by the implementing agent. Update at the end of every task and before
 | 2 Recording and sync data | done (accepted and merged 2026-10-16) | m2-recording | reviewed by the plan-reviewer, fixes done except the items under "Open problems"; `make e2e` produces complete raw data (webcam WebM, features, stimulus frames, events) |
 | 3 Pipeline A | done (accepted 2026-10-18; H1 passed, review fixes done) | m3-pipeline-a | `make lint`, `make test` (658 backend, 474 frontend tests) and `make e2e` pass; the e2e now runs the whole pipeline in the Docker image, the admin inspector and the replay |
 | 4 Analysis | done (accepted 2026-10-20; H2 passed, review fixes done) | m4-analysis | `make lint`, `make test` (789 backend, 474 frontend tests) and `make e2e` pass; heatmaps, AOI metrics, synchrony, AOI editor, analysis runs in admin, ZIP export; drift-corrected gaze is the default (DECISIONS 2026-10-20) |
-| 5 Pipeline B and comparison | in progress | m5-pipeline-b | task list approved 2026-10-20 |
+| 5 Pipeline B and comparison | done (accepted 2026-10-22; H3 passed, review fixes R1 to R5 done) | m5-pipeline-b | `make lint` and the backend tests (934, 1 skipped: the ResNet-50 test) pass; B runs on real recordings (0.07 s per face on a CPU), the comparison works, A is better than B on the dot test; study export and import, job cancel; T13 (GPU profile) dropped (DECISIONS 2026-10-22). R6, R7 and the cut-off title of `calibration_b.png` are open |
 | 6 Hardening for pilot | not started | | scope without the retention task and withdrawal (DECISIONS 2026-10-22) |
 
 ## Approved task list (Milestone 5)
@@ -186,4 +186,4 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 20. One `make e2e` run in five failed its first browser test once (empty page for 100 s, no cause found, see "Open problems"). If it happens to you, keep `e2e/test-results/*/trace.zip` and tell me.
 
 ## Next step
-Milestone 5: T1 to T12 are done on `m5-pipeline-b` (T13, the GPU profile, is deferred until the speed is measured). Left: the human's **H3** (reprocess the four H2 sessions with Pipeline B: `docker compose exec api python cli.py process-b --study 6` queues them, or one by one with `process-b <session_id>`; the weights first: `./scripts/fetch_models.sh`; note the seconds per session in the B stage table, run *Compare the pipelines* in Analysis, look at the B plots, the comparison report and the replay with B's squares), then `/milestone-review 5`. For the speed question the stage `features_b` records `seconds_per_face` in its summary.
+Milestone 5 is accepted. Open the pull request `m5-pipeline-b` into `main` (CI runs on pull requests and has not run on this branch yet), merge it when CI is green, then `/milestone-start 6`. Milestone 6 without the retention task and withdrawal: browser-support messages, performance on low-end laptops, `RUNNING_A_STUDY.md`, and the carry-overs under "Open problems" (a total inflated-size cap per stream in `/complete`, the vitest 4 upgrade, the admin diagnostics page and the notebook, the heatmap memory for long videos, the Pipeline B findings, R6 and R7 of the Milestone 5 review). Open questions for the human: whether a small manual "delete raw video" command is wanted (DECISIONS 2026-10-22), and whether accuracy tuning (AOI size against 140 to 290 px error, the pull toward the centre, the 40 to 300 ms lag, ridge alpha) belongs in Milestone 6 or later. The api and worker containers must be rebuilt (`docker compose up -d --build api worker`) after pulling.
