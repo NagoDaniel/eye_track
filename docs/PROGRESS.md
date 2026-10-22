@@ -81,6 +81,25 @@ Per participant, median distance to the dot over the whole video (px of the 1280
 
 What it shows: the analysis chain works on real data (heatmap video on the dot, segment pictures, AOI metrics, synchrony); glasses sessions have a constant vertical offset that the drift correction removes (not the case without glasses), so with glasses the as-measured heatmap and synchrony are much worse; AOIs must be larger than about 0.1 of the video or run with tolerance k of 1 or more. Details and the open question about the default gaze (not changed) are in DECISIONS 2026-10-20. Sources: `data/analysis/6/2/` (not committed; aggregate numbers only here).
 
+## H3 result (second webcam, moving-dot video, Pipeline B, 2026-10-22)
+Six sessions by Nágó Dániel in study 7 (video 2, the moving dot), another webcam; 0202 with glasses (BB, DD, EE), 0101 without (AA, FF, GG); different people, so glasses and person cannot be told apart. Pipeline B was run on the desktop (CPU, no GPU; `l2cs_resnet50`), the study came back as `study-7.zip` (`import-study`), then analysed (A and B, drift-corrected, k 0, 1, 2) and compared (run `20261022T170800Z-09de36`; all numbers are from `data/analysis/7/`, not committed).
+
+**Speed (T13):** `seconds_per_face` 0.070 to 0.072 on the desktop CPU; B took 72 to 147 s for sessions of 917 to 2086 frames (about twice the recording length). A GPU is not needed at this scale: T13 can stay dropped.
+
+**A against B** (moving-dot ground truth, valid playback frames, median distance to the dot in px of the 1280 x 720 video, as measured): GG 221 / 231, DD 165 / 216, EE 162 / 212, AA 286 / 385, BB 260 / 335, FF 237 / 179 (A / B). A is better in 5 of 6; B passes the report's criterion in 4 of 6 (AA and BB fail). The comparison report: validation error A 0.064, B 0.078 of the diagonal (B better in 1 of 6, p 0.219); after drift correction A 0.048, B 0.051 (3 / 3, p 1); precision A 60 px, B 65 px. Nothing is significant with 6 pairs. B's valid fraction is a little higher (0.948 / 0.929).
+
+**What the ground truth shows (both pipelines):**
+- The error is mostly systematic, not noise: the spread within a rest position is 30 to 76 px, the median distance 140 to 290 px. The gaze lags the dot by 40 to 300 ms (best lag, mostly 40 to 200).
+- Gaze is pulled toward the centre: at the right-hand corners the gaze falls short (A about 70 to 120 px, B 210 to 240 px at (1152, 72) and (1152, 648)), the left side overshoots inward; slopes of gaze against the dot are 0.6 to 0.9 in x and 0.4 to 1.0 in y. Vertical is weaker (correlation with the dot 0.68 to 0.91, horizontal 0.93 to 0.98).
+- B is worse than A mainly horizontally at the right edge (AA x slope 0.37); vertically the two are alike.
+- A gain and offset fitted on the first half of the dot video does not help on the second half (A 147 vs 150 px for GG, 184 vs 136 for BB), so a plain per-participant affine correction is not the fix; the error changes over time (at the last rest position, the same centre as the first, the gaze is 90 to 170 px above the dot, against 20 px at the start).
+- The validation error understates the dot-video error a little (A 141 px against 160 to 290 px).
+- Drift correction changes the median distance by less than 15 px in most sessions (largest gain EE with B, 212 to 171 px; GG with A is worse, 221 to 281 px).
+
+**AOIs:** the video's AOIs are about 65 px squares, the median error is 140 to 290 px, so the share of the active time on the AOI is 0.04 (A) and 0.05 (B) at k 0, though the participant looked at the dot all the time. With tolerance k 1: 0.36 / 0.32; with k 2: 0.61 / 0.58. The heatmap pictures lie where the dot was, with an offset of about 70 px. AOIs must be several times the accuracy, or use k 2 or more, in the study design.
+
+**Not decided:** whether B is worth running (A is at least as good here; B costs about twice the recording length in CPU time; whether the two together would be better was not tested), and tuning of ridge alpha (the chosen alpha is 10 in four of the six A fits; the grid goes to 1000) and of the smoothing for the lag. Both are tuning for the pilot (DECISIONS 2026-10-18, tuning deferred).
+
 ## Review of Milestone 3 (plan-reviewer, 2026-10-18): fixes
 Approved by Nágó Dániel on 2026-10-18 and **done**: R1, R2, R3 (`docs/evidence/m3-h1/`), R4, R6, R8. **Dropped by the human:** R5, R7, R9 and the minor items below (replay loaded on every page view, participant-video access not logged, M6 retention follow-up).
 Verdict: **READY AFTER FIXES**. No blocker. `make lint`, `make test` (650 backend, 474 frontend) and `make e2e` all passed in the reviewer's own run. The full report is in the conversation of 2026-10-18; these are the tasks it asks for. Approve, change or drop them by number.
