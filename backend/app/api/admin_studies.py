@@ -4,21 +4,31 @@ The routes are thin; the logic is in `app.studies`.
 """
 
 import json
+import logging
+import os
+import tempfile
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session as DbSession
+from starlette.background import BackgroundTask
 
-from app import studies
+from app import analysis_view, jobs_view, studies
 from app import videos as video_service
 from app.api.pages import Page, check_form_csrf, page_admin, render
 from app.auth import csrf_protected, current_admin, get_db
 from app.models import AdminUser
+from app.pipeline_b import queue_study
 from app.schemas import StudyConfig
 from app.service_errors import ConflictError, InvalidError
+from app.session_archive import ArchiveError
+from app.settings import Settings
+from app.study_archive import export_study
 
+log = logging.getLogger("app")
 router = APIRouter(prefix="/admin")
 
 
@@ -138,7 +148,11 @@ def _list_page(
     playlist: list[str] | None = None,
 ) -> Response:
     counts = studies.session_counts(db)
-    rows = [studies.study_out(s, counts.get(s.id, 0)) for s in studies.list_studies(db)]
+    open_jobs = jobs_view.open_counts(db)
+    rows = [
+        {**studies.study_out(s, counts.get(s.id, 0)), "jobs": open_jobs.get(s.id)}
+        for s in studies.list_studies(db)
+    ]
     form = form or {
         "name": "",
         "code": "",
@@ -167,8 +181,11 @@ def _detail_page(
     saved: bool = False,
     status_code: int = 200,
     playlist: list[str] | None = None,
+    b_queued: int | None = None,
+    b_left: int | None = None,
 ) -> Response:
     study = _out(db, study_id)
+    data_root = request.app.state.settings.data_root
     form = form or {
         "name": study["name"],
         "code": study["code"],
@@ -190,9 +207,15 @@ def _detail_page(
         error=error,
         saved=saved,
         participant_link=link,
+        jobs=jobs_view.jobs_of_study(db, study_id),
+        runs=analysis_view.list_runs(db, data_root, study_id),
+        comparisons=analysis_view.list_comparisons(db, data_root, study_id),
+        video_names={v.id: v.title for v in video_service.list_videos(db)},
         # PLAN §12.1: `?debug=1` works for studies with `debug_allowed` (or an admin on the browser)
         debug_link=f"{link}?debug=1",
         videos=_video_rows(db, playlist),
+        b_queued=b_queued,
+        b_left=b_left,
     )
 
 
@@ -233,10 +256,12 @@ def detail_page(
     request: Request,
     study_id: int,
     saved: bool = False,
+    b_queued: int | None = None,
+    b_left: int | None = None,
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
-    return _detail_page(request, page, db, study_id, saved=saved)
+    return _detail_page(request, page, db, study_id, saved=saved, b_queued=b_queued, b_left=b_left)
 
 
 @router.post("/studies/{study_id}")
@@ -308,3 +333,84 @@ def delete_form(
             request, page, db, study_id, error=str(exc), status_code=exc.status_code
         )
     return RedirectResponse("/admin/studies", status_code=303)
+
+
+def _run_b(request: Request, db: DbSession, study_id: int) -> dict[str, Any]:
+    settings: Settings = request.app.state.settings
+    studies.get_study(db, study_id)
+    queued, left = queue_study(
+        db, study_id, settings.data_root, (settings.models_root, settings.pipeline_b_model)
+    )
+    db.commit()
+    return {
+        "queued": [j.args["session_id"] for j in queued],
+        "left_out": [{"session_id": str(s.id), "reason": reason} for s, reason in left],
+    }
+
+
+@router.post(
+    "/api/studies/{study_id}/run-b", status_code=201, dependencies=[Depends(csrf_protected)]
+)
+def api_run_b(
+    request: Request,
+    study_id: int,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Queue Pipeline B for every processed session of the study that can take it."""
+    return _run_b(request, db, study_id)
+
+
+@router.post("/studies/{study_id}/run-b")
+def run_b_form(
+    request: Request,
+    study_id: int,
+    csrf_token: Annotated[str, Form()] = "",
+    page: Page = Depends(page_admin),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    check_form_csrf(page, csrf_token)
+    result = _run_b(request, db, study_id)
+    return RedirectResponse(
+        f"/admin/studies/{study_id}?b_queued={len(result['queued'])}&b_left={len(result['left_out'])}",
+        status_code=303,
+    )
+
+
+@router.get("/studies/{study_id}/export.zip")
+def export_study_zip(
+    request: Request,
+    study_id: int,
+    raw_video: bool = True,
+    debug: bool = False,
+    analysis: bool = True,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    """The whole study as one ZIP (videos, sessions, analyses; see `app.study_archive`). It holds
+    the participants' webcam video unless `raw_video` is false, so it is logged. Built in a
+    temporary file, which is removed once it has been sent."""
+    settings: Settings = request.app.state.settings
+    study = studies.get_study(db, study_id)
+    descriptor, name = tempfile.mkstemp(prefix="study-export-", suffix=".zip")
+    os.close(descriptor)
+    archive = Path(name)
+    try:
+        summary = export_study(
+            db, settings.data_root, study_id, archive, include_raw_video=raw_video,
+            include_debug=debug, include_analysis=analysis,
+        )  # fmt: skip
+    except ArchiveError as exc:
+        archive.unlink(missing_ok=True)
+        raise InvalidError(str(exc)) from exc
+    log.info(
+        "study exported",
+        extra={"study_id": study_id, "sessions": summary.sessions, "raw_video": raw_video},
+    )
+    return FileResponse(
+        archive,
+        media_type="application/zip",
+        filename=f"study-{study.code}.zip",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(archive.unlink, missing_ok=True),
+    )

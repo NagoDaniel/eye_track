@@ -1,0 +1,29 @@
+{# The jobs of a study: what runs, what waits, the last finished ones, and a button to stop. #}
+<table>
+  <thead><tr><th class="num">Job</th><th>What</th><th>On</th><th>Status</th><th>Started</th><th></th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr{% if j.status == "failed" and j.log != "cancelled by the admin" %} class="gap"{% endif %}>
+      <td class="num">{{ j.id }}</td>
+      <td>{{ j.label }}{% if j.from_stage %} <span class="muted">from {{ j.from_stage }}</span>{% endif %}</td>
+      <td>{% if j.session_id %}<a href="/admin/sessions/{{ j.session_id }}">{{ j.what }}</a>{% else %}{{ j.what }}{% endif %}</td>
+      <td>{% if j.status == "running" and j.cancel_requested %}<strong class="warning">stopping...</strong>
+        {% elif j.status == "running" %}<strong>running</strong>
+        {% elif j.status == "queued" %}queued
+        {% elif j.status == "done" %}<span class="ok">done</span>
+        {% elif j.log == "cancelled by the admin" %}<span class="muted">cancelled</span>
+        {% else %}<span class="error">failed</span>{% endif %}</td>
+      <td>{{ j.started_at or j.created_at }}</td>
+      <td>{% if j.cancellable %}
+        <form class="inline" method="post" action="/admin/jobs/{{ j.id }}/cancel">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="back" value="{{ back }}">
+          <button type="submit" class="danger" title="{{ 'A queued job is cancelled at once' if j.status == 'queued' else 'The worker stops it within seconds' }}">Cancel</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% if j.status == "failed" and j.log and j.log != "cancelled by the admin" %}<tr><td colspan="6"><details><summary class="error">Why it failed</summary><pre>{{ j.log }}</pre></details></td></tr>{% endif %}
+  {% else %}
+    <tr><td colspan="6">No jobs yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

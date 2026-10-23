@@ -10,6 +10,10 @@
   webcam frame rate.
 - `gaze.png`: gaze x and y over time, invalid stretches shaded.
 
+The plots that depend on the pipeline (calibration, validation, gaze) are drawn for Pipeline B too,
+from B's files, as `calibration_b.png`, `validation_b.png` and `gaze_b.png` (stage `plots_b`); the
+sync and signal plots do not depend on it and are not repeated.
+
 Drawing uses matplotlib's object API (no pyplot, no global state). A plot whose inputs are missing
 is skipped with the reason; one that raises is logged and recorded without stopping the others (the
 session's data is fine even if a picture cannot be drawn).
@@ -33,6 +37,8 @@ from matplotlib.patches import Patch, Rectangle
 from numpy.typing import NDArray
 
 from app.events import parse_events
+from app.pipeline_b import QUALITY_B_FILE
+from app.pipeline_names import PLOT_B_FILES
 from app.schemas import EventRecord
 from app.storage import atomic_write_bytes, browser_features_path, derived_dir, events_path
 from worker.pipeline.calibration import (
@@ -43,10 +49,10 @@ from worker.pipeline.calibration import (
     viewport_before,
 )
 from worker.pipeline.config import PipelineConfig
-from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS, FEATURES_FILE
-from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE, phase_intervals
+from worker.pipeline.gaze import phase_intervals
 from worker.pipeline.quality import QUALITY_FILE, video_spans
 from worker.pipeline.ridge import predict
+from worker.pipeline.spec import SPEC_A, SPEC_B, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 from worker.pipeline.validation import validation_blocks
 
@@ -144,6 +150,12 @@ class PlotData:
     fixations: pa.Table | None
     brightness: tuple[Floats, Floats] | None  # (t in ms, mean luminance) from the browser
     extra: dict[str, Any] = field(default_factory=dict)
+    spec: PipelineSpec = SPEC_A  # whose features, calibration, gaze and report these are
+
+    @property
+    def title_suffix(self) -> str:
+        """Added to the titles of B's plots so a picture says which pipeline drew it."""
+        return "" if self.spec is SPEC_A else f" (Pipeline {self.spec.id.upper()})"
 
     def column(self, table: pa.Table, name: str) -> Floats:
         return np.array(
@@ -156,10 +168,16 @@ def _json(path: Path) -> dict[str, Any] | None:
 
 
 def load_plot_data(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec = SPEC_A,
 ) -> PlotData:
     derived = derived_dir(root, study_id, session_id)
-    features = pq.read_table(derived / FEATURES_FILE)
+    if not (derived / spec.features_file).is_file():
+        raise PlotSkipped(f"{spec.features_file} is missing")
+    features = pq.read_table(derived / spec.features_file)
     a_ms, b = read_t_of_pts(derived / SYNC_FILE)
     t_ms = a_ms + 1000.0 * b * features["pts"].to_numpy()
     brightness = None
@@ -171,10 +189,10 @@ def load_plot_data(
         pairs = [(r["t"], r["brightness"]) for r in rows if r.get("brightness") is not None]
         if pairs:
             brightness = (np.array([p[0] for p in pairs]), np.array([p[1] for p in pairs]))
-    calibration = _json(derived / "calibration_a.json")
+    calibration = _json(derived / spec.calibration_file)
     sync = _json(derived / SYNC_FILE)
     if calibration is None or sync is None:
-        raise PlotSkipped("calibration_a.json or sync.json is missing")
+        raise PlotSkipped(f"{spec.calibration_file} or sync.json is missing")
     return PlotData(
         config=config,
         events=parse_events(events_path(root, study_id, session_id).read_bytes()),
@@ -182,12 +200,15 @@ def load_plot_data(
         t_ms=t_ms,
         sync=sync,
         calibration=calibration,
-        quality=_json(derived / QUALITY_FILE),
-        gaze=pq.read_table(derived / GAZE_FILE) if (derived / GAZE_FILE).is_file() else None,
-        fixations=pq.read_table(derived / FIXATIONS_FILE)
-        if (derived / FIXATIONS_FILE).is_file()
+        quality=_json(derived / (QUALITY_FILE if spec is SPEC_A else QUALITY_B_FILE)),
+        gaze=pq.read_table(derived / spec.gaze_file)
+        if (derived / spec.gaze_file).is_file()
+        else None,
+        fixations=pq.read_table(derived / spec.fixations_file)
+        if (derived / spec.fixations_file).is_file()
         else None,
         brightness=brightness,
+        spec=spec,
     )
 
 
@@ -239,7 +260,7 @@ def plot_calibration(data: PlotData) -> Figure:
     attempts = calibration_attempts(data.events)
     if not attempts:
         raise PlotSkipped("the session has no calibration dots")
-    vectors = np.stack([data.column(data.features, c) for c in FEATURE_VECTOR_COLUMNS], axis=1)
+    vectors = np.stack([data.column(data.features, c) for c in data.spec.feature_columns], axis=1)
     blink = np.asarray(data.features["blink"].to_pylist(), dtype=np.bool_)
     usable = np.isfinite(vectors).all(axis=1) & ~blink
     columns = min(len(attempts), 3)
@@ -251,7 +272,10 @@ def plot_calibration(data: PlotData) -> Figure:
         _calibration_panel(ax, data, attempt, attempts, vectors, usable)
     for k in range(len(attempts), rows * columns):
         axes[k // columns][k % columns].axis("off")
-    figure.suptitle("Calibration attempts: targets and the model's median predictions", fontsize=11)
+    figure.suptitle(
+        f"Calibration attempts{data.title_suffix}: targets and the model's median predictions",
+        fontsize=11,
+    )
     return figure
 
 
@@ -353,7 +377,9 @@ def plot_validation(data: PlotData) -> Figure:
              [b["mean_error_corrected_norm"] for b in blocks], "-o", color=GREEN,
              label="mean error after drift correction")  # fmt: skip
     top.set_ylabel("error / viewport diagonal")
-    top.set_title("Validation error per block (dots: single points)", fontsize=10)
+    top.set_title(
+        f"Validation error per block{data.title_suffix} (dots: single points)", fontsize=10
+    )
     top.legend(fontsize=8)
     drift = validation.get("drift")
     if drift:
@@ -538,7 +564,8 @@ def plot_gaze(data: PlotData) -> Figure:
     axes[0].legend(fontsize=8, loc="upper left", ncols=2, frameon=False)
     phase_legend(axes[0])
     figure.suptitle(
-        "Gaze over time (grey: invalid, purple: interpolated, green bars: fixations; "
+        f"Gaze over time{data.title_suffix} (grey: invalid, purple: interpolated, "
+        "green bars: fixations; "
         "predictions beyond half a screen outside it are not shown)",
         fontsize=10,
     )
@@ -584,6 +611,14 @@ PLOTS: dict[str, Callable[[PlotData], Figure]] = {
     "gaze.png": plot_gaze,
 }
 
+# Pipeline B's plots: the same drawing code on B's data (`PlotData.spec`).
+PLOTS_B: dict[str, Callable[[PlotData], Figure]] = {
+    "calibration_b.png": plot_calibration,
+    "validation_b.png": plot_validation,
+    "gaze_b.png": plot_gaze,
+}
+assert tuple(PLOTS_B) == PLOT_B_FILES  # the names are defined once, in `app.pipeline_names`
+
 
 @dataclass(frozen=True)
 class PlotsSummary:
@@ -596,21 +631,27 @@ class PlotsSummary:
 
 
 def run_plots(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec = SPEC_A,
 ) -> PlotsSummary:
-    """Draw every plot whose inputs exist into `derived/debug/`. A plot that cannot be drawn is
-    recorded (and its old picture removed), never raised: the data is fine without the picture."""
+    """Draw every plot of the pipeline whose inputs exist into `derived/debug/`. A plot that cannot
+    be drawn is recorded (and its old picture removed), never raised: the data is fine without
+    the picture."""
+    plots = {SPEC_A.id: PLOTS, SPEC_B.id: PLOTS_B}[spec.id]
     directory = derived_dir(root, study_id, session_id) / DEBUG_DIR
     written: list[str] = []
     skipped: dict[str, str] = {}
     errors: dict[str, str] = {}
     try:
-        data = load_plot_data(root, study_id, session_id, config)
+        data = load_plot_data(root, study_id, session_id, config, spec)
     except PlotSkipped as exc:
-        for name in PLOTS:
+        for name in plots:
             (directory / name).unlink(missing_ok=True)
-        return PlotsSummary([], {name: str(exc) for name in PLOTS}, {})
-    for name, draw in PLOTS.items():
+        return PlotsSummary([], {name: str(exc) for name in plots}, {})
+    for name, draw in plots.items():
         try:
             atomic_write_bytes(directory / name, png_bytes(draw(data)))
             written.append(name)

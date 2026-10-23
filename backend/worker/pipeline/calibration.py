@@ -19,7 +19,7 @@
 import json
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,11 +31,12 @@ from app.events import parse_events
 from app.schemas import CalibGateResultData, EventRecord
 from app.storage import atomic_write_bytes, derived_dir, events_path
 from worker.pipeline.config import PipelineConfig
-from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS, FEATURES_FILE
+from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 from worker.pipeline.ridge import Degree, RidgeModel, fit_ridge, predict
+from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 
-CALIBRATION_FILE = "calibration_a.json"
+CALIBRATION_FILE = SPEC_A.calibration_file
 CALIBRATION_VERSION = 1
 
 Floats = NDArray[np.float64]
@@ -258,6 +259,8 @@ class CalibrationFit:
     selection: ModelSelection | None
     viewport: tuple[float, float] | None
     config: PipelineConfig
+    # The feature vector the model was fitted on (the pipeline's, PLAN §8.6).
+    feature_columns: tuple[str, ...] = FEATURE_VECTOR_COLUMNS
 
     def as_dict(self) -> dict[str, Any]:
         used = self.attempt
@@ -272,7 +275,7 @@ class CalibrationFit:
             "config": self.config.as_dict(),
             "status": self.status,
             "failed_reason": self.failed_reason,
-            "feature_columns": list(FEATURE_VECTOR_COLUMNS),
+            "feature_columns": list(self.feature_columns),
             "attempt_used": None
             if used is None
             else {
@@ -418,19 +421,24 @@ def fit_calibration(
 
 
 def run_calibration(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec = SPEC_A,
 ) -> CalibrationFit:
     derived = derived_dir(root, study_id, session_id)
-    table = pq.read_table(derived / FEATURES_FILE)
+    table = pq.read_table(derived / spec.features_file)
     a_ms, b = read_t_of_pts(derived / SYNC_FILE)
     t = a_ms + 1000.0 * b * table["pts"].to_numpy()
     vectors = np.stack(
-        [table[c].to_numpy(zero_copy_only=False) for c in FEATURE_VECTOR_COLUMNS], axis=1
+        [table[c].to_numpy(zero_copy_only=False) for c in spec.feature_columns], axis=1
     )
     usable = np.isfinite(vectors).all(axis=1) & ~np.asarray(table["blink"].to_pylist(), dtype=bool)
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
-    fit = fit_calibration(events, t, vectors, usable, config)
+    fit = replace(fit_calibration(events, t, vectors, usable, config),
+                  feature_columns=spec.feature_columns)  # fmt: skip
     atomic_write_bytes(
-        derived / CALIBRATION_FILE, (json.dumps(fit.as_dict(), indent=1) + "\n").encode()
+        derived / spec.calibration_file, (json.dumps(fit.as_dict(), indent=1) + "\n").encode()
     )
     return fit

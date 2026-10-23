@@ -4,7 +4,7 @@
 {% block body %}
 <h1>Studies</h1>
 <table>
-  <thead><tr><th>Id</th><th>Name</th><th>Code</th><th>Mode</th><th class="num">Sessions</th></tr></thead>
+  <thead><tr><th>Id</th><th>Name</th><th>Code</th><th>Mode</th><th class="num">Sessions</th><th>Jobs</th></tr></thead>
   <tbody>
   {% for s in studies %}
     <tr>
@@ -13,9 +13,10 @@
       <td>{{ s.code }}</td>
       <td>{{ s.mode }}</td>
       <td class="num"><a href="/admin/sessions?study_id={{ s.id }}">{{ s.session_count }}</a></td>
+      <td>{% if s.jobs %}<a href="/admin/studies/{{ s.id }}#jobs"><strong>{{ s.jobs.running }} running</strong>{% if s.jobs.queued %}, {{ s.jobs.queued }} queued{% endif %}</a>{% else %}<span class="muted">idle</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="5">No studies yet.</td></tr>
+    <tr><td colspan="6">No studies yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

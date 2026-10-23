@@ -16,12 +16,14 @@ from sqlalchemy.orm import Session as Db
 
 from app.models import Session as SessionRow
 from app.models import SessionStatus, Study, StudyMode, Video
+from app.pipeline_b import summary_of
 from app.storage import derived_dir, meta_path, session_dir
 from tests.session_fixture import FixtureSession, copy_fixture_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.runner import Context, run_pipeline
+from worker.pipeline.spec import SPEC_B
 
 MOVING_DOT = Path(__file__).resolve().parents[2] / "e2e" / "fixtures" / "moving_dot.mp4"
 VIDEO_ID = 1
@@ -73,10 +75,15 @@ def make_participants(
         target = session_dir(root, source.study_id, sid)
         shutil.copytree(session_dir(source.root, source.study_id, source.session_id), target)
         meta = meta_path(root, source.study_id, sid)
-        meta.write_text(json.dumps({**json.loads(meta.read_text()), "id": str(sid)}))
+        meta.write_text(
+            json.dumps({**json.loads(meta.read_text()), "id": str(sid), "participant_code": code})
+        )
         derived = derived_dir(root, source.study_id, sid)
         _shift(derived / GAZE_FILE, ["x_vid", "x_vid_dc"], offset)
         _shift(derived / FIXATIONS_FILE, ["cx_vid", "cx_vid_dc"], offset)
+        if (derived / SPEC_B.gaze_file).exists():  # Pipeline B's gaze moves the same way
+            _shift(derived / SPEC_B.gaze_file, ["x_vid", "x_vid_dc"], offset)
+            _shift(derived / SPEC_B.fixations_file, ["cx_vid", "cx_vid_dc"], offset)
         people.append(Participant(sid, code, offset))
     return people
 
@@ -89,9 +96,11 @@ def seed(
     aois: dict[str, Any] | None = None,
 ) -> None:
     """Study, video (with its file under `root`) and the participants' sessions, `processed`."""
-    quality = json.loads(
-        (derived_dir(source.root, source.study_id, source.session_id) / QUALITY_FILE).read_text()
-    )
+    source_derived = derived_dir(source.root, source.study_id, source.session_id)
+    quality = json.loads((source_derived / QUALITY_FILE).read_text())
+    summary_b = summary_of(source_derived)  # Pipeline B's line in the record, when B was run
+    if summary_b is not None:
+        quality = {**quality, "pipeline_b": summary_b}
     video_file = root / "videos" / str(VIDEO_ID) / "video.mp4"
     video_file.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(MOVING_DOT, video_file)
@@ -106,3 +115,15 @@ def seed(
                 upload_token_hash="h", status=SessionStatus.PROCESSED, quality=quality, flags=[],
             ))  # fmt: skip
         db.commit()
+
+
+def add_pipeline_b(s: FixtureSession, model_root: Path, name: str = "l2cs_mobileone_s0") -> None:
+    """Run Pipeline B on a processed session in place, as the job does: the real network (the small
+    weights by default), B's calibration and gaze, B's quality report and its stage file."""
+    from worker.pipeline.runner_b import run_pipeline_b
+
+    ctx = Context(
+        root=s.root, study_id=s.study_id, session_id=s.session_id, config=PipelineConfig(),
+        model=Path("unused"), max_inflated_bytes=0, models_root=model_root, b_model=name,
+    )  # fmt: skip
+    run_pipeline_b(ctx)

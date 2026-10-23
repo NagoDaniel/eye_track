@@ -14,6 +14,49 @@ Format:
 
 ---
 
+## 2026-10-22 — Milestone 6 scope: no retention task, no withdrawal
+- Plan section: §14 (milestone 6), §6 (admin: "withdraw participant"), §7 and §10 (`retention.raw_video_days_after_processing`), §12.3, §14 backend API tests ("withdrawal deletes everything")
+- Decision: Milestone 6 does **not** include (1) the retention task that deletes raw video when it is due and (2) withdrawal (deleting all data of a participant code, raw and derived, including the analysis and Pipeline B outputs that carry codes). The rest of Milestone 6 stays: browser-support messages, performance tuning for low-end laptops (playback must not drop frames), `RUNNING_A_STUDY.md`, and the carry-overs in PROGRESS. The study setting `retention.raw_video_days_after_processing` stays in the config schema and does nothing (`null`, "kept until manually deleted"); the `withdrawn` session status stays in the model, and the study export still leaves withdrawn sessions out. Nothing was built for them, so there is no "delete raw video" or "withdraw participant" button or command either (PLAN §6, §12.3 mention both). A participant's data can only be removed by hand (database rows and files) until this is decided again.
+- Reason: the human does not need them for the pilot.
+- Approved by: Nágó Dániel (2026-10-22)
+
+## 2026-10-22 — Milestone 5 review: H3 on other sessions, no GPU profile, the plots and the replay
+- Plan section: §8.5, §9.5, §11, §14
+- Decision: (1) The comparison of the pipelines in the done-when of "Milestone 5 scope" (2026-10-20, item 1) was made on six new sessions of study 7 (the moving-dot video, another webcam, three with glasses, three without) instead of the four H2 sessions of study 6: they were recorded for this check and Pipeline B was run on the desktop and brought back with `export-study` / `import-study`. Run `20261022T170800Z-09de36`, numbers in PROGRESS "H3 result". (2) The GPU compose profile (T13, `ONNX_PROVIDER=cuda`) is **not built**: the measured speed of `l2cs_resnet50` on the desktop CPU is 0.07 s per face, 72 to 147 s per session, about twice the recording length. It can be revisited if studies grow. (3) Item 1 asks that the human has looked at the B plots (`calibration_b.png`, `validation_b.png`, `gaze_b.png`) and the replay with B's squares. The human looked at them on 2026-10-22 and found them fine; A looks better than B (see PROGRESS "H3 result"). One small defect: the title of `calibration_b.png` is cut off on the left.
+- Reason: the review of Milestone 5 (plan-reviewer, 2026-10-22, finding M3) found these three points unrecorded.
+- Approved by: Nágó Dániel (fix R3 of the Milestone 5 review, 2026-10-22)
+
+## 2026-10-22 — Milestone 5 addition: export and import of a whole study
+- Plan section: §12.3 (`export-session` / `import-session` for a field problem), §10
+- Decision: requested by the human on 2026-10-22. `cli.py export-study` / `import-study` and a download on the study page write and read one ZIP: `study.json` (study row, the playlist's video rows with their AOIs, the session ids), the stimulus videos, one nested session archive per session (the existing `export-session` format and code, so a session is checked the same way), and the `analysis/` tree. Defaults agreed with the human: the stimulus videos and the participants' webcam video are included (Pipeline B needs the video; `--no-raw-video` leaves it out); debug sessions are **not** exported unless asked for (`--include-debug`, a box on the page); the analyses are included (`--no-analysis`). Import keeps the ids, refuses a study whose id or code is there and a video id with another file, and leaves nothing behind on failure. The admin download builds the ZIP in a temporary file in the request (it can be large; it is logged because it may hold personal data).
+- Reason: moving a study to another machine (for example to run Pipeline B on the desktop) took a loop over `export-session` and copying `videos/` by hand, and lost the study row, the video rows and the AOIs.
+- Approved by: Nágó Dániel (2026-10-22)
+
+## 2026-10-22 — Milestone 5 addition: jobs on the study page and cancelling them
+- Plan section: §4, §6 (admin: jobs), §12.2
+- Decision: requested by the human on 2026-10-22 ("the admin cannot see the running workers"). (1) The study page lists the study's jobs (open first, then the last finished ones, through the session or the study in the job's arguments) and the analyses and comparisons made with it; the studies list shows which study is busy. (2) A job can be cancelled from there: a queued job is finished at once (log "cancelled by the admin"); a running one gets `jobs.cancel_requested` (new column, migration `0004`) and the worker looks at it between steps (`worker/cancel.py`; the stage runners, the gaze-network loop, the landmark, heatmap and replay loops) and stops with the same log; a step that does not look finishes first. A job that was running when the worker died and was cancelled is not requeued. A stopped processing job puts the session back to the status it had; a stopped analysis marks its run `failed`. The worker process is never killed from the admin (the api cannot reach it).
+- Reason: Pipeline B jobs run for hours and the admin had no way to see or stop them (it needed SQL and a container restart).
+- Approved by: Nágó Dániel (requested 2026-10-22)
+
+## 2026-10-20 — Milestone 5 scope and open choices
+- Plan section: §4, §8.5, §9.5, §11.2, §12.2, §14
+- Decision:
+  1. **Done when** (the plan has none for M5): B runs on real recordings and writes `features_b`, `gaze_b` and `fixations_b`; a comparison over the real H2 sessions writes the CSV, the Markdown report and the box plots with Wilcoxon statistics; a missing weights file never breaks A; the human has looked at the B plots and the replay (H3).
+  2. **Pipeline B is a separate job**, not stages of `process_session` (deviation from the plan's reading of §8, where all pipelines run in `process_session`; it also adds a job kind to §4's list): new kind `process_pipeline_b` (migration) with the stages `features_b`, `calibration_b`, `gaze_b`, `quality_b`, `plots_b`. Reason: B can take an hour or more of CPU per session, A must keep working without the weights, and the researcher chooses when to run B (a button per session, one for a whole study, `cli.py process-b`). The worker takes `process_session` and `render_debug` jobs before `process_pipeline_b`. B writes its own `derived/quality_b.json` and `stages_b.json`; A's `quality.json` is unchanged. No automatic run of B.
+  3. **Without weights** the B job fails with a clear message and A is untouched (the plan: "only fail Pipeline B jobs"). The button says why it is disabled when it can be known.
+  4. **Stale B:** re-running A from `landmarks` or `sync` marks B `stale`; analyses and the comparison skip stale sessions (reason `pipeline_b_stale`, or `pipeline_b_not_run`) until B is run again. B's files are not deleted.
+  5. **Features B** (§8.5 "gaze pitch/yaw + the head pose features from 8.4"): six: gaze pitch and yaw, head yaw, pitch, roll and face ratio. Blinks and validity are A's, so only the eye signal differs.
+  6. **Face crop** (fixed once chosen, DECISIONS 2026-10-12): a square around the centre of the landmark box, side = the longer side x 1.2, resized to 448 x 448 (no stretching).
+  7. **Models:** ResNet-50 is the production default; tests use the 5 MB MobileOne weights (cached), plus one ResNet-50 test in CI with a cache.
+  8. **Inclusion per pipeline:** B has its own decision in `quality_b.json` (same thresholds); an analysis with pipeline B uses it.
+  9. **`compare_pipelines`:** one per study, over all sessions that have both pipelines and no stale B, regardless of A's inclusion, in `analysis/{study_id}/compare/{run_id}/` with `run.json`; below `compare_min_pairs` (6) pairs the report gives n and medians but no p-value.
+  10. **E2E** does not download weights: it only checks that the B job fails cleanly without them; real-model tests are in the backend suite.
+  11. **Replay** gets B dots in a second colour (A's unchanged).
+  12. **GPU profile** (deferred from 1a): not done now; decide after measuring the speed of B on the human's desktop machine (it has the only GPU).
+  13. **Frames:** B runs on every webcam frame; no subsampling until the speed is measured.
+- Reason: answers to the numbered questions of `/milestone-start 5`, with the separation of the two pipelines proposed and approved in the discussion.
+- Approved by: Nágó Dániel (2026-10-20; "I accept the rest", GPU profile left for later)
+
 ## 2026-10-20 — Milestone 4 accepted; drift-corrected gaze is the default of an analysis
 - Plan section: §8.8, §9
 - Decision: an analysis uses the drift-corrected gaze columns by default (item 2 of 2026-10-19 said "plain"). The option stays: `gaze_columns` `plain` in the API and the admin form, `--as-measured` in the CLI (replaces `--drift-corrected`); the run records which one it used. A session without validation data has no corrected columns and is left out as `no_valid_samples` (the inclusion rule already refuses such a session). Milestone 4 is accepted.

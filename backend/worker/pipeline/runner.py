@@ -20,16 +20,19 @@ from pathlib import Path
 from typing import Any
 
 from app.logging import bind_context
-from app.stage_status import read_entries, status_of, write_entries
+from app.pipeline_b import A_STAGES_FEEDING_B, mark_stale
+from app.stage_status import STAGES_FILE, read_entries, status_of, write_entries
 from app.storage import atomic_write_bytes, derived_dir, webcam_path
-from worker.pipeline.calibration import CALIBRATION_FILE, run_calibration
+from worker.cancel import CANCELLED_LOG, JobCancelled, check_cancelled
+from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, compute_features
-from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE, run_gaze
+from worker.pipeline.gaze import run_gaze
 from worker.pipeline.ingest import ChunkRecord, ingest
 from worker.pipeline.landmarks import LANDMARKS_FILE, detect_landmarks
 from worker.pipeline.plots import run_plots
 from worker.pipeline.quality import QUALITY_FILE, build_quality
+from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, run_sync
 
 log = logging.getLogger("pipeline")
@@ -57,6 +60,10 @@ class Context:
     max_inflated_bytes: int
     manifest: Sequence[ChunkRecord] | None = None  # the chunks table rows; ingest needs them
     keep_intermediates: bool = False  # keep the files a stage normally removes (debugging)
+    # Pipeline B (runner_b.py): where the weights are, which ones, and the ONNX provider.
+    models_root: Path | None = None
+    b_model: str | None = None
+    onnx_provider: str = "cpu"
     stages: dict[str, dict[str, Any]] = field(default_factory=dict)  # results so far, for quality
 
     @property
@@ -99,8 +106,9 @@ def _sync(ctx: Context) -> dict[str, Any]:
     }
 
 
-def _calibration(ctx: Context) -> dict[str, Any]:
-    fit = run_calibration(ctx.root, ctx.study_id, ctx.session_id, ctx.config)
+def calibration_stage(ctx: Context, spec: PipelineSpec = SPEC_A) -> dict[str, Any]:
+    """The calibration stage of a pipeline: fit, write its calibration file, summarise."""
+    fit = run_calibration(ctx.root, ctx.study_id, ctx.session_id, ctx.config, spec)
     cv = None if fit.selection is None else fit.selection.chosen
     return {
         "status": fit.status,
@@ -112,20 +120,30 @@ def _calibration(ctx: Context) -> dict[str, Any]:
     }
 
 
-def calibration_status(derived: Path) -> str | None:
-    path = derived / CALIBRATION_FILE
+def _calibration(ctx: Context) -> dict[str, Any]:
+    return calibration_stage(ctx, SPEC_A)
+
+
+def calibration_status(derived: Path, spec: PipelineSpec = SPEC_A) -> str | None:
+    path = derived / spec.calibration_file
     if not path.exists():
         return None
     status = json.loads(path.read_text(encoding="utf-8"))["status"]
     return str(status)
 
 
-def _gaze(ctx: Context) -> dict[str, Any]:
-    if calibration_status(ctx.derived) != "ok":
-        for name in (GAZE_FILE, FIXATIONS_FILE):  # derived, so stale files can simply go
+def gaze_stage(ctx: Context, spec: PipelineSpec = SPEC_A) -> dict[str, Any]:
+    """The gaze stage of a pipeline; skipped, with its old files removed, when its calibration
+    failed (DECISIONS milestone 3 item 15)."""
+    if calibration_status(ctx.derived, spec) != "ok":
+        for name in (spec.gaze_file, spec.fixations_file):  # derived, so stale files can go
             (ctx.derived / name).unlink(missing_ok=True)
         return {"skipped": "calibration_failed"}
-    return run_gaze(ctx.root, ctx.study_id, ctx.session_id, ctx.config).as_dict()
+    return run_gaze(ctx.root, ctx.study_id, ctx.session_id, ctx.config, spec).as_dict()
+
+
+def _gaze(ctx: Context) -> dict[str, Any]:
+    return gaze_stage(ctx, SPEC_A)
 
 
 def _quality(ctx: Context) -> dict[str, Any]:
@@ -149,8 +167,8 @@ STAGES: dict[str, StageFn] = {
 }
 
 
-def _previous_stages(derived: Path) -> dict[str, dict[str, Any]]:
-    path = derived / QUALITY_FILE
+def _previous_stages(derived: Path, quality_file: str = QUALITY_FILE) -> dict[str, dict[str, Any]]:
+    path = derived / quality_file
     if not path.exists():
         return {}
     stages = json.loads(path.read_text(encoding="utf-8")).get("stages", {})
@@ -174,22 +192,41 @@ def run_pipeline(
     from_stage: str | None = None,
     only: str | None = None,
     stages: Mapping[str, StageFn] = STAGES,
+    *,
+    stages_file: str = STAGES_FILE,
+    quality_file: str = QUALITY_FILE,
+    quality_stages: Sequence[str] = ("quality", "plots"),
+    marks_b_stale: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """Run the selected stages in order and return the summary of every stage (earlier ones as
-    last recorded). Raises `StageFailed`."""
+    last recorded). Raises `StageFailed`. The file names and the stages that write the report
+    are Pipeline A's unless the caller (Pipeline B) says otherwise."""
     selected = select_stages(list(stages), from_stage, only)
-    ctx.stages = _previous_stages(ctx.derived)
+    ctx.stages = _previous_stages(ctx.derived, quality_file)
     # What the stages did, kept in its own file (also when one fails). The stages about to run
     # lose their old entry: "not run" is true until they have run.
-    entries = read_entries(ctx.derived, {"stages": ctx.stages})
+    entries = read_entries(ctx.derived, {"stages": ctx.stages}, stages_file)
     for name in selected:
         entries.pop(name, None)
+    feeding = [name for name in selected if name in A_STAGES_FEEDING_B]
+    if feeding and marks_b_stale:  # Pipeline A is about to remake what Pipeline B reads
+        mark_stale(ctx.derived, feeding[0])
     for name in selected:
+        check_cancelled(force=True)  # the admin may have asked the job to stop
         with bind_context(stage=name, session_id=str(ctx.session_id)):
             log.info("stage started")
             started = time.perf_counter()
             try:
                 summary = stages[name](ctx)
+            except JobCancelled:
+                entries[name] = {
+                    "status": "failed",
+                    "seconds": round(time.perf_counter() - started, 3),
+                    "summary": None,
+                    "error": CANCELLED_LOG,
+                }
+                write_entries(ctx.derived, entries, stages_file)
+                raise
             except Exception as exc:
                 log.exception("stage failed")
                 entries[name] = {
@@ -198,16 +235,16 @@ def run_pipeline(
                     "summary": None,
                     "error": f"{type(exc).__name__}: {exc}",
                 }
-                write_entries(ctx.derived, entries)
+                write_entries(ctx.derived, entries, stages_file)
                 raise StageFailed(name, exc) from exc
             seconds = round(time.perf_counter() - started, 3)
             ctx.stages[name] = {"seconds": seconds, "summary": summary}
             entries[name] = {"status": status_of(summary), "seconds": seconds,
                              "summary": summary, "error": None}  # fmt: skip
-            write_entries(ctx.derived, entries)
+            write_entries(ctx.derived, entries, stages_file)
             log.info("stage done", extra={"seconds": seconds})
-    quality_path = ctx.derived / QUALITY_FILE
-    if quality_path.exists() and ("quality" in selected or "plots" in selected):
+    quality_path = ctx.derived / quality_file
+    if quality_path.exists() and any(name in selected for name in quality_stages):
         # The quality stage cannot know its own duration (nor the plots after it): put the stage
         # results into the file it wrote.
         report = json.loads(quality_path.read_text(encoding="utf-8"))

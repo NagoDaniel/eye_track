@@ -158,3 +158,21 @@ def test_downgrading_to_the_first_revision_drops_replay_jobs_and_the_kind(engine
     with DbSession(engine) as db:
         db.add(Job(kind=JobKind.RENDER_DEBUG, args={}))
         db.commit()
+
+
+def test_pipeline_b_is_a_job_kind_and_downgrading_one_revision_drops_its_jobs(
+    engine: Engine,
+) -> None:
+    upgrade(engine)
+    with DbSession(engine) as db:
+        db.add(Job(kind=JobKind.PROCESS_PIPELINE_B, args={"session_id": "x"}))
+        db.add(Job(kind=JobKind.RENDER_DEBUG, args={}))
+        db.commit()
+    downgrade(engine, "0002")
+    with DbSession(engine) as db:
+        assert db.execute(text("select kind from jobs")).scalars().all() == ["render_debug"]
+        with pytest.raises((IntegrityError, DataError)):
+            db.execute(text("insert into jobs (kind, args, status, attempts, log) "
+                            "values ('process_pipeline_b', '{}', 'queued', 0, '')"))  # fmt: skip
+        db.rollback()
+    upgrade(engine)

@@ -15,18 +15,22 @@ from app.aois import parse_aoi_file
 from app.chunks import MIB
 from app.models import Chunk, Job, SessionStatus, Study, Video
 from app.models import Session as SessionRow
+from app.pipeline_b import stale_info, summary_of
 from app.settings import Settings
-from app.storage import derived_dir
+from app.storage import compare_run_dir, derived_dir
 from worker.analysis.analyze import VideoInfo, analyze, load_included
+from worker.analysis.compare import run_compare
 from worker.analysis.config import AnalysisConfig
-from worker.analysis.run import discard_unfinished_run, start_run
+from worker.analysis.run import discard_unfinished_dir, discard_unfinished_run, start_run
 from worker.analysis.select import query_sessions, select_sessions
+from worker.cancel import JobCancelled
 from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ingest import ChunkRecord
 from worker.pipeline.quality import QUALITY_FILE
 from worker.pipeline.replay import render_replay
 from worker.pipeline.runner import Context, is_pipeline_flag, pipeline_flags
+from worker.pipeline.runner_b import run_pipeline_b
 
 log = logging.getLogger("worker")
 
@@ -81,16 +85,32 @@ def make_process_session(
             manifest=manifest,
             keep_intermediates=bool(job.args.get("keep_intermediates")),
         )
+        derived = derived_dir(settings.data_root, study_id, session_id)
         try:
             stages = runner.run_pipeline(ctx, from_stage=from_stage, only=only)
-        except BaseException:  # a stage that raised (StageFailed), or the worker being stopped
-            _finish(factory, session_id, SessionStatus.FAILED, None, [])
+        except JobCancelled:  # the admin stopped it: the session is as it was before the job
+            # (the run may already have marked B stale: B's line must say what the file says)
+            _finish(
+                factory, session_id, previous, None, [], b_stale=stale_info(derived) is not None
+            )
             raise
-        derived = derived_dir(settings.data_root, study_id, session_id)
+        except BaseException:  # a stage that raised (StageFailed), or the worker being stopped
+            _finish(
+                factory, session_id, SessionStatus.FAILED, None, [],
+                b_stale=stale_info(derived) is not None,
+            )  # fmt: skip
+            raise
         report = _read_report(derived / QUALITY_FILE)
         # A run of early stages on a session never processed before has no report yet.
         status = SessionStatus.PROCESSED if report is not None else previous
-        _finish(factory, session_id, status, report, pipeline_flags(derived))
+        _finish(
+            factory,
+            session_id,
+            status,
+            report,
+            pipeline_flags(derived),
+            b_stale=stale_info(derived) is not None,
+        )
         return f"processed: {', '.join(stages)}"
 
     return handle
@@ -106,6 +126,7 @@ def _finish(
     status: SessionStatus,
     report: dict[str, Any] | None,
     flags: list[str],
+    b_stale: bool | None = None,
 ) -> None:
     with factory() as db:
         session = db.get(SessionRow, session_id)
@@ -113,9 +134,18 @@ def _finish(
             return
         session.status = status
         if report is not None:
-            session.quality = report
+            old_b = (session.quality or {}).get("pipeline_b")  # Pipeline B's line stays
+            session.quality = (
+                report
+                if old_b is None
+                else {**report, "pipeline_b": {**old_b, "stale": bool(b_stale)}}
+            )
             kept = [f for f in session.flags if not is_pipeline_flag(f)]
             session.flags = kept + [f for f in flags if f not in kept]
+        elif b_stale is not None and "pipeline_b" in (session.quality or {}):
+            quality = dict(session.quality or {})  # a new dict: the JSON column is not tracked
+            quality["pipeline_b"] = {**quality["pipeline_b"], "stale": b_stale}
+            session.quality = quality
         db.commit()
 
 
@@ -158,7 +188,11 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
             raise ValueError("analyze_video needs a run_id made by queue_analysis")
         if columns not in ("plain", "drift_corrected"):
             raise ValueError("analyze_video needs plain or drift_corrected gaze")
+        pipeline = job.args.get("pipeline", "a")
+        if pipeline not in ("a", "b"):
+            raise ValueError("analyze_video needs pipeline a or b")
         config = AnalysisConfig(
+            pipeline=pipeline,
             gaze_columns=columns,
             aoi_tolerance_k=float(job.args.get("aoi_tolerance_k", 0.0)),
             heatmap_dots=bool(job.args.get("heatmap_dots", False)),
@@ -171,12 +205,12 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
                 raise LookupError(f"video {video_id} does not exist")
             info = VideoInfo(video.id, video.duration, video.width, video.height)
             aois = parse_aoi_file(video.aois or {})
-            infos = query_sessions(db, settings.data_root, study_id)
+            infos = query_sessions(db, settings.data_root, study_id, config.pipeline)
 
         root = settings.data_root
         if discard_unfinished_run(root, study_id, video_id, run_id):
             log.warning("an unfinished analysis run is started again", extra={"run_id": run_id})
-        selection = select_sessions(infos, video_id)
+        selection = select_sessions(infos, video_id, config.pipeline)
         record, run_dir = start_run(root, study_id, video_id, run_id, config, selection)
         try:
             sessions = load_included(root, study_id, video_id, selection, config, record)
@@ -186,5 +220,96 @@ def make_analyze_video(factory: sessionmaker[Session], settings: Settings) -> Ca
             raise
         record.finish(run_dir)
         return f"analysed {len(sessions)} sessions: {', '.join(record.outputs)}"
+
+    return handle
+
+
+def make_process_pipeline_b(
+    factory: sessionmaker[Session], settings: Settings, config: PipelineConfig | None = None
+) -> Callable[[Job], str]:
+    """The handler for `process_pipeline_b` jobs (PLAN §8.5; DECISIONS 2026-10-20). Args:
+    `session_id`, optionally `from_stage` or `only` (a stage of Pipeline B). The session's status
+    is not touched and Pipeline A's files stay as they are; a missing weights file or a stage that
+    raises fails the job, with the reason in its log. On success B's line in the session record
+    (`quality["pipeline_b"]`) is updated."""
+    pipeline_config = config or PipelineConfig()
+
+    def handle(job: Job) -> str:
+        raw = job.args.get("session_id")
+        if not isinstance(raw, str):
+            raise ValueError("process_pipeline_b needs a session_id in its args")
+        session_id = uuid.UUID(raw)
+        with factory() as db:
+            session = db.get(SessionRow, session_id)
+            if session is None:
+                raise LookupError(f"session {session_id} does not exist")
+            if session.status is not SessionStatus.PROCESSED:
+                raise ValueError(
+                    f"session {session_id} is {session.status.value}; "
+                    "Pipeline A must have processed it first"
+                )
+            study_id = session.study_id
+        ctx = Context(
+            root=settings.data_root,
+            study_id=study_id,
+            session_id=session_id,
+            config=pipeline_config,
+            model=settings.face_landmarker_model,
+            max_inflated_bytes=0,
+            models_root=settings.models_root,
+            b_model=settings.pipeline_b_model,
+            onnx_provider=settings.onnx_provider,
+        )
+        try:
+            stages = run_pipeline_b(ctx, job.args.get("from_stage"), job.args.get("only"))
+        except BaseException:
+            _sync_b_stale(factory, session_id, ctx.derived)  # a stopped run may have marked B
+            raise
+        summary = summary_of(ctx.derived)
+        with factory() as db:
+            session = db.get(SessionRow, session_id)
+            if session is not None and summary is not None:
+                session.quality = {**(session.quality or {}), "pipeline_b": summary}
+                db.commit()
+        return f"pipeline B: {', '.join(stages)}"
+
+    return handle
+
+
+def _sync_b_stale(factory: sessionmaker[Session], session_id: uuid.UUID, derived: Path) -> None:
+    """Make B's line in the session record say what `pipeline_b_stale.json` says."""
+    with factory() as db:
+        session = db.get(SessionRow, session_id)
+        quality = dict(session.quality or {}) if session is not None else {}
+        if session is not None and "pipeline_b" in quality:
+            quality["pipeline_b"] = {
+                **quality["pipeline_b"],
+                "stale": stale_info(derived) is not None,
+            }
+            session.quality = quality
+            db.commit()
+
+
+def make_compare_pipelines(
+    factory: sessionmaker[Session], settings: Settings
+) -> Callable[[Job], str]:
+    """The handler for `compare_pipelines` jobs (PLAN §9.5). Args: `study_id`, `run_id`. Writes
+    `analysis/{study}/compare/{run}/`; a comparison with nothing to compare fails the job (and
+    marks its run `failed`). A job requeued after its worker died starts the run again."""
+
+    def handle(job: Job) -> str:
+        study_id, run_id = job.args.get("study_id"), job.args.get("run_id")
+        if not isinstance(study_id, int):
+            raise ValueError("compare_pipelines needs a study_id in its args")
+        if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
+            raise ValueError("compare_pipelines needs a run_id made by queue_comparison")
+        with factory() as db:
+            if db.get(Study, study_id) is None:
+                raise LookupError(f"study {study_id} does not exist")
+            run_dir = compare_run_dir(settings.data_root, study_id, run_id)
+            if discard_unfinished_dir(run_dir, run_id):
+                log.warning("an unfinished comparison is started again", extra={"run_id": run_id})
+            record = run_compare(db, settings.data_root, study_id, run_id, AnalysisConfig())
+        return f"compared {len(record.included)} sessions: {', '.join(record.outputs)}"
 
     return handle

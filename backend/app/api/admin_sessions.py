@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
@@ -15,7 +16,8 @@ from app.auth import csrf_protected, current_admin, get_db
 from app.chunks import MIB
 from app.models import AdminUser
 from app.models import Session as SessionRow
-from app.pipeline_names import PLOT_FILES, REPLAY_FILE
+from app.pipeline_b import B_STAGE_NAMES, queue_pipeline_b
+from app.pipeline_names import PLOT_B_FILES, PLOT_FILES, REPLAY_FILE
 from app.reprocess import queue_render, queue_rerun
 from app.service_errors import NotFoundError
 from app.settings import Settings
@@ -24,6 +26,11 @@ from app.studies import list_studies
 
 log = logging.getLogger("admin")
 router = APIRouter(prefix="/admin")
+
+
+def _weights(settings: Settings) -> tuple[Path, str]:
+    """Where Pipeline B's weights should be (the button says why it is disabled without them)."""
+    return settings.models_root, settings.pipeline_b_model
 
 
 @router.get("/api/sessions")
@@ -44,7 +51,11 @@ def api_get(
 ) -> dict[str, Any]:
     settings: Settings = request.app.state.settings
     return sessions_view.session_detail(
-        db, settings.data_root, session_id, settings.max_events_chunk_inflated_mb * MIB
+        db,
+        settings.data_root,
+        session_id,
+        settings.max_events_chunk_inflated_mb * MIB,
+        _weights(settings),
     )
 
 
@@ -76,7 +87,11 @@ def detail_page(
 ) -> Response:
     settings: Settings = request.app.state.settings
     detail = sessions_view.session_detail(
-        db, settings.data_root, session_id, settings.max_events_chunk_inflated_mb * MIB
+        db,
+        settings.data_root,
+        session_id,
+        settings.max_events_chunk_inflated_mb * MIB,
+        _weights(settings),
     )
     return render(request, page, "session.html", session=detail, queued=queued)
 
@@ -142,7 +157,7 @@ def debug_file(
 ) -> Response:
     """A debug plot or the replay video of the session; only the known file names, and only for a
     logged-in admin. The replay shows the participant's webcam video."""
-    if name not in (*PLOT_FILES, REPLAY_FILE):
+    if name not in (*PLOT_FILES, *PLOT_B_FILES, REPLAY_FILE):
         raise NotFoundError(f"no debug file called {name}")
     session = _session_row(db, session_id)
     settings: Settings = request.app.state.settings
@@ -227,3 +242,42 @@ def webcam_video(
     return _participant_video(
         _webcam_file(request, db, session_id), "video/webm", session_id, "webcam.webm"
     )
+
+
+class RunBRequest(BaseModel):
+    """`POST /admin/api/sessions/{id}/run-b`: Pipeline B from a stage (None: from the start)."""
+
+    model_config = ConfigDict(extra="forbid")
+    from_stage: str | None = None
+
+
+@router.post(
+    "/api/sessions/{session_id}/run-b", status_code=201, dependencies=[Depends(csrf_protected)]
+)
+def api_run_b(
+    request: Request,
+    session_id: uuid.UUID,
+    body: RunBRequest,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> dict[str, Any]:
+    settings: Settings = request.app.state.settings
+    job = queue_pipeline_b(db, session_id, settings.data_root, body.from_stage, _weights(settings))
+    db.commit()
+    return {"job_id": job.id, "args": job.args, "stages": list(B_STAGE_NAMES)}
+
+
+@router.post("/sessions/{session_id}/run-b")
+def run_b_form(
+    request: Request,
+    session_id: uuid.UUID,
+    page: Page = Depends(page_admin),
+    db: DbSession = Depends(get_db),
+    csrf_token: Annotated[str, Form()] = "",
+    from_stage: Annotated[str, Form()] = "",
+) -> Response:
+    check_form_csrf(page, csrf_token)
+    settings: Settings = request.app.state.settings
+    queue_pipeline_b(db, session_id, settings.data_root, from_stage or None, _weights(settings))
+    db.commit()
+    return RedirectResponse(f"/admin/sessions/{session_id}?queued=true", status_code=303)

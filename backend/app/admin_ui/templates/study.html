@@ -7,6 +7,66 @@
 <p>Participant link: <a href="{{ participant_link }}">{{ participant_link }}</a></p>
 <p>{{ study.session_count }} session(s): <a href="/admin/sessions?study_id={{ study.id }}">view</a></p>
 {% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
+<h2 id="jobs">Jobs</h2>
+<p class="muted">What the worker is doing for this study, what waits, and the last finished jobs. The worker runs one job at a time. Cancel stops a queued job at once; a running one is asked to stop and does so within seconds (a long step that cannot be interrupted finishes first). Reload the page to see the state now.</p>
+{% set back = "/admin/studies/" ~ study.id ~ "#jobs" %}
+{% include "_jobs_table.html" %}
+
+<h2>Analyses of this study</h2>
+<p><a href="/admin/analysis">Start an analysis or a comparison</a></p>
+{% if runs %}
+<table>
+  <thead><tr><th>Run</th><th>Video</th><th>Pipeline</th><th>Gaze</th><th>Status</th><th class="num">Included</th><th class="num">Left out</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td>{% if r.has_record %}<a href="/admin/analysis/{{ r.study_id }}/{{ r.video_id }}/{{ r.run_id }}"><code>{{ r.run_id }}</code></a>{% else %}<code>{{ r.run_id }}</code>{% endif %}</td>
+      <td><a href="/admin/videos/{{ r.video_id }}">{{ video_names.get(r.video_id, r.video_id) }}</a></td>
+      <td>{{ r.pipeline | upper }}</td><td>{{ r.gaze_columns }}</td>
+      <td>{% if r.status == "done" %}<span class="ok">done</span>{% elif r.status == "failed" %}<span class="error" title="{{ r.error }}">failed</span>{% else %}{{ r.status }}{% endif %}</td>
+      <td class="num">{{ r.included }}</td><td class="num">{{ r.excluded }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No analysis of this study yet.</p>{% endif %}
+{% if comparisons %}
+<h3>Pipeline comparisons</h3>
+<table>
+  <thead><tr><th>Comparison</th><th>Status</th><th class="num">Sessions</th><th class="num">Left out</th></tr></thead>
+  <tbody>
+  {% for c in comparisons %}
+    <tr>
+      <td>{% if c.has_record %}<a href="/admin/comparisons/{{ c.study_id }}/{{ c.run_id }}"><code>{{ c.run_id }}</code></a>{% else %}<code>{{ c.run_id }}</code>{% endif %}</td>
+      <td>{% if c.status == "done" %}<span class="ok">done</span>{% elif c.status == "failed" %}<span class="error" title="{{ c.error }}">failed</span>{% else %}{{ c.status }}{% endif %}</td>
+      <td class="num">{{ c.compared }}</td><td class="num">{{ c.left_out }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Export the study</h2>
+<p class="muted">One ZIP with the study's settings, its stimulus videos, its sessions (raw and derived files, Pipeline B's included) and its analyses, to load into another instance with <code>cli.py import-study</code>. Building it can take a while for a large study.</p>
+<form method="get" action="/admin/studies/{{ study.id }}/export.zip">
+  {# an unchecked box sends nothing, so each has a hidden "false" in front that the box overrides #}
+  <input type="hidden" name="raw_video" value="false">
+  <label><input type="checkbox" name="raw_video" value="true" checked style="width: auto"> Include the participants' webcam video (Pipeline B needs it)</label>
+  <input type="hidden" name="debug" value="false">
+  <label><input type="checkbox" name="debug" value="true" style="width: auto"> Include the debug sessions</label>
+  <input type="hidden" name="analysis" value="false">
+  <label><input type="checkbox" name="analysis" value="true" checked style="width: auto"> Include the analyses and comparisons</label>
+  <p class="warning">With the webcam video the ZIP holds personal data: store and send it as such.</p>
+  <button type="submit">Download the study</button>
+</form>
+
+<h2>Pipeline B</h2>
+<p class="muted">Pipeline B runs the gaze network on every processed session of this study (one job per session; it can take an hour or more per session on a CPU, and the worker runs it only when nothing else is waiting). Sessions that already have it are run again; one that is being processed is left out.</p>
+{% if b_queued is not none %}<p class="ok" role="status">Queued for {{ b_queued }} session(s){% if b_left %}; {{ b_left }} could not be queued (see each session's page for the reason){% endif %}.</p>{% endif %}
+<form method="post" action="/admin/studies/{{ study.id }}/run-b">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Run Pipeline B for all processed sessions</button>
+</form>
 <h2>Debug mode</h2>
 {% if study.config.debug_allowed %}
 <p class="warning">Debug mode is <strong>on</strong> for this study: anyone who adds <code>debug=1</code> to the link can start a debug session. Turn it off before collecting real data.</p>

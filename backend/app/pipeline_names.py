@@ -38,6 +38,15 @@ PLOT_CAPTIONS = {
 }
 PLOT_FILES = tuple(PLOT_CAPTIONS)
 
+# Pipeline B's plots (stage `plots_b`, PLAN §12.2): the ones of A that depend on the pipeline. The
+# sync and quality-signal plots do not, so they are not repeated.
+PLOT_B_CAPTIONS = {
+    "calibration_b.png": "Pipeline B calibration: targets and the model's median predictions",
+    "validation_b.png": "Pipeline B validation error per block and drift",
+    "gaze_b.png": "Pipeline B gaze over time",
+}
+PLOT_B_FILES = tuple(PLOT_B_CAPTIONS)
+
 # The debug replay video (`derived/debug/replay.mp4`), rendered on request (PLAN §12.2). It contains
 # the participant's webcam video, so it is only served to a logged-in admin.
 REPLAY_FILE = "replay.mp4"

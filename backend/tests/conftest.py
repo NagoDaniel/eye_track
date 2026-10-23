@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import Engine, text
 
 from app.db import make_engine
+from tests.session_fixture import FixtureSession
 
 POSTGRES_IMAGE = "postgres:16"
 
@@ -98,8 +99,57 @@ def face_model(request: pytest.FixtureRequest) -> Path:
     return cache / "face_landmarker.task"
 
 
+@pytest.fixture(scope="session")
+def model_b_root(request: pytest.FixtureRequest) -> Path:
+    """Directory with the small Pipeline B weights (`l2cs_mobileone_s0`, `shared/models.json`).
+
+    `L2CS_MODEL` (path of `mobileone_s0_gaze.onnx`) is used when it points to a file; otherwise the
+    weights are downloaded once into pytest's cache (sha256 checked). Fails loudly when neither
+    works.
+    """
+    configured = os.environ.get("L2CS_MODEL")
+    if configured and Path(configured).is_file():
+        return Path(configured).parent
+    shared = Path(__file__).resolve().parents[2] / "shared"
+    sys.path.insert(0, str(shared))
+    import download_model
+
+    assert request.config.cache is not None
+    cache = request.config.cache.mkdir("models")
+    download_model.fetch(download_model.DEFAULT_MANIFEST, ["l2cs_mobileone_s0"], cache)
+    return cache
+
+
 @pytest.fixture(autouse=True)
 def no_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
     """`make` exports GIT_SHA for the image build; tests must not depend on it (the ones that
     need it set it themselves)."""
     monkeypatch.delenv("GIT_SHA", raising=False)
+
+
+@pytest.fixture(scope="session")
+def a_session(tmp_path_factory: pytest.TempPathFactory, face_model: Path) -> FixtureSession:
+    """The recorded session after the A pipeline (real MediaPipe, real ffmpeg), with loose inclusion
+    thresholds. Read-only: tests that change files copy it first."""
+    from tests.analysis_data import process_fixture
+
+    return process_fixture(tmp_path_factory.mktemp("a_session"), face_model)
+
+
+@pytest.fixture(scope="session")
+def b_session(
+    tmp_path_factory: pytest.TempPathFactory, a_session: FixtureSession, model_b_root: Path
+) -> FixtureSession:
+    """The same session after Pipeline B too (the real small gaze network). Read-only."""
+    import shutil
+
+    from tests.analysis_data import add_pipeline_b
+
+    root = tmp_path_factory.mktemp("b_session") / "data"
+    shutil.copytree(a_session.root, root)
+    s = FixtureSession(
+        root, a_session.study_id, a_session.session_id, a_session.manifest,
+        root / a_session.raw.relative_to(a_session.root),
+    )  # fmt: skip
+    add_pipeline_b(s, model_b_root)
+    return s

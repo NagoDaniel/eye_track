@@ -81,13 +81,51 @@
   <tbody>
   {% for j in session.jobs %}
     <tr{% if j.status == "failed" %} class="gap"{% endif %}>
-      <td class="num">{{ j.id }}</td><td>{{ "debug replay" if j.kind == "render_debug" else "processing" }}</td><td>{{ j.status }}</td><td>{{ j.from_stage or j.only or ("-" if j.kind == "render_debug" else "start") }}</td><td>{{ j.created_at }}</td><td>{{ j.finished_at or "-" }}</td>
+      <td class="num">{{ j.id }}</td><td>{{ "debug replay" if j.kind == "render_debug" else ("Pipeline B" if j.kind == "process_pipeline_b" else "processing") }}</td><td>{{ j.status }}</td><td>{{ j.from_stage or j.only or ("-" if j.kind == "render_debug" else "start") }}</td><td>{{ j.created_at }}</td><td>{{ j.finished_at or "-" }}</td>
     </tr>
     {% if j.status == "failed" and j.log %}<tr><td colspan="6"><details open><summary class="error">Why it failed</summary><pre>{{ j.log }}</pre></details></td></tr>{% endif %}
   {% endfor %}
   </tbody>
 </table>
 {% endif %}
+
+<h2>Pipeline B</h2>
+{% set b = session.pipeline_b %}
+<p class="muted">The gaze network and the same calibration as Pipeline A, on its own: it takes long, so it is run on request. It leaves Pipeline A's results as they are.</p>
+{% if b.summary %}
+<table>
+  <tr><th>Included for B</th><td>{% if b.summary.included %}<span class="ok">yes</span>{% else %}<span class="error">no: {{ b.summary.reasons | join(", ") }}</span>{% endif %}</td></tr>
+  <tr><th>Network</th><td>{{ b.summary.model }}</td></tr>
+  <tr><th>Calibration</th><td>{{ b.summary.calibration_status }}</td></tr>
+  <tr><th>Valid gaze during playback</th><td>{{ pct(b.summary.valid_fraction) }}</td></tr>
+  <tr><th>Validation error (share of the diagonal)</th><td>{{ num(b.summary.validation_error_norm, "%.3f") }}</td></tr>
+</table>
+{% else %}
+<p class="muted">Pipeline B has not been run for this session.</p>
+{% endif %}
+{% if b.stale %}<p class="warning" role="status">Pipeline B is <strong>stale</strong>: {{ b.stale_reason }}. Analyses and comparisons skip this session until Pipeline B is run again from its first stage.</p>{% endif %}
+{% if b.refused %}<p class="muted">Cannot be run now: {{ b.refused }}.</p>{% endif %}
+<table>
+  <thead><tr><th>Stage</th><th>What it does</th><th>Status</th><th class="num">Last run (s)</th><th>Result</th><th></th></tr></thead>
+  <tbody>
+  {% for st in b.stages %}
+    <tr{% if st.status == "failed" %} class="gap"{% endif %}>
+      <td>{{ st.name }}</td>
+      <td class="muted">{{ st.description }}</td>
+      <td>{% if not st.ran %}<span class="muted">not run</span>{% elif st.status == "failed" %}<strong class="error">failed</strong>{% elif st.status == "skipped" %}skipped{% else %}<span class="ok">ok</span>{% endif %}</td>
+      <td class="num">{{ num(st.seconds, "%.1f") if st.ran else "-" }}</td>
+      <td>{% if st.error %}<pre class="error">{{ st.error }}</pre>{% elif st.skipped %}{{ st.skipped }}{% elif st.summary is not none %}<details><summary>summary</summary><pre>{{ st.summary | tojson(indent=1) }}</pre></details>{% endif %}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/sessions/{{ session.id }}/run-b">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="from_stage" value="{{ st.name }}">
+          <button type="submit"{% if b.refused %} disabled{% endif %}>{{ "Run Pipeline B" if loop.first else "Run from here" }}</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
 
 <h2>Debug plots</h2>
 {% if session.plots %}

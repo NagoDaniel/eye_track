@@ -36,12 +36,23 @@ jobs:
       - run: cd backend && uv sync --frozen
       - run: cd frontend && npm ci
       - run: cd e2e && npm ci
+      # The Pipeline B tests run the real gaze network: the small weights download into pytest's cache
+      # on first use, the large ResNet-50 ones are fetched here (sha256 checked); both are cached.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            backend/.pytest_cache/d/models
+            models-ci
+          key: models-${{ hashFiles('shared/models.json') }}
+      - run: python3 shared/download_model.py fetch models-ci l2cs_resnet50
       # ruff, mypy --strict, eslint, tsc --strict
       - run: make lint
       # shellcheck on every script and the proxy entrypoint
       - run: make lint-shell
       # pytest (database tests start a real postgres:16 container) and vitest
       - run: make test
+        env:
+          L2CS_RESNET50: ${{ github.workspace }}/models-ci/resnet50_gaze.onnx
 
   images:
     name: build and check the backend and proxy images

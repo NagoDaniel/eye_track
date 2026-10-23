@@ -27,7 +27,7 @@ def test_queueing_records_the_options_and_a_run_id(db: Db) -> None:
     db.commit()
     assert job.args == {"study_id": 1, "video_id": 2, "run_id": run_id,
                         "gaze_columns": "drift_corrected", "aoi_tolerance_k": 0.5,
-                        "heatmap_dots": True}  # fmt: skip
+                        "heatmap_dots": True, "pipeline": "a"}  # fmt: skip
     assert job.status is JobStatus.QUEUED
     assert [j.id for j in analysis_jobs(db, study_id=1, video_id=2)] == [job.id]
     assert analysis_jobs(db, study_id=2) == [] and analysis_jobs(db, video_id=1) == []

@@ -11,6 +11,7 @@
   <tr><th>Started</th><td>{{ record.started_at }}</td></tr>
   <tr><th>Finished</th><td>{{ record.finished_at or "–" }}</td></tr>
   <tr><th>Code version</th><td>{% if record.git_hash %}<code>{{ record.git_hash }}</code>{% else %}<span class="warning">not recorded (the image was built without GIT_SHA)</span>{% endif %}</td></tr>
+  <tr><th>Pipeline</th><td>{{ record.parameters.pipeline | upper }}</td></tr>
   <tr><th>Gaze</th><td>{{ record.parameters.gaze_columns }}</td></tr>
   <tr><th>AOI tolerance k</th><td>{{ record.parameters.aoi_tolerance_k }}</td></tr>
   <tr><th>Dots on the heatmap video</th><td>{{ "yes" if record.parameters.heatmap_dots else "no" }}</td></tr>

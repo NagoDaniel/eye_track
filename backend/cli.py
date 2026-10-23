@@ -9,19 +9,24 @@ import pyarrow.parquet as pq
 import typer
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.analysis_runs import OPEN_JOBS, analysis_jobs, new_run_id
+from app.analysis_runs import OPEN_JOBS, analysis_jobs, compare_jobs, new_run_id
 from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
 from app.logging import configure_logging
 from app.models import Job, JobKind
 from app.models import Session as SessionRow
+from app.pipeline_b import B_STAGE_NAMES, queue_study
+from app.pipeline_b import refusal as b_refusal
 from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
-from app.storage import analysis_run_dir, derived_dir, events_path
-from worker.handlers import make_analyze_video, make_process_session
+from app.storage import analysis_run_dir, compare_run_dir, derived_dir, events_path
+from app.study_archive import export_study, import_study
+from worker.analysis.compare import run_compare
+from worker.analysis.config import AnalysisConfig
+from worker.handlers import make_analyze_video, make_process_pipeline_b, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
@@ -141,6 +146,70 @@ def process_command(
         )
 
 
+@app.command("process-b")
+def process_b_command(
+    session_id: str | None = typer.Argument(
+        None, help="Run Pipeline B for this session here and now (it can take a long time)."
+    ),
+    study: int | None = typer.Option(
+        None, "--study", help="Queue a job for every processed session of this study instead."
+    ),
+    from_stage: str | None = typer.Option(
+        None, "--from-stage", help=f"Start at this stage: {', '.join(B_STAGE_NAMES)}."
+    ),
+    only: str | None = typer.Option(None, "--only", help="Run this stage only."),
+) -> None:
+    """Run Pipeline B, the gaze network (PLAN §8.5; DECISIONS 2026-10-20).
+
+    With a session: here and now, like `process`. With `--study`: one queued job per processed
+    session, for the worker to run when it has nothing else to do."""
+    if (session_id is None) == (study is None):
+        typer.echo("error: give a session id or --study, not both or neither", err=True)
+        raise typer.Exit(1)
+    config = settings()
+    weights = (config.models_root, config.pipeline_b_model)
+    factory = session_factory()
+    if study is not None:
+        with factory() as db:
+            queued, left = queue_study(db, study, config.data_root, weights)
+            db.commit()
+        typer.echo(f"Queued Pipeline B for {len(queued)} session(s) of study {study}.")
+        for row, reason in left:
+            typer.echo(f"  {row.participant_code} {str(row.id)[:8]}: {reason}")
+        return
+    assert session_id is not None
+    sid = _session_id(session_id)
+    with factory() as db:
+        existing = db.get(SessionRow, sid)
+        if existing is None:
+            typer.echo(f"error: session {sid} does not exist", err=True)
+            raise typer.Exit(1)
+        refused = b_refusal(db, existing, config.data_root, weights)
+    if refused is not None:
+        typer.echo(f"error: {refused}", err=True)
+        raise typer.Exit(1)
+    args: dict[str, object] = {"session_id": str(sid)}
+    if from_stage is not None:
+        args["from_stage"] = from_stage
+    if only is not None:
+        args["only"] = only
+    handler = make_process_pipeline_b(factory, config)
+    try:
+        handler(Job(kind=JobKind.PROCESS_PIPELINE_B, args=args))
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    with factory() as db:
+        after = db.get(SessionRow, sid)
+        summary = ((after.quality if after else None) or {}).get("pipeline_b")
+    typer.echo(f"Session {sid}: Pipeline B done")
+    if summary is not None:
+        typer.echo(f"  included for B: {summary['included']} {summary['reasons'] or ''}")
+        typer.echo(
+            f"  model {summary['model']}, validation error {summary['validation_error_norm']}"
+        )
+
+
 @app.command("export-session")
 def export_session_command(
     session_id: str = typer.Argument(..., help="The session to export."),
@@ -178,6 +247,60 @@ def import_session_command(
             raise typer.Exit(1) from exc
         db.commit()
     typer.echo(f"Imported session {sid}. Process it again with: python cli.py process {sid}")
+
+
+@app.command("export-study")
+def export_study_command(
+    study_id: int = typer.Argument(..., help="The study to export."),
+    out: Path | None = typer.Option(None, "--out", help="The ZIP file (default study-<id>.zip)."),
+    no_raw_video: bool = typer.Option(
+        False, "--no-raw-video", help="Leave the participants' webcam video out."
+    ),
+    include_debug: bool = typer.Option(
+        False, "--include-debug", help="Also export the debug sessions (left out by default)."
+    ),
+    no_analysis: bool = typer.Option(
+        False, "--no-analysis", help="Leave the analysis and comparison runs out."
+    ),
+) -> None:
+    """Write a ZIP with the whole study: its videos, sessions and analyses (PLAN §12.3)."""
+    target = out or Path(f"study-{study_id}.zip")
+    with open_session() as db:
+        try:
+            summary = export_study(
+                db, settings().data_root, study_id, target,
+                include_raw_video=not no_raw_video, include_debug=include_debug,
+                include_analysis=not no_analysis,
+            )  # fmt: skip
+        except ArchiveError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+    typer.echo(
+        f"Wrote {target}: {summary.sessions} session(s), {summary.videos} video(s), "
+        f"{summary.analysis_files} analysis file(s), {summary.bytes / 1e6:.1f} MB"
+    )
+    if summary.left_out_debug:
+        typer.echo(f"  left out {summary.left_out_debug} debug session(s) (--include-debug)")
+    if summary.left_out_no_data:
+        typer.echo(f"  left out {summary.left_out_no_data} session(s) without uploaded data")
+    if not no_raw_video:
+        typer.echo("Warning: the archive contains the participants' webcam video (personal data).")
+
+
+@app.command("import-study")
+def import_study_command(
+    archive: Path = typer.Argument(..., help="A ZIP made by export-study."),
+) -> None:
+    """Load an exported study into this instance (PLAN §12.3)."""
+    with open_session() as db:
+        try:
+            study_id = import_study(db, settings().data_root, archive)
+        except ArchiveError as exc:
+            db.rollback()
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+        db.commit()
+    typer.echo(f"Imported study {study_id}. Its sessions can be processed again with `process`.")
 
 
 @app.command("render-debug")
@@ -218,6 +341,7 @@ def analyze_command(
         0.0, "--tolerance-k", min=0.0, help="Grow the AOIs by k times each participant's accuracy."
     ),
     dots: bool = typer.Option(False, "--dots", help="Draw a dot per participant on the heatmap."),
+    pipeline: str = typer.Option("a", "--pipeline", help="Analyse Pipeline a or b."),
 ) -> None:
     """Analyse one video across the included sessions of a study here and now (PLAN §9).
 
@@ -237,6 +361,7 @@ def analyze_command(
         "gaze_columns": "plain" if as_measured else "drift_corrected",
         "aoi_tolerance_k": tolerance_k,
         "heatmap_dots": dots,
+        "pipeline": pipeline,
     }
     handler = make_analyze_video(session_factory(), config)
     run_dir = analysis_run_dir(config.data_root, study_id, video_id, run_id)
@@ -254,6 +379,40 @@ def analyze_command(
     typer.echo(f"Wrote {run_dir}:")
     for name in record["outputs"]:
         typer.echo(f"  {name}")
+
+
+@app.command("compare")
+def compare_command(
+    study_id: int = typer.Argument(..., help="The study."),
+) -> None:
+    """Compare Pipeline A and B on the sessions of a study here and now (PLAN §9.5).
+
+    Writes `analysis/{study}/compare/{run}/`: a CSV per session, the statistics, a Markdown report
+    and box plots. Sessions without a fresh Pipeline B are listed as left out."""
+    config = settings()
+    with open_session() as db:
+        busy = [j for j in compare_jobs(db, study_id) if j.status in OPEN_JOBS]
+    if busy:
+        typer.echo("error: a comparison of this study is already queued or running", err=True)
+        raise typer.Exit(1)
+    run_id = new_run_id()
+    try:
+        with open_session() as db:
+            record = run_compare(db, config.data_root, study_id, run_id, AnalysisConfig())
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        f"Comparison {run_id}: {len(record.included)} session(s), {len(record.excluded)} left out"
+    )
+    for row in record.results["statistics"]:
+        p = "n/a" if row["p_value"] is None else f"{row['p_value']:.3g}"
+        typer.echo(
+            f"  {row['metric']:<24} n={row['n']:<3} A {row['median_a']} B {row['median_b']} p={p}"
+        )
+    for left in record.excluded:
+        typer.echo(f"  left out {left['participant_code']}: {', '.join(left['reasons'])}")
+    typer.echo(f"Wrote {compare_run_dir(config.data_root, study_id, run_id)}")
 
 
 def _default_dot_path() -> Path:

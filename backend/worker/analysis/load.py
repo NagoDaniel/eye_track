@@ -1,6 +1,7 @@
 """One session's gaze and fixations on one video, as the analysis uses them (PLAN §9).
 
-Reads `gaze_a.parquet`, `fixations_a.parquet` and `quality.json` of the session, keeps the rows of
+Reads the gaze, fixations and quality report of the run's pipeline (A: `gaze_a.parquet`,
+`fixations_a.parquet`, `quality.json`; B: the `_b` files and `quality_b.json`), keeps the rows of
 the video, and picks the plain or drift-corrected video coordinates (DECISIONS 2026-10-19 item 2;
 drift-corrected is the default since 2026-10-20).
 Coordinates are video-normalized (0 to 1 over the content rectangle, can fall outside).
@@ -17,10 +18,11 @@ import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
 from app.events import parse_events
+from app.pipeline_b import QUALITY_B_FILE
 from app.storage import derived_dir, events_path
 from worker.analysis.config import AnalysisConfig, GazeColumns
-from worker.pipeline.gaze import FIXATIONS_FILE, GAZE_FILE
 from worker.pipeline.quality import QUALITY_FILE
+from worker.pipeline.spec import spec_of
 from worker.pipeline.stimulus_map import VideoRectTimeline
 
 Floats = NDArray[np.float64]
@@ -95,7 +97,8 @@ def load_session(
     suffix = "_dc" if gaze_columns == "drift_corrected" else ""
     wanted = str(video_id)
 
-    gaze = pq.read_table(derived / GAZE_FILE)
+    spec = spec_of(config.pipeline)
+    gaze = pq.read_table(derived / spec.gaze_file)
     on_video = np.array([v == wanted for v in gaze["video_id"].to_pylist()], dtype=np.bool_)
     valid = np.asarray(gaze["valid"].to_pylist(), dtype=np.bool_)
     t_ms, stim = _floats(gaze["t"]), _floats(gaze["stim_time"])
@@ -107,7 +110,7 @@ def load_session(
     dt_s = np.minimum(step, config.sample_max_dt_ms) / 1000.0
     samples = Samples(t_ms[keep], stim[keep], x[keep], y[keep], dt_s[keep])
 
-    fix = pq.read_table(derived / FIXATIONS_FILE)
+    fix = pq.read_table(derived / spec.fixations_file)
     fix_on_video = np.array([v == wanted for v in fix["video_id"].to_pylist()], dtype=np.bool_)
     cx, cy = _floats(fix[f"cx_vid{suffix}"]), _floats(fix[f"cy_vid{suffix}"])
     s0, s1 = _floats(fix["stim_start"]), _floats(fix["stim_end"])
@@ -122,7 +125,7 @@ def load_session(
         y=cy[fix_keep],
     )
 
-    quality = _read_quality(derived / QUALITY_FILE)
+    quality = _read_quality(derived / (QUALITY_B_FILE if spec.id == "b" else QUALITY_FILE))
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
     widths, _ = VideoRectTimeline(events).rect_at(t_ms[on_video])
     width = float(np.nanmedian(widths)) if np.isfinite(widths).any() else None

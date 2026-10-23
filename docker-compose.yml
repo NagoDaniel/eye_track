@@ -26,6 +26,7 @@ x-backend: &backend
     WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
     JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
     ONNX_PROVIDER: ${ONNX_PROVIDER:-cpu}
+    PIPELINE_B_MODEL: ${PIPELINE_B_MODEL:-l2cs_resnet50}
     MAX_UPLOAD_CHUNK_MB: ${MAX_UPLOAD_CHUNK_MB:-10}
     MAX_SESSION_TOTAL_MB: ${MAX_SESSION_TOTAL_MB:-2048}
     MAX_CHUNKS_PER_STREAM: ${MAX_CHUNKS_PER_STREAM:-100000}
@@ -75,6 +76,9 @@ services:
     <<: *backend
     volumes:
       - ${DATA_DIR:-./data}:/data
+      # The admin pages check that Pipeline B's weights are there (they disable the button and say
+      # why); only the worker loads them.
+      - ${MODELS_DIR:-./models}:/models:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

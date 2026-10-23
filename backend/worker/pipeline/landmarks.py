@@ -31,8 +31,10 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions, RunningMode
 
 from app.storage import atomic_writer
+from worker.cancel import check_cancelled
 
 LANDMARKS_FILE = "landmarks.parquet"
+CANCEL_CHECK_FRAMES = 100  # frames between two looks at the admin's cancel request
 LANDMARK_COUNT = 478  # 468 mesh points and 2 x 5 iris points
 MATRIX_SIZE = 16
 # Same as the browser model (`frontend/src/face/faceModel.ts`): up to two faces are looked for and
@@ -173,6 +175,8 @@ def detect_landmarks(model: Path, video: Path, out: Path) -> LandmarkSummary:
                 if frame.pts is None:
                     raise LandmarkError(f"frame {frames} of {video.name} has no presentation time")
                 pts = float(frame.pts * time_base)
+                if frames % CANCEL_CHECK_FRAMES == 0:
+                    check_cancelled()
                 timestamp = _next_timestamp_ms(timestamp, pts)
                 rgb = np.ascontiguousarray(frame.to_ndarray(format="rgb24"))
                 if writer is None:

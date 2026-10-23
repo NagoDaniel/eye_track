@@ -17,10 +17,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session as Db
 
-from app.analysis_runs import RUN_FILE, analysis_jobs
+from app.analysis_runs import RUN_FILE, analysis_jobs, compare_jobs
 from app.models import Job, JobStatus
 from app.service_errors import NotFoundError
-from app.storage import analysis_run_dir
+from app.storage import analysis_run_dir, compare_run_dir
 
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 # Already compressed: storing them is faster and not bigger.
@@ -58,7 +58,10 @@ def run_file(root: Path, study_id: int, video_id: int, run_id: str, name: str) -
 def build_zip(root: Path, study_id: int, video_id: int, run_id: str) -> Path:
     """`run.json` and every output of the run in a ZIP, in a temporary file the caller deletes."""
     record = read_run(root, study_id, video_id, run_id)
-    run_dir = run_directory(root, study_id, video_id, run_id)
+    return _zip(run_directory(root, study_id, video_id, run_id), record, run_id)
+
+
+def _zip(run_dir: Path, record: dict[str, Any], run_id: str) -> Path:
     names = [RUN_FILE, *record["outputs"]]
     missing = [n for n in names if not (run_dir / n).is_file()]
     if missing:
@@ -89,6 +92,7 @@ def _from_record(record: dict[str, Any], job: Job | None) -> dict[str, Any]:
         "error": error,
         "started_at": record["started_at"],
         "git_hash": record["git_hash"],
+        "pipeline": record["parameters"].get("pipeline", "a"),
         "gaze_columns": record["parameters"]["gaze_columns"],
         "aoi_tolerance_k": record["parameters"]["aoi_tolerance_k"],
         "included": len(record["included"]),
@@ -109,6 +113,7 @@ def _from_job(job: Job) -> dict[str, Any]:
         "error": None if status else job.log,
         "started_at": None if job.started_at is None else job.started_at.isoformat(),
         "git_hash": None,
+        "pipeline": args.get("pipeline", "a"),
         "gaze_columns": args.get("gaze_columns", "drift_corrected"),
         "aoi_tolerance_k": args.get("aoi_tolerance_k", 0.0),
         "included": 0,
@@ -130,6 +135,8 @@ def list_runs(
     for path in (root / "analysis").glob(f"{pattern}/*/{RUN_FILE}"):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("kind") != "analyze_video":
+                continue  # a comparison (they are listed by `list_comparisons`)
             entry = _from_record(record, jobs.get(record["run_id"]))
         except (OSError, ValueError, KeyError):
             continue  # a half-written or foreign file; the run is not shown
@@ -174,3 +181,75 @@ def participant_analysis(
             "nss_mean": nss.get(participant_code),
         })  # fmt: skip
     return found
+
+
+# --- comparisons of the pipelines (PLAN §9.5) ---------------------------------------------------
+
+
+def compare_directory(root: Path, study_id: int, run_id: str) -> Path:
+    """The directory of a comparison; NotFoundError when the id is malformed or it is not there."""
+    if not RUN_ID.fullmatch(run_id):
+        raise NotFoundError(f"no comparison called {run_id}")
+    run_dir = compare_run_dir(root, study_id, run_id)
+    if not (run_dir / RUN_FILE).is_file():
+        raise NotFoundError(f"comparison {run_id} has not started or does not exist")
+    return run_dir
+
+
+def read_compare(root: Path, study_id: int, run_id: str) -> dict[str, Any]:
+    run_dir = compare_directory(root, study_id, run_id)
+    record: dict[str, Any] = json.loads((run_dir / RUN_FILE).read_text(encoding="utf-8"))
+    return record
+
+
+def compare_file(root: Path, study_id: int, run_id: str, name: str) -> Path:
+    """An output of the comparison (or `run.json`); nothing else is served."""
+    record = read_compare(root, study_id, run_id)
+    if name != RUN_FILE and name not in record["outputs"]:
+        raise NotFoundError(f"the comparison has no file called {name}")
+    path = compare_directory(root, study_id, run_id) / name
+    if not path.is_file():
+        raise NotFoundError(f"{name} is missing from the comparison directory")
+    return path
+
+
+def build_compare_zip(root: Path, study_id: int, run_id: str) -> Path:
+    record = read_compare(root, study_id, run_id)
+    return _zip(compare_directory(root, study_id, run_id), record, run_id)
+
+
+def list_comparisons(db: Db, root: Path, study_id: int | None = None) -> list[dict[str, Any]]:
+    """Every comparison, newest first: on disk, and queued ones that have no directory yet."""
+    jobs = {str(j.args.get("run_id")): j for j in compare_jobs(db, study_id)}
+    found: dict[str, dict[str, Any]] = {}
+    study_part = "*" if study_id is None else str(study_id)
+    for path in (root / "analysis").glob(f"{study_part}/compare/*/{RUN_FILE}"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            found[record["run_id"]] = {
+                "study_id": record["study_id"],
+                "run_id": record["run_id"],
+                "status": _job_overrides(record["status"], jobs.get(record["run_id"])),
+                "error": record["error"],
+                "started_at": record["started_at"],
+                "compared": len(record["included"]),
+                "left_out": len(record["excluded"]),
+                "has_record": True,
+            }
+        except (OSError, ValueError, KeyError):
+            continue
+    for run_id, job in jobs.items():
+        if run_id not in found:
+            status = {JobStatus.QUEUED: "queued", JobStatus.RUNNING: "running"}.get(job.status)
+            found[run_id] = {
+                "study_id": job.args["study_id"], "run_id": run_id, "status": status or "failed",
+                "error": None if status else job.log, "started_at": None, "compared": 0,
+                "left_out": 0, "has_record": False,
+            }  # fmt: skip
+    return sorted(found.values(), key=lambda r: r["run_id"], reverse=True)
+
+
+def _job_overrides(status: str, job: Job | None) -> str:
+    """A `running` record whose job failed (the worker died or gave up) is `failed`."""
+    failed = job is not None and job.status is JobStatus.FAILED
+    return "failed" if status == "running" and failed else status

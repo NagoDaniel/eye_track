@@ -19,10 +19,9 @@ from numpy.typing import NDArray
 from app.events import parse_events
 from app.schemas import EventRecord
 from app.storage import derived_dir, events_path
-from worker.pipeline.calibration import CALIBRATION_FILE
 from worker.pipeline.config import PipelineConfig
-from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS, FEATURES_FILE
 from worker.pipeline.ridge import RidgeModel, predict
+from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 
 Floats = NDArray[np.float64]
@@ -103,25 +102,29 @@ class SessionPrediction:
 
 
 def predict_session(
-    root: Path, study_id: int, session_id: uuid.UUID, config: PipelineConfig
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec = SPEC_A,
 ) -> SessionPrediction:
     """Read the session's derived files and predict. ValueError when the calibration failed."""
     derived = derived_dir(root, study_id, session_id)
-    calibration = json.loads((derived / CALIBRATION_FILE).read_text(encoding="utf-8"))
+    calibration = json.loads((derived / spec.calibration_file).read_text(encoding="utf-8"))
     if calibration["status"] != "ok":
         raise ValueError(
             f"the calibration failed ({calibration['failed_reason']}): nothing to predict"
         )
-    if calibration["feature_columns"] != list(FEATURE_VECTOR_COLUMNS):
+    if calibration["feature_columns"] != list(spec.feature_columns):
         raise ValueError("the calibration was fitted on other features than this code computes")
     model = RidgeModel.from_dict(calibration["model"])
 
-    table = pq.read_table(derived / FEATURES_FILE)
+    table = pq.read_table(derived / spec.features_file)
     a_ms, b = read_t_of_pts(derived / SYNC_FILE)
     pts = table["pts"].to_numpy()
     t_ms = a_ms + 1000.0 * b * pts
     vectors = np.stack(
-        [table[c].to_numpy(zero_copy_only=False) for c in FEATURE_VECTOR_COLUMNS], axis=1
+        [table[c].to_numpy(zero_copy_only=False) for c in spec.feature_columns], axis=1
     )
     blink = np.asarray(table["blink"].to_pylist(), dtype=np.bool_)
     face = np.asarray(table["face"].to_pylist(), dtype=np.bool_)

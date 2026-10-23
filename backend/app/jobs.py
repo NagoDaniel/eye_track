@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.models import Job, JobKind, JobStatus, SessionStatus
@@ -27,7 +27,8 @@ def claim_next(db: Session) -> Job | None:
     stmt = (
         select(Job)
         .where(Job.status == JobStatus.QUEUED)
-        .order_by(Job.id)
+        # Pipeline B takes hours: every other job goes first (DECISIONS 2026-10-20).
+        .order_by(case((Job.kind == JobKind.PROCESS_PIPELINE_B, 1), else_=0), Job.id)
         .limit(1)
         .with_for_update(skip_locked=True)
     )
@@ -54,6 +55,27 @@ def mark_done(db: Session, job: Job, log: str = "") -> None:
 
 def mark_failed(db: Session, job: Job, log: str) -> None:
     _finish(db, job, JobStatus.FAILED, log)
+
+
+CANCELLED_LOG = "cancelled by the admin"
+
+
+def request_cancel(db: Session, job: Job) -> str:
+    """Stop a job: a queued one is finished at once, a running one is asked to stop (the worker
+    looks at the flag between its steps) and a finished one cannot be. Returns `cancelled` or
+    `cancelling`; the caller commits. Raises ValueError for a finished job.
+
+    The row is read again under a lock: a worker that claimed the job after the caller loaded it
+    must not have its running job marked failed (and a worker cannot claim it while we hold it)."""
+    db.refresh(job, with_for_update=True)
+    if job.status is JobStatus.QUEUED:
+        mark_failed(db, job, CANCELLED_LOG)
+        return "cancelled"
+    if job.status is JobStatus.RUNNING:
+        job.cancel_requested = True
+        db.flush()
+        return "cancelling"
+    raise ValueError(f"job {job.id} is {job.status.value}: nothing to cancel")
 
 
 @dataclass(frozen=True)
@@ -87,7 +109,12 @@ def recover_stale_running(db: Session, max_attempts: int) -> Recovery:
     for job in stale:
         session = _session_of(db, job)
         in_progress = session is not None and session.status is SessionStatus.PROCESSING
-        if job.attempts < max_attempts:
+        if job.cancel_requested:  # the admin wanted it stopped: do not run it again
+            mark_failed(db, job, CANCELLED_LOG)
+            if session is not None and in_progress:
+                session.status = SessionStatus.FAILED
+            failed.append(job.id)
+        elif job.attempts < max_attempts:
             job.status = JobStatus.QUEUED
             job.started_at = None
             job.log = f"worker died during attempt {job.attempts}; requeued"

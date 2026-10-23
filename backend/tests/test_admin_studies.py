@@ -342,7 +342,8 @@ def test_study_page_shows_the_current_playlist_ticked_and_numbered(
     first = page.index(f'name="video_ids" value="{b}"')
     second = page.index(f'name="video_ids" value="{a}"')
     assert first < second  # the playlist order, not the id order
-    assert page.count(" checked") == 2
+    settings = page.split("<h2>Settings</h2>")[1]  # the playlist table (the export boxes are above)
+    assert settings.count(" checked") == 2
     assert 'name="positions" min="1" value="1"' in page
     assert '"playlist"' not in page.split("<textarea")[1].split("</textarea>")[0]
 

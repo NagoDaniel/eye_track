@@ -20,6 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import expression
 
 from app.db import Base
 
@@ -71,6 +72,7 @@ class JobKind(enum.Enum):
     ANALYZE_VIDEO = "analyze_video"
     COMPARE_PIPELINES = "compare_pipelines"
     RENDER_DEBUG = "render_debug"
+    PROCESS_PIPELINE_B = "process_pipeline_b"
 
 
 class JobStatus(enum.Enum):
@@ -165,6 +167,10 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set by the admin on a running job; the worker checks it between its steps and stops.
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=expression.false()
+    )
 
 
 class AdminUser(Base):

@@ -14,8 +14,8 @@ GazeColumns = Literal["plain", "drift_corrected"]
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    # Which pipeline's gaze is analysed (PLAN §9: default A; B arrives with Milestone 5).
-    pipeline: Literal["a"] = "a"
+    # Which pipeline's gaze is analysed (PLAN §9: default A; B from Milestone 5).
+    pipeline: Literal["a", "b"] = "a"
     # Smoothed gaze with the drift correction of §8.8 (the default, DECISIONS 2026-10-20: it removes
     # the constant offset glasses cause, H2) or as measured.
     gaze_columns: GazeColumns = "drift_corrected"
@@ -47,6 +47,11 @@ class AnalysisConfig:
     # --- AOI metrics (PLAN §9.3) ---
     # Shapes are grown by k times the participant's validation accuracy.
     aoi_tolerance_k: float = 0.0
+
+    # --- Pipeline comparison (PLAN §9.5) ---
+    # A p-value of the paired Wilcoxon test is only given from this many sessions (the test has no
+    # power below about six pairs); fewer give the numbers and no p.
+    compare_min_pairs: int = 6
 
     # --- Attentional synchrony (PLAN §9.4) ---
     synchrony_window_ms: float = 200.0

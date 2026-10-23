@@ -1,6 +1,6 @@
 # Data formats
 
-What the system writes to disk and sends over the wire, as of Milestone 3 (ingest). Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
+What the system writes to disk and sends over the wire, as of Milestone 5 (processing pipelines A and B, analysis). Sections are added as later milestones write more files (PLAN §7). The reference for names and payload shapes is `shared/protocol.json`; `backend/app/schemas.py` and `frontend/src/{config,eventLog,records}.ts` mirror it and tests compare all three.
 
 ## Files under `DATA_ROOT` (default `./data`, `/data` in the containers)
 
@@ -21,17 +21,27 @@ studies/{study_id}/sessions/{session_id}/
     features_a.parquet               Pipeline A features of every webcam frame (below)
     sync.json                        webcam frame time to client time (below)
     calibration_a.json               the fitted calibration model of Pipeline A (below)
-    gaze_a.parquet                   the gaze of every webcam frame (below)
-    fixations_a.parquet              the fixations of the playback phase (below)
-    quality.json                     the session quality report and inclusion decision (below)
+    gaze_a.parquet                   the gaze of every webcam frame, Pipeline A (below)
+    fixations_a.parquet              the fixations of the playback phase, Pipeline A (below)
+    quality.json                     the session quality report and inclusion decision (Pipeline A)
     stages.json                      per stage: status (ok, skipped, failed), seconds, summary, error; written after every stage
-    debug/*.png                      debug plots (below)
+    features_b.parquet               Pipeline B features (gaze angles of the neural network + head pose), only after a Pipeline B run
+    calibration_b.json               the fitted calibration model of Pipeline B (same format as A, six features)
+    gaze_b.parquet                   the gaze of every webcam frame, Pipeline B (same columns as A)
+    fixations_b.parquet              the fixations of the playback phase, Pipeline B
+    quality_b.json                   Pipeline B's quality report and inclusion decision
+    stages_b.json                    the stages of Pipeline B, as stages.json
+    pipeline_b_stale.json            exists only while Pipeline B's files no longer fit Pipeline A's (below)
+    debug/calibration.png, validation.png, sync.png, signals.png, gaze.png        debug plots of Pipeline A
+    debug/calibration_b.png, validation_b.png, gaze_b.png                          debug plots of Pipeline B
     debug/replay.mp4                 the debug replay video, only when rendered on request (below)
+    intermediates/webcam_concat.webm only with cli.py process --keep-intermediates
+analysis/{study_id}/{video_id}/{run_id}/  run.json and the analysis outputs (below)
 ```
 
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
 
-`webcam.webm`, `events.jsonl`, `browser_features.jsonl` and `stimulus_frames.jsonl` are pure functions of the chunks. The ingest stage (`backend/worker/pipeline/ingest.py`) checks the chunks against the `chunks` table (every seq from 0 to the highest is there, size and sha256 match), then writes the files that are missing and refuses (error, nothing overwritten) when one that exists differs from what the chunks give. `webcam.webm` is always rewritten (atomically): `ffmpeg -c copy -fflags +genpts` into a real file, so the result has a duration and a seek index (cues), which the MediaRecorder stream lacks. Everything else under `derived/` comes with the later stages of Milestone 3.
+`webcam.webm`, `events.jsonl`, `browser_features.jsonl` and `stimulus_frames.jsonl` are pure functions of the chunks. The ingest stage (`backend/worker/pipeline/ingest.py`) checks the chunks against the `chunks` table (every seq from 0 to the highest is there, size and sha256 match), then writes the files that are missing and refuses (error, nothing overwritten) when one that exists differs from what the chunks give. `webcam.webm` is always rewritten (atomically): `ffmpeg -c copy -fflags +genpts` into a real file, so the result has a duration and a seek index (cues), which the MediaRecorder stream lacks. The other files under `derived/` are written by the later stages; their schemas are in "Derived files of the pipelines" below.
 
 ### `derived/webcam_frames.parquet` (ingest)
 
@@ -168,9 +178,9 @@ Written when the session is created and rewritten (atomically) when it completes
 
 `created` (session made) → `consented` (consent recorded) → `recording` (first chunk accepted) → `uploaded` (`/complete` found no missing chunk and queued the `process_session` job) → `processing` (the worker runs the stages) → `processed` (the quality report exists) or `failed` (a stage raised; the job's log names the stage). `withdrawn` exists in the database but nothing sets it yet.
 
-`/complete` queues the job once per session (a repeated `/complete` does not queue another) and not for a session without any chunk (flag `empty`). Job kinds: `process_session` (the stages, above) and `render_debug` (the replay video; it does not change the session's status). A session can have only one open job of either kind at a time. A processed or failed session can be processed again from any stage: a `process_session` job with `from_stage` or `only` in its args (the CLI and the admin page do this). A worker that dies mid-job leaves the session `processing`; the next worker start puts the job back in the queue and the session back to `uploaded`, or fails both after `JOB_MAX_ATTEMPTS` (DECISIONS milestone 3 item 14).
+`/complete` queues the job once per session (a repeated `/complete` does not queue another) and not for a session without any chunk (flag `empty`). Job kinds for a session: `process_session` (the stages of Pipeline A, above), `process_pipeline_b` (the stages of Pipeline B; it needs a processed session, does not change its status and leaves A's files alone) and `render_debug` (the replay video; it does not change the session's status). A session can have only one open job of these kinds at a time. A processed or failed session can be processed again from any stage: a `process_session` job with `from_stage` or `only` in its args (the CLI and the admin page do this). A worker that dies mid-job leaves the session `processing`; the next worker start puts the job back in the queue and the session back to `uploaded`, or fails both after `JOB_MAX_ATTEMPTS` (DECISIONS milestone 3 item 14).
 
-The worker sets these session flags (and removes them when a later run no longer finds the problem), next to the ones of the participant app: `sync_short`, `sync_weak_peak`, `sync_lag_at_limit`, `sync_drift_high`, `sync_residual_high`, `sync_drift_unknown`, `sync_coarse_only` (see `sync.json`) and `calibration_failed` (see `calibration_a.json`). `sessions.quality` holds `quality.json`.
+The worker sets these session flags (and removes them when a later run no longer finds the problem), next to the ones of the participant app: `sync_short`, `sync_weak_peak`, `sync_lag_at_limit`, `sync_drift_high`, `sync_residual_high`, `sync_drift_unknown`, `sync_coarse_only` (see `sync.json`) and `calibration_failed` (see `calibration_a.json`). `sessions.quality` holds `quality.json` and, once Pipeline B has run, the extra key `pipeline_b` (see "`derived/quality.json`").
 
 ## Session archive (`cli.py export-session` / `import-session`, PLAN §12.3)
 
@@ -186,6 +196,19 @@ derived/...    everything the stages wrote
 `--no-raw-video` leaves out `raw/webcam.webm` and `raw/chunks/webcam/`; `chunks.json` still lists those chunks. Import refuses paths outside `raw/` and `derived/`, checks every chunk file against `chunks.json` (a missing webcam chunk is allowed), creates the study (`imported-<id>`) from the config snapshot if its id is not there, and creates the session with an unusable upload token. The status is `processed` when `derived/quality.json` exists, else `uploaded`; `raw_video_deleted_at` is set when there is no webcam. An existing session needs `--force`: the archive is extracted and verified in a staging directory first, and only then is the existing session replaced; if anything fails the old session stays as it was.
 
 `cli.py process --keep-intermediates` keeps `derived/intermediates/webcam_concat.webm`, the webcam chunks concatenated before the remux (also when ffmpeg failed); a run without the flag removes it.
+
+## Study archive (`cli.py export-study` / `import-study`, the study page's "Download the study", PLAN §12.3)
+
+One ZIP with a whole study (`backend/app/study_archive.py`):
+
+| member | content |
+|---|---|
+| `study.json` | `format` (1), the study row (`id`, `name`, `code`, `mode`, `config`, `created_at`), `videos` (the rows of the playlist's videos: `id`, `title`, `duration`, `width`, `height`, `fps`, `sha256`, `aois`), `sessions` (the ids in the archive), `contains_raw_video` |
+| `videos/{id}/video.mp4` | the stimulus videos |
+| `sessions/{session_id}.zip` | one session archive each, exactly as `export-session` writes it (above), stored without compressing again |
+| `analysis/...` | the study's `analysis/{study_id}/` tree (analysis and comparison runs), unless left out |
+
+Debug sessions are not exported unless asked for (`--include-debug`, a box on the study page); sessions that never uploaded data (and withdrawn ones) are left out and counted. `--no-raw-video` leaves the participants' webcam video out of every session archive (Pipeline B cannot be run on such a session), `--no-analysis` the runs. **With the webcam video the archive is personal data.** Import creates the study, its videos and its sessions under the ids they had and refuses when the study id or code is already there or a video id is there with another file (the same file, by sha256, is reused); everything is checked first and if anything fails no file or row is left behind.
 
 ## `videos/{id}/aois.json` (PLAN §9.3)
 
@@ -215,9 +238,9 @@ One `analyze_video` run (`backend/worker/analysis/run.py`), started from the adm
 | `run_id`, `study_id`, `video_id` | |
 | `status`, `error`, `started_at`, `finished_at` | ISO 8601 UTC |
 | `git_hash` | `git describe --always --dirty` of the build (`GIT_SHA` build argument); `null` when the image was built without it |
-| `parameters` | every value of `AnalysisConfig` that was used (pipeline, `gaze_columns` `drift_corrected` (default) / `plain`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
+| `parameters` | every value of `AnalysisConfig` that was used (`pipeline` `a` or `b`, `gaze_columns` `drift_corrected` (default) / `plain`, heatmap window, sigma floor, grid, dots on the heatmap video, segment length, AOI tolerance k, synchrony window) |
 | `included` | `{session_id, participant_code, ...}` per session analysed (later stages add their numbers) |
-| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json`), `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
+| `excluded` | `{session_id, participant_code, reasons}` per session left out. Reasons: `not_processed`, `video_not_watched`, the reasons of the session's inclusion decision (`quality.json` for pipeline A, B's own in `quality_b.json` for pipeline B), for B also `pipeline_b_not_run` and `pipeline_b_stale`, `gaze_file_missing`, `superseded` (an older session of a participant who has a later included one) |
 | `outputs` | files written, relative to the run directory |
 | `results` | numbers the stages report |
 
@@ -256,6 +279,294 @@ Code: `backend/worker/analysis/synchrony.py`. Windows of `synchrony_window_ms` (
 - NSS: for a participant, the leave-one-out group density (the other participants' densities of the heatmap, same sigma, summed) is z-scored over the 64x36 grid and averaged at the participant's samples in the window (a sample outside the video counts at the nearest edge cell). Positive = looking where the others look.
 
 `synchrony.csv`: `window_start_s, window_end_s, participants` (with samples), `dispersion`, `nss_mean` (mean over the participants that have an NSS). `synchrony_nss.csv`: `participant_code, window_start_s, nss`. `synchrony.png`: both series over the video's timeline. The per-participant mean NSS is in `run.json` under `results`.
+
+## Derived files of the pipelines (PLAN §7, §8)
+
+What the stages of Pipeline A (`process_session`, stages `ingest` to `plots`) and of Pipeline B (`process_pipeline_b`, stages `features_b` to `plots_b`) write under `derived/`. The files of ingest and of the landmarks stage are described at the top of this document, the analysis outputs further up. Code: `backend/worker/pipeline/`. A session is one directory `studies/{study_id}/sessions/{session_id}/derived/`; the examples below set `d` to it.
+
+Conventions shared by all files:
+
+- **Client time** `t` is milliseconds on the participant's `performance.now()` clock, the clock of `events.jsonl`. A webcam frame with presentation time `pts` (seconds in `webcam.webm`) is at `t = a_ms + 1000 * b * pts` with `a_ms`, `b` from `sync.json`; the gaze tables carry the result in their column `t`.
+- **Pixels** (`*_px`) are viewport CSS pixels, origin top left, y downwards, in the viewport that was in force at the frame. **Video-normalised** (`*_vid`) coordinates are fractions of the video's letterboxed content rectangle, 0 to 1 inside it, and can lie outside.
+- **Null and NaN.** Where the text says "null" the Parquet value is null (pandas and R read it as `NaN` / `NA`). Four columns of the gaze tables (`x_px`, `y_px`, `x_sm`, `y_sm`) hold a real `NaN` instead; both read as `NaN` in pandas, but `arrow` in R tells them apart.
+- Every JSON file has `version` (1) and `config`, the whole `PipelineConfig` (`backend/worker/pipeline/config.py`, every threshold with its default) as used by the run; Parquet files carry the parameters of the run in their schema metadata, under the key named in the section.
+- The per-frame tables (`features_*`, `gaze_*`) have one row per webcam frame, in frame order; `index` and `pts` are those of `webcam_frames.parquet`.
+
+```python
+import json, pandas as pd, pyarrow.parquet as pq
+d = "data/studies/4/sessions/3f2b8c1e-5d4a-4e9b-9c1a-2f6d7e8a9b0c/derived"
+meta = json.loads(pq.read_schema(f"{d}/gaze_a.parquet").metadata[b"gaze"])   # schema metadata
+```
+
+### `derived/features_a.parquet` (stage `features`, PLAN §8.4)
+
+One row per row of `landmarks.parquet`. Computed from the 49-landmark subset and the facial transformation matrix (definitions in the header of `features_a.py`; the browser computes the same numbers). "Left" and "right" are the subject's, as MediaPipe names them. In a frame without a face (`face` false) every column from `iris_l_x` to `blink_r` is null and `blink` is false.
+
+| column | type | meaning |
+|---|---|---|
+| `index`, `pts` | int64, float64 | as in `landmarks.parquet`; `pts` in seconds |
+| `face` | bool | a face was found |
+| `iris_l_x`, `iris_l_y`, `iris_r_x`, `iris_r_y` | float64 | mean of the five iris landmarks in the eye-local frame: origin at the midpoint of the eye corners, x along the corner-to-corner vector (towards the image's right for both eyes), y a quarter turn towards the image's bottom, unit = the eye width |
+| `open_l`, `open_r` | float64 | eye openness: distance between the middle upper and lower lid landmarks over the eye width (open eyes about 0.27 to 0.39, blinks 0.07 to 0.14 in the face test clip) |
+| `yaw`, `pitch`, `roll` | float64 | head angles in degrees from the transformation matrix; positive pitch = head tilted down, positive yaw = face turned towards the image's right, positive roll = counter-clockwise in the image |
+| `tx`, `ty`, `tz` | float64 | head translation from the matrix, cm |
+| `face_ratio` | float64 | distance between the two eye midpoints as a fraction of the frame width (face size) |
+| `blink_l`, `blink_r` | float64 | the `eyeBlinkLeft` / `eyeBlinkRight` blendshape scores, 0 to 1 |
+| `blink` | bool | the blink rule below |
+
+**Blink rule:** `blink = blink_l > blink_score_threshold or blink_r > blink_score_threshold or open_l < blink_openness_threshold or open_r < blink_openness_threshold`, with defaults 0.5 and 0.15 (the second is a starting value to tune on pilot data). The limits themselves are not blinks. Later stages treat a blink frame like a frame without a face (no gaze, not valid).
+
+Schema metadata: `config` (JSON, the `PipelineConfig` used, so the two blink thresholds), `width` and `height` (strings; frame size, needed to scale x to the aspect ratio).
+
+```python
+f = pd.read_parquet(f"{d}/features_a.parquet")
+f[f.face & ~f.blink][["pts", "iris_l_x", "iris_l_y", "yaw"]].describe()
+```
+
+### `derived/sync.json` (stage `sync`, PLAN §8.2)
+
+Maps webcam time to the client clock. The server's features (horizontal iris position, mean of both eyes, and head yaw; z-scored; frames without face and blinks left out) are cross-correlated at `sync_rate_hz` (100) with the same signals computed in the browser (`raw/browser_features.jsonl`), over a lag of plus or minus `sync_max_lag_ms` (1000) around the coarse map `t = recorder_start_ms + 1000 * pts`; the two channels are correlated one by one and the correlations averaged.
+
+| key | meaning |
+|---|---|
+| `version`, `config` | 1; the `PipelineConfig` used |
+| `recorder_start_ms` | client time of the first `recorder_start` event (the coarse offset) |
+| `lag_ms` | whole-session offset from the coarse map: the shift that aligns the signals. Positive: the frame is later on the client clock than `recorder_start_ms + 1000 * pts`. Refined with a parabola through the peak, so not a multiple of 10 ms |
+| `peak` | the correlation at that lag (-1 to 1); `null` when nothing could be correlated |
+| `t_of_pts` | `{"a_ms", "b"}`: the result, `t = a_ms + 1000 * b * pts`. `a_ms = recorder_start_ms + lag_ms` and `b = 1` unless the drift fit (below) was done, which replaces both |
+| `residual_max_ms` | largest distance of a used window from the drift line (0 when no fit was done) |
+| `windows` | one entry per window of the drift fit (windows of `sync_window_s` = 60 s over the recording; a last one shorter than `sync_min_window_s` = 30 s is merged into the one before): `pts_center` (s), `lag_ms` (the offset from the coarse map found in this window, so it includes the whole-session `lag_ms`), `peak`, `used` (peak at least `sync_min_peak_correlation` and not at the edge of the search; only these enter the fit), `residual_ms` (distance from the fitted line; `null` for unused windows). A Huber fit of `lag_ms` against `pts_center` gives the line: `a_ms` is its value at pts 0 plus `recorder_start_ms`, `b = 1 + slope / 1000` |
+| `curve` | `{"lag_ms": [...], "r": [...]}`: the whole-session correlation for every lag (201 values with the defaults: -1000 to 1000 ms in 10 ms steps); `r` is `null` where too few samples overlapped |
+| `frames` | `{"server": n, "browser": n}`: frames that had a usable signal on each side |
+| `flags` | list, below |
+
+Flags (also copied to the session's flags; none blocks the session):
+
+| flag | set when |
+|---|---|
+| `sync_coarse_only` | fewer than 2 usable frames on either side: no correlation was possible; `lag_ms` 0, `b` 1, `a_ms = recorder_start_ms`, `windows` and `curve` empty |
+| `sync_weak_peak` | `peak` below `sync_min_peak_correlation` (0.3) |
+| `sync_lag_at_limit` | the best lag is at the edge of the search (the true lag may be beyond it) |
+| `sync_short` | the recording is shorter than two windows (120 s): one window, no drift is estimated (`b` = 1) |
+| `sync_drift_unknown` | several windows but fewer than 2 are `used`: no drift fit, `b` = 1 |
+| `sync_residual_high` | `residual_max_ms` above `sync_max_residual_ms` (40) |
+| `sync_drift_high` | `abs(b - 1)` above `sync_max_slope_error` (0.001) |
+
+```python
+sync = json.load(open(f"{d}/sync.json")); a, b = sync["t_of_pts"]["a_ms"], sync["t_of_pts"]["b"]
+t_ms = a + 1000 * b * f.pts            # client time of every webcam frame
+```
+
+### `derived/calibration_a.json` and `calibration_b.json` (stages `calibration`, `calibration_b`; PLAN §5.5, §8.6)
+
+The gaze model of one session. A and B use the same format and the same code; they differ only in the features the model is fitted on (`feature_columns`): A takes the ten columns `iris_l_x, iris_l_y, iris_r_x, iris_r_y, open_l, open_r, yaw, pitch, roll, face_ratio` of `features_a.parquet`; B takes the six columns `gaze_pitch, gaze_yaw, yaw, pitch, roll, face_ratio` of `features_b.parquet`. Training samples are the usable frames (a face, no blink, all features finite) from `calib_window_before_click_ms` (700) before a dot's click to `calib_window_after_click_ms` (100) after it, in client time; the target is the dot's position in viewport px. Of several calibration attempts the last one that passed the browser gate is used, else the last one.
+
+| key | meaning |
+|---|---|
+| `version`, `config` | 1; the `PipelineConfig` used |
+| `status` | `ok` or `failed` |
+| `failed_reason` | `null` when `ok`, else `no_calibration_dots` (no calibration dot event), `too_few_valid_frames` (more than `calib_max_sparse_dots` = 3 dots have fewer than `calib_min_frames_per_dot` = 5 usable frames) or `fit_impossible` (the cross-validation cannot be computed, e.g. fewer than two dots with samples). A failed calibration is a data problem, not an error: no model, the gaze stage is skipped and its files are removed, the session gets the flag `calibration_failed` and is excluded |
+| `feature_columns` | the model's input columns, in order |
+| `attempt_used` | `{"attempt", "index", "passed", "reason", "start_t"}`: the attempt number the browser logged (else its 1-based position), 0-based position, whether the browser gate passed it, why it was chosen (`only_attempt`, `last_passed`, `none_passed_used_last`), client time of its first dot event. `null` without calibration dots |
+| `attempts` | every attempt: `{"attempt", "index", "passed", "gate_reason", "dots"}` (`gate_reason` is the gate's reason code, `null` if no `calib_gate_result` followed; `dots` = number of dots shown) |
+| `viewport` | `{"width", "height"}` in CSS px, the `viewport_change` in force when the used attempt began |
+| `dots` | the used attempt's dots: `{"id", "x", "y", "click_t", "valid_frames", "kept_frames"}`; `click_t` is `null` if never clicked; `valid_frames` = training samples of the dot, `kept_frames` = left after outlier removal (0 when failed) |
+| `samples` | `{"valid", "kept", "rejected"}`, sums over the dots |
+| `cv` | `null` when failed, else `{"linear": {"degree", "alpha", "error_px"}, "quadratic": {...}, "chosen": "linear" or "quadratic", "error_px", "error_norm"}`: the best alpha (grid `calib_alphas`, 1e-3 to 1e3) and the leave-one-dot-out error of a linear and of a degree-2 ridge model (mean over left-out dots of the mean per-frame distance to the dot, px); the one with the lower error is used; `error_norm` is `error_px` over the viewport diagonal. The numbers are those of the second pass, after outlier removal |
+| `model` | `null` when failed, else `{"alpha", "degree", "means", "stds", "weights", "intercepts"}`. To predict: `z = (features - means) / stds` (`stds` are population standard deviations); for degree 2 append `z_i * z_j` for `i <= j` (scikit-learn's order); `x = expanded @ weights[0] + intercepts[0]`, `y = expanded @ weights[1] + intercepts[1]` (px). 10 features give 10 (degree 1) or 65 (degree 2) weights per axis, 6 features give 6 or 27 |
+
+Outliers: samples further than `calib_outlier_mad` (2.5) MADs from their dot's median prediction are dropped and the model is chosen and fitted again.
+
+```python
+c = json.load(open(f"{d}/calibration_b.json"))
+c["status"], c["cv"]["chosen"], c["cv"]["error_norm"], c["feature_columns"]
+```
+
+### `derived/gaze_a.parquet` and `gaze_b.parquet` (stages `gaze`, `gaze_b`; PLAN §7, §8.7, §8.8)
+
+One row per webcam frame (the same rows and the same columns for A and B). Not written when the calibration failed (an old file is removed). Prediction: the calibration model applied to every usable frame; smoothing: gaps of invalid samples up to `smooth_max_interp_gap_ms` (150) between valid ones are interpolated linearly, then a Rauch-Tung-Striebel smoother (constant-velocity Kalman model) runs over each stretch of valid and interpolated samples; longer gaps split the stretches.
+
+| column | type | meaning |
+|---|---|---|
+| `t` | float64 | client time, ms |
+| `webcam_pts` | float64 | seconds in `webcam.webm` |
+| `video_id` | string, null | the stimulus video on screen at `t`, null otherwise |
+| `stim_time` | float64, null | media time of that video in seconds; null outside a video and in a gap (pause, stall, seek) |
+| `x_px`, `y_px` | float32, NaN | raw prediction, viewport px; NaN for a frame without usable features (no face, blink); may be outside the viewport |
+| `x_sm`, `y_sm` | float32, NaN | smoothed prediction, px; NaN for a sample that is neither valid nor interpolated |
+| `x_vid`, `y_vid` | float32, null | `x_sm`, `y_sm` normalised to the video content rectangle (0 to 1, can fall outside); null while no video rectangle is shown or `x_sm` is NaN |
+| `valid` | bool | usable features and the prediction lies inside the viewport expanded by `valid_viewport_margin` (0.15) of its size on every side |
+| `blink` | bool | the blink flag of `features_a.parquet` (Pipeline B uses A's blinks) |
+| `conf` | float32 | heuristic 0 to 1, not a probability: 0 for an invalid sample, 0.5 for an interpolated one, else 1 minus a linear penalty for lying outside the viewport (0 at its edge, 1 at the validity limit) |
+| `phase` | string | `calibration` or `validation` from the first to the last dot event of a run of calibration or validation dots (a run ends at the other kind of dot, a gate result, or a video load or end); `playback` while a stimulus video is on screen; `other` otherwise |
+| `interpolated` | bool | `x_sm`, `y_sm` were filled by interpolation; `valid` stays false there |
+| `x_px_dc`, `y_px_dc` | float32, null | `x_px`, `y_px` with the drift taken out (below) |
+| `x_sm_dc`, `y_sm_dc` | float32, null | the same for the smoothed gaze |
+| `x_vid_dc`, `y_vid_dc` | float32, null | the drift-corrected smoothed gaze, video-normalised |
+
+The **drift** is the mean offset vector (median prediction minus target, over the points of a validation block with data) at the block's mean click time. The offset at any time is interpolated linearly between the blocks (constant before the first and after the last; one block: constant) and subtracted to give the `_dc` columns. All `_dc` columns are null in every row when no validation block had data (`drift_corrected` false). Use the plain or the `_dc` columns consistently; the analysis takes the `_dc` ones by default.
+
+Schema metadata, key `gaze` (JSON): `version` (1), `pipeline` (`"a"` or `"b"`), `config`, `drift_corrected` (bool), `validation_precision_px` (median over the validation blocks of the RMS sample-to-sample distance, px, or null; it sets the fixation threshold).
+
+```python
+g = pd.read_parquet(f"{d}/gaze_b.parquet")
+play = g[(g.phase == "playback") & g.valid]
+play[["t", "stim_time", "x_vid_dc", "y_vid_dc"]].dropna().head()
+```
+
+### `derived/fixations_a.parquet` and `fixations_b.parquet` (PLAN §8.9)
+
+One row per fixation, found by I-DT on the smoothed samples (valid or interpolated) of the playback phase. A run of samples is consecutive frames of the same video in the same viewport. The dispersion limit (x range plus y range of the smoothed px) is `max(fix_dispersion_width_fraction * viewport width, fix_precision_factor * validation_precision_px)` = `max(0.05 * width, 2 * precision)`; the minimum duration is `fix_min_duration_ms` (100). The file exists, possibly with zero rows, whenever the gaze file does.
+
+| column | type | meaning |
+|---|---|---|
+| `id` | int64 | 0, 1, ... in time order |
+| `start_t`, `end_t` | float64 | client time of the first and last sample, ms |
+| `duration_ms` | float64 | `end_t - start_t` (so a fixation of n frames lasts about n - 1 frame intervals) |
+| `samples` | int64 | number of frames in it |
+| `video_id` | string | the stimulus video |
+| `stim_start`, `stim_end` | float64, null | media time of the first / last sample, seconds; null in a gap |
+| `dispersion_px` | float64 | x range plus y range of its smoothed samples |
+| `cx_px`, `cy_px` | float64, null | centroid: mean of `x_sm`, `y_sm`, viewport px |
+| `cx_vid`, `cy_vid` | float64, null | mean of `x_vid`, `y_vid` (video-normalised) |
+| `cx_px_dc`, `cy_px_dc`, `cx_vid_dc`, `cy_vid_dc` | float64, null | the same from the drift-corrected columns; null if the gaze file has no drift correction |
+
+Schema metadata, key `fixations` (JSON): `version`, `algorithm` (`"I-DT"`), `dispersion_width_fraction`, `precision_factor`, `validation_precision_px` (the value used), `min_duration_ms`, `config`.
+
+```python
+fx = pd.read_parquet(f"{d}/fixations_a.parquet")
+fx[["start_t", "duration_ms", "stim_start", "cx_vid_dc", "cy_vid_dc"]]
+```
+
+### `derived/quality.json` (stage `quality`, PLAN §8.10)
+
+The quality report of Pipeline A and the inclusion decision of the session. The `quality` stage builds it from the other files; the runner then puts the results of the stages (also of `quality` and `plots`, which cannot know their own duration) into `stages`. Pipeline B has its own report, `quality_b.json`.
+
+| key | meaning |
+|---|---|
+| `version`, `config` | 1; the `PipelineConfig` used |
+| `session_flags` | the flags in `raw/meta.json` (those set while the session was uploaded: `interrupted`, `events_invalid`, `calibration_gate_failed` ...); not the flags the worker sets, which are only in the database |
+| `is_debug` | the session was run in debug mode |
+| `webcam` | `{"frames", "duration_s", "fps_mean", "fps_median", "gaps", "max_gap_ms"}`: effective frame rate of the recording; `gaps` counts steps longer than `quality_frame_gap_ms` (100); rates and `max_gap_ms` are `null` with fewer than 2 frames |
+| `face_lost` | `{"all": E, "playback": E or null}` with `E = {"episodes", "total_ms", "longest_ms"}`: stretches without a face of at least `quality_face_lost_min_ms` (500), over the whole recording and inside the playback phase (null when the calibration failed) |
+| `events` | counts during the recording: `fullscreen_exits`, `fullscreen_exits_in_playback`, `stalls` (a video stalling after its start), `stalls_at_start`, `page_left` (tab hidden or window blur), `browser_face_lost_episodes` (the browser's own `face_lost` events) |
+| `playback` | `null` if the calibration failed, else `{"frames", "valid_frames", "valid_fraction", "blink_fraction", "interpolated_fraction", "per_video": {video_id: {"frames", "valid_fraction"}}}` over the frames with `phase == "playback"` of `gaze_a.parquet`; fractions are `null` without playback frames |
+| `face_ratio` | `null` without a face during calibration, else `{"calibration_median", "min_warn", "max_warn", "playback_share_outside"}`: the median `face_ratio` during calibration, the study's two warning multipliers, and the share of playback frames with a face whose `face_ratio` is below `min_warn` or above `max_warn` times that median (`null` if the calibration failed) |
+| `browser_gate` | the browser's `calib_gate_result` events: `{"block", "attempt", "passed", "skipped", "mean_error_norm", "reason"}` each |
+| `calibration` | `{"status", "failed_reason", "attempt_used", "attempts", "cv", "samples"}`, copied from `calibration_a.json` |
+| `validation` | `null` if the calibration failed, else `{"blocks": [...], "precision_px", "drift", "mean_error_norm", "mean_error_corrected_norm"}`. A block (a run of 5 validation dots; `kind` is `before_video`, `between_videos` or `after_last_video`) has `index`, `kind`, `t_ms` (mean click time), `points_with_data`, `mean_error_px`, `mean_error_norm`, `mean_error_corrected_px`, `mean_error_corrected_norm`, `mean_error_deg` (always `null`: degrees need a lab station), `precision_px`, `offset_px` (`{"x", "y"}`, the drift: prediction minus target) and `points` with `id`, `x`, `y`, `click_t`, `frames`, `median_x`, `median_y`, `error_px`, `error_norm`, `error_deg` (null), `error_corrected_px`, `error_corrected_norm`, `precision_px`. Accuracy = distance of the median prediction from the target, precision = RMS of the distance between consecutive frames, both from the valid frames from 700 ms before to 100 ms after the click; `*_norm` = px over the viewport diagonal. `drift` is `{"t_ms", "dx_px", "dy_px"}` (parallel lists, one entry per block with data) or `null`; the top-level `precision_px` and the two `mean_*_norm` are the median / means over the blocks |
+| `sync` | `{"lag_ms", "peak", "t_of_pts", "residual_max_ms", "flags"}`, copied from `sync.json` |
+| `inclusion` | `{"included", "reasons", "criteria"}`, below |
+| `stages` | `{stage: {"seconds", "summary"}}` of the last run of each stage (status and error are in `stages.json`) |
+
+**Inclusion decision** (`decide_inclusion`): the session is included when `reasons` is empty. The thresholds are the study's `inclusion` setting from the config snapshot in `raw/meta.json` (defaults `min_valid_fraction` 0.7, `max_validation_error_norm` 0.12); a value equal to its threshold passes. `criteria` lists the two measured values and the two thresholds: `{"valid_fraction", "min_valid_fraction", "validation_error_norm", "max_validation_error_norm"}`, where `validation_error_norm` is `validation.mean_error_norm` (the uncorrected one).
+
+| reason | when |
+|---|---|
+| `debug_session` | the session was a debug session (left out by default) |
+| `calibration_failed` | `calibration.status` is `failed`; no other reason is given then except `debug_session` |
+| `no_playback_data` | no frame has `phase == "playback"` |
+| `valid_fraction_low` | the playback `valid_fraction` is below `min_valid_fraction` |
+| `no_validation_data` | no validation point had a valid frame |
+| `validation_error_high` | `validation_error_norm` is above `max_validation_error_norm` |
+
+**Relation to the database.** `sessions.quality` is a copy of this file taken when a `process_session` run ends (the admin and the analysis's choice of sessions read the decision and `playback.per_video` from there). Once Pipeline B has run, the database column has one more key, `pipeline_b`, that is **not** in `quality.json`; the B job sets it from `quality_b.json` (`summary_of` in `backend/app/pipeline_b.py`): `{"included", "reasons", "model", "calibration_status", "valid_fraction", "validation_error_norm", "stale"}`. `included` and `reasons` are B's own decision (same rule, same thresholds), `model` the network's name, `calibration_status` `ok` or `failed`, `valid_fraction` the playback share, `validation_error_norm` the uncorrected mean error, `stale` whether `pipeline_b_stale.json` existed at that moment. A later run of Pipeline A replaces the rest of the column but keeps `pipeline_b` and refreshes `stale`.
+
+```python
+q = json.load(open(f"{d}/quality.json"))
+q["inclusion"]["included"], q["inclusion"]["reasons"], q["playback"]["valid_fraction"]
+```
+
+### `derived/stages.json` and `stages_b.json` (PLAN §12.2)
+
+What each stage did in its last run, for the admin's stage table (`backend/app/stage_status.py`). `{"version": 1, "stages": {name: {"status", "seconds", "summary", "error"}}}`. Written after every stage, also when one fails, so it shows where a session stopped. `status` is `ok`, `failed` (`error` is `"ExceptionType: message"`, `summary` null) or `skipped` (the summary's `skipped` is a reason as text; today only `"calibration_failed"` for `gaze` / `gaze_b`). A stage that has not run has no entry; a run from a later stage keeps the entries of the earlier ones, and the stages about to run lose their old entry first. The `plots` stages report the plots they could not draw as a mapping under `skipped`, which does not make the stage `skipped`.
+
+| file | stages (in order) |
+|---|---|
+| `stages.json` | `ingest`, `landmarks`, `features`, `sync`, `calibration`, `gaze`, `quality`, `plots` |
+| `stages_b.json` | `features_b`, `calibration_b`, `gaze_b`, `quality_b`, `plots_b` |
+
+`summary` per stage: `ingest` the chunk, byte and line counts and the webcam's frame count, duration, mean fps, codec, size and whether the pts increase; `landmarks` `frames`, `frames_with_face`, `width`, `height`; `features` `frames`, `frames_with_face`, `blinks`; `sync` `lag_ms`, `peak`, `b`, `windows` (their number), `flags`; `calibration` / `calibration_b` `status`, `failed_reason`, `attempt`, `degree`, `cv_error_px`, `samples` (kept); `gaze` / `gaze_b` `frames`, `valid`, `playback_frames`, `valid_playback`, `fixations`, `drift_corrected`, `validation_precision_px`; `quality` / `quality_b` `included`, `reasons`; `plots` / `plots_b` `written` (file names), `skipped` and `errors` (name to reason); `features_b` `frames`, `frames_with_face`, `seconds_per_face` (network time per face, for planning), `model`. A session processed before `stages.json` existed shows the entries stored in `quality.json` under `stages` instead.
+
+### `derived/features_b.parquet` (stage `features_b`, PLAN §8.5)
+
+Pipeline B's features, one row per row of `landmarks.parquet`, made by the gaze network (L2CS-style ONNX model; weights named in `shared/models.json`, not in the repository). B reads `webcam.webm`, `landmarks.parquet` and `features_a.parquet`; its blinks and validity are A's.
+
+| column | type | meaning |
+|---|---|---|
+| `index`, `pts`, `face` | | as in `features_a.parquet` |
+| `gaze_pitch`, `gaze_yaw` | float64, null | the network's gaze angles in radians, as the network gives them (no sign convention applied; the calibration maps them to the screen); null without a face |
+| `yaw`, `pitch`, `roll` | float64, null | A's head angles, degrees |
+| `face_ratio` | float64, null | A's face scale |
+| `blink` | bool | A's blink flag, copied |
+
+**Crop rule** (fixed, so the calibration only has to absorb a constant difference): per frame with a face, the bounding box of all 478 landmarks (in px of the decoded frame) gives a square centred on the box's centre whose side is the box's longer side times `b_crop_scale` (1.2, "expanded 20 %"); it is cut out (black where it leaves the frame), resized to 448 x 448 (bilinear), RGB, scaled to 0 to 1 and normalised with the ImageNet mean and standard deviation. The network gives logits over 90 bins of 4 degrees for yaw and pitch each; the angle is the expected bin position times 4 minus 180 degrees, converted to radians. Faces go through the network `b_batch_size` (8) at a time (the small MobileOne weights run one at a time).
+
+Schema metadata, key `features_b` (JSON): `version` (1), `model` (`{"name", "sha256" of the weights file, "provider"}`; `provider` is the one in use, `cpu` or `cuda`: a CUDA request without a CUDA runtime falls back to the CPU and says `cpu`), `crop_scale`, `input_size` (448), `batch_size`.
+
+```python
+fb = pd.read_parquet(f"{d}/features_b.parquet")
+import numpy as np; np.degrees(fb[["gaze_pitch", "gaze_yaw"]]).describe()
+```
+
+### `derived/quality_b.json` (stage `quality_b`)
+
+Pipeline B's report, same style as `quality.json`. Everything about the recording itself (`webcam`, `face_lost`, `events`, `face_ratio`, `browser_gate`, `sync`, `session_flags`) is only in `quality.json`.
+
+| key | meaning |
+|---|---|
+| `version`, `pipeline`, `config`, `is_debug` | 1, `"b"`, the `PipelineConfig` used, as in A |
+| `features` | the `features_b` schema metadata (`version`, `model`, `crop_scale`, `input_size`, `batch_size`) plus `frames`, `frames_with_face`, `frames_with_angles` (rows with a non-null `gaze_pitch`) |
+| `calibration` | `{"status", "failed_reason", "feature_columns", "attempt_used", "cv", "samples"}` from `calibration_b.json` (no `attempts`) |
+| `playback`, `validation` | as in `quality.json`, computed from `gaze_b.parquet` and B's predictions; `null` if B's calibration failed |
+| `inclusion` | B's own decision, same reasons, rule and thresholds as in `quality.json` (the study's `inclusion`); a failed B calibration gives `calibration_failed` |
+| `stages` | `{stage: {"seconds", "summary"}}` of B's stages |
+
+Its headline numbers are copied to `sessions.quality["pipeline_b"]` (see `quality.json`).
+
+### `derived/pipeline_b_stale.json`
+
+Exists only while Pipeline B's files no longer fit Pipeline A's: B reads the landmarks, A's features and the sync, so when A makes any of them again, B's old files describe other inputs. Content: `{"since": ISO 8601 UTC time, "by_stage": "ingest" | "landmarks" | "features" | "sync" | "pipeline_b"}`: the first of those A stages that the A run started with, or `pipeline_b` when a B run itself stopped part-way.
+
+- **Set** when a `process_session` run (the worker, `cli.py process`, the admin's re-run) starts with any of `ingest`, `landmarks`, `features` or `sync` among its stages, and only if `features_b.parquet` exists. It is set at the start of the run, so it also stays after a failed run. The later stages of A (`calibration` to `plots`) do not set it. A B run that fails or is cancelled after at least one of its stages finished sets it too (`by_stage` `pipeline_b`, unless a mark by A is already there), because the stages after the stop still hold files of the earlier model or inputs; a stop in `plots_b` alone does not, as no analysis reads the plots. `sessions.quality["pipeline_b"]["stale"]` follows the file after a failed or cancelled run as well.
+- **Effect:** the B job refuses to start anywhere but at `features_b` (a later stage alone would mix old and new inputs), the admin marks B stale, and `sessions.quality["pipeline_b"]["stale"]` is true. B's old files stay on disk; nothing deletes them.
+- **Cleared** by a B run that executes all five stages, i.e. `cli.py process-b <session>` without `--only` / `--from-stage` or with `--from-stage features_b`, or the admin's full run. `--only features_b` does not clear it.
+
+### Debug plots and replay (`derived/debug/`, PLAN §12.2)
+
+PNG pictures drawn by the stages `plots` and `plots_b` with matplotlib; they are for looking at, not for analysis. A plot whose inputs are missing is skipped and its old picture removed; the reasons are in the stage's summary (`skipped`, `errors`), never a failed stage.
+
+| file | content |
+|---|---|
+| `calibration.png`, `calibration_b.png` | for each calibration attempt the dots (circles) and the model's median prediction for each, joined by lines, and the same for the validation points that followed: how well the attempt's model fitted and carried over |
+| `validation.png`, `validation_b.png` | error of every validation block with and without the drift correction, and the drift (offset) over time with its interpolation |
+| `gaze.png`, `gaze_b.png` | gaze x and y over time (raw and smoothed) with the phases shaded, invalid stretches grey, interpolated ones purple and the fixations as green bars |
+| `sync.png` (A only) | the cross-correlation curve and the drift fit with the windows' residuals |
+| `signals.png` (A only) | quality signals over the session: valid fraction, face size, head pose, brightness, webcam frame rate |
+
+The `_b` plots are the same drawings made from B's files, with "(Pipeline B)" in the title; sync and signals do not depend on the pipeline and are not repeated. The admin shows them with the captions in `backend/app/pipeline_names.py`.
+
+**`debug/replay.mp4`** is the session as a film, rendered on request only (`cli.py render-debug <session>` or the admin button; job `render_debug`, `backend/worker/pipeline/replay.py`). **It contains the participant's webcam video** and says so on every frame; it is only served to a logged-in admin. H.264, yuv420p, faststart, no sound, `replay_fps` (30) frames per second along the client clock, `replay_width` (960) px wide plus a 28 px timeline bar. Only the stretches in which a stimulus video was on screen are shown (consecutive videos are joined; a white line marks the join); a paused or stalled video shows its last picture.
+
+- Pipeline A's gaze as circles: raw prediction (orange), smoothed (blue, with a trail of the last third of a second), drift-corrected (green); a green ring around the centre of the fixation the gaze is in, growing with its duration.
+- Pipeline B's gaze, when `gaze_b.parquet` exists (whether or not B is stale), as squares: raw (magenta), smoothed (cyan), drift-corrected (yellow) and a slightly larger yellow ring for its fixation; the legend then has a second line. Without B's files the film is the one without it. A point outside the video is a cross on the border.
+- The participant's webcam in the bottom right corner (a quarter of the width) with the 49 landmarks of the subset drawn on it (iris points cyan, the others yellow); left out when the recording or its landmarks are missing.
+- Text: video id, time since the start of the first shown stretch, video time (or "paused / stalled"), the colour legend, and "gaze invalid" (with "(no face)") when the frame has neither valid nor interpolated gaze (Pipeline A's).
+- The bar below: dark where all is fine, grey where A's gaze is invalid, red where no face was found, orange where the video is paused or stalled (the highest applies), a purple tick at every fullscreen exit and a white cursor.
+
+## `analysis/{study_id}/compare/{run_id}/` (PLAN §9.5)
+
+One `compare_pipelines` run (`backend/worker/analysis/compare.py`), started from the admin (`/admin/analysis`) or with `docker compose exec api python cli.py compare <study_id>`. One comparison per study, over every session that is processed, not a debug session, and has a successful calibration in both pipelines and a Pipeline B that is not stale; **A's inclusion decision is not applied** (it would bias the comparison). Other sessions are listed in `run.json` under `excluded`, reasons: `not_processed`, `debug_session`, `calibration_failed_a`, `calibration_failed_b`, `pipeline_b_not_run`, `pipeline_b_stale`, `quality_file_missing`. A run with nothing to compare fails (`status` `failed`, the reason in `error`).
+
+| file | content |
+|---|---|
+| `run.json` | like the analysis runs': `kind` `compare_pipelines`, `run_id`, `study_id`, `status`, `error`, `started_at`, `finished_at`, `git_hash`, `parameters` (`compare_min_pairs`), `included` and `excluded` (`session_id`, `participant_code`, `reasons`), `outputs`, `results` (`sessions` and `statistics`: the rows of `statistics.csv`) |
+| `comparison.csv` | one row per session: `participant_code`, `session_id`, then for each metric `<metric>_a`, `<metric>_b` and `<metric>_diff` (B minus A); empty where a pipeline has no number |
+| `statistics.csv` | one row per metric: `n` (sessions with the metric in both pipelines), `median_a`, `median_b`, `median_diff_b_minus_a`, `b_better`, `a_better` (sessions where each is better), `wilcoxon_statistic`, `p_value` |
+| `report.md` | a short report: the table of `statistics.csv`, the box plots, who was left out and why |
+| `boxplots.png` | a box plot of A and B per metric with a line per session |
+
+Metrics (from `quality.json` and `quality_b.json`, the same keys in both): `accuracy_norm` (mean validation error over the blocks, share of the viewport diagonal), `accuracy_corrected_norm` (the same after the drift correction), `accuracy_px` (mean of the blocks' mean error in px), `precision_px` (the median over the blocks of the RMS step between samples, px), `valid_fraction` (valid gaze share of the playback frames). Lower is better except for `valid_fraction`. The test is `scipy.stats.wilcoxon` (paired, two-sided), per metric, with no correction for several metrics; a p-value is only given from `compare_min_pairs` (6) pairs, and not when every difference is 0.
 
 ## Participant code
 

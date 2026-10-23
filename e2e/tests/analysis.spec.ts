@@ -50,11 +50,23 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   const inclusion = (session?.quality as { inclusion: { included: boolean; reasons: string[] } }).inclusion;
   expect(inclusion.included, inclusion.reasons.join(", ")).toBe(true);
 
+  // Pipeline B needs weights that this stack does not have: the page says so and the button is
+  // disabled; asking anyway is refused with the same reason and queues nothing.
+  const sessionPage = await (await admin.request.get(`/admin/sessions/${session!.id}`)).text();
+  const pipelineB = sessionPage.split("<h2>Pipeline B</h2>")[1]!.split("<h2>Debug plots</h2>")[0]!;
+  expect(pipelineB).toContain("Cannot be run now");
+  expect(pipelineB).toContain("scripts/fetch_models.sh");
+  expect(pipelineB).toContain("disabled");
+  const refused = await admin.request.post(`/admin/api/sessions/${session!.id}/run-b`, { headers: admin.headers, data: {} });
+  expect(refused.status()).toBe(409);
+  expect(await refused.text()).toContain("fetch_models.sh");
+
   // Start it from the page, like the researcher does.
   await login(page.request);
   await page.goto("/admin/analysis");
-  await page.locator('select[name="study_id"]').selectOption(String(studyId));
-  await page.locator('select[name="video_id"]').selectOption(videoId);
+  const form = page.locator('form[action="/admin/analysis"]');
+  await form.locator('select[name="study_id"]').selectOption(String(studyId));
+  await form.locator('select[name="video_id"]').selectOption(videoId);
   await page.getByLabel("Draw a white dot per participant").check();
   await page.getByRole("button", { name: "Start analysis" }).click();
   await expect(page.locator("p.ok")).toContainText("Queued");
@@ -107,4 +119,33 @@ test("an analysis is started in admin, runs in the worker and is downloaded as a
   const participant = await (await admin.request.get(`/admin/participants/${studyId}/${PARTICIPANT}`)).text();
   expect(participant).toContain("<h2>Analysis</h2>");
   expect(participant).toContain(run.run_id);
+
+  // Comparing the pipelines needs Pipeline B, which this stack does not have: the comparison runs
+  // and fails with the reason, and its page shows who was left out.
+  const started = await admin.request.post("/admin/api/comparisons", { headers: admin.headers, data: { study_id: studyId } });
+  expect(started.status(), await started.text()).toBe(201);
+  const compareId = ((await started.json()) as { run_id: string }).run_id;
+  type Compared = { run_id: string; status: string; error: string | null; left_out: number };
+  const comparison = async (): Promise<Compared | undefined> => {
+    const all = (await (await admin.request.get(`/admin/api/comparisons?study_id=${studyId}`)).json()) as Compared[];
+    return all.find((c) => c.run_id === compareId);
+  };
+  await expect
+    .poll(async () => ["done", "failed"].includes((await comparison())?.status ?? ""), { timeout: 60_000, intervals: [2000] })
+    .toBe(true);
+  const compared = (await comparison())!;
+  expect(compared.status).toBe("failed");
+  expect(compared.error ?? "").toContain("no session has both");
+  expect(compared.left_out).toBe(1);
+  const comparisonPage = await (await admin.request.get(`/admin/comparisons/${studyId}/${compareId}`)).text();
+  expect(comparisonPage).toContain("pipeline_b_not_run");
+
+  // The study page refers to the analysis and the comparison made with it, and lists the jobs the
+  // worker did for it (finished ones have no cancel button).
+  const studyPage = await (await admin.request.get(`/admin/studies/${studyId}`)).text();
+  expect(studyPage).toContain(`/admin/analysis/${studyId}/${videoId}/${run.run_id}`);
+  expect(studyPage).toContain(`/admin/comparisons/${studyId}/${compareId}`);
+  const jobs = studyPage.split('<h2 id="jobs">')[1]!.split("<h2>Analyses of this study</h2>")[0]!;
+  expect(jobs).toContain("Analysis");
+  expect(jobs).not.toContain("Cancel</button>");
 });

@@ -11,9 +11,16 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from app import pipeline_b
 from app.events import assemble_events, parse_events
 from app.models import Chunk, Session, Study
-from app.pipeline_names import PLOT_CAPTIONS, REPLAY_FILE, STAGE_DESCRIPTIONS, STAGE_NAMES
+from app.pipeline_names import (
+    PLOT_B_CAPTIONS,
+    PLOT_CAPTIONS,
+    REPLAY_FILE,
+    STAGE_DESCRIPTIONS,
+    STAGE_NAMES,
+)
 from app.reprocess import jobs_of, render_refusal, rerun_refusal
 from app.schemas import EventRecord
 from app.service_errors import NotFoundError
@@ -107,7 +114,11 @@ def _read_events(
 
 
 def session_detail(
-    db: DbSession, data_root: Path, session_id: uuid.UUID, max_inflated_bytes: int
+    db: DbSession,
+    data_root: Path,
+    session_id: uuid.UUID,
+    max_inflated_bytes: int,
+    weights: tuple[Path, str] | None = None,
 ) -> dict[str, Any]:
     found = db.execute(
         select(Session, Study)
@@ -143,6 +154,7 @@ def session_detail(
         "stages": stage_rows(
             read_entries(derived_dir(data_root, study.id, session_id), session.quality)
         ),
+        "pipeline_b": pipeline_b_view(db, session, data_root, weights),
         "plots": plots_on_disk(data_root, study.id, session_id),
         "jobs": job_rows(db, session_id),
         "rerun_refused": rerun_refusal(db, session),
@@ -166,22 +178,43 @@ def session_detail(
     }
 
 
-def stage_rows(entries: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def pipeline_b_view(
+    db: DbSession, session: Session, data_root: Path, weights: tuple[Path, str] | None
+) -> dict[str, Any]:
+    """What the session page shows of Pipeline B: its line in the report, the stale mark, its
+    stages (`stages_b.json`) and why it cannot be run now, if it cannot."""
+    derived = derived_dir(data_root, session.study_id, session.id)
+    entries = read_entries(derived, None, pipeline_b.STAGES_B_FILE)
+    stale = pipeline_b.stale_info(derived)
+    return {
+        "summary": pipeline_b.summary_of(derived),
+        "stale": stale,
+        "stale_reason": None if stale is None else pipeline_b.stale_reason(stale),
+        "stages": stage_rows(entries, pipeline_b.B_STAGE_NAMES, pipeline_b.B_STAGE_DESCRIPTIONS),
+        "refused": pipeline_b.refusal(db, session, data_root, weights),
+    }
+
+
+def stage_rows(
+    entries: dict[str, dict[str, Any]],
+    names: tuple[str, ...] = STAGE_NAMES,
+    descriptions: dict[str, str] = STAGE_DESCRIPTIONS,
+) -> list[dict[str, Any]]:
     """Every stage in order with what its last run recorded (`app.stage_status`); a stage with no
     entry has not run."""
     rows = []
-    for name in STAGE_NAMES:
+    for name in names:
         entry = entries.get(name)
         summary = None if entry is None else entry.get("summary")
         rows.append(
             {
                 "name": name,
-                "description": STAGE_DESCRIPTIONS[name],
+                "description": descriptions[name],
                 "ran": entry is not None,
                 "status": None if entry is None else entry.get("status"),
                 "seconds": None if entry is None else entry.get("seconds"),
                 "skipped": summary["skipped"]
-                if isinstance(summary, dict) and "skipped" in summary
+                if isinstance(summary, dict) and isinstance(summary.get("skipped"), str)
                 else None,
                 "error": None if entry is None else entry.get("error"),
                 "summary": summary,
@@ -233,7 +266,7 @@ def plots_on_disk(data_root: Path, study_id: int, session_id: uuid.UUID) -> list
     directory = derived_dir(data_root, study_id, session_id) / "debug"
     return [
         {"name": name, "caption": caption}
-        for name, caption in PLOT_CAPTIONS.items()
+        for name, caption in {**PLOT_CAPTIONS, **PLOT_B_CAPTIONS}.items()
         if (directory / name).is_file()
     ]
 

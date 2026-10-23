@@ -90,6 +90,9 @@ compose exec -T api sh -c 'for d in videos studies analysis; do touch /data/$d/.
   || fail "app user cannot write to /data"
 [ -z "$(ls -A "$work/models")" ] || fail "models dir not empty"
 if compose exec -T worker sh -c 'touch /models/x' 2>/dev/null; then fail "/models is writable"; fi
+# The admin pages check for the weights too, so the api container must see the same directory.
+compose exec -T api test -d /models || fail "the api container has no /models"
+if compose exec -T api sh -c 'touch /models/x' 2>/dev/null; then fail "/models is writable in api"; fi
 
 echo "== worker runs without model weights and its heartbeat is fresh"
 compose exec -T worker python -m worker.healthcheck || fail "worker healthcheck failed"

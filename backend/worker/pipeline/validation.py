@@ -27,7 +27,7 @@ from numpy.typing import NDArray
 from app.events import parse_events
 from app.schemas import EventRecord
 from app.storage import derived_dir, events_path
-from worker.pipeline.calibration import CALIBRATION_FILE, Dot, build_dots
+from worker.pipeline.calibration import Dot, build_dots
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.predict import (
     SessionPrediction,
@@ -35,6 +35,7 @@ from worker.pipeline.predict import (
     predict_session,
     viewport_timeline,
 )
+from worker.pipeline.spec import SPEC_A, PipelineSpec
 
 Floats = NDArray[np.float64]
 Bools = NDArray[np.bool_]
@@ -310,18 +311,19 @@ def validate_session(
     session_id: uuid.UUID,
     config: PipelineConfig,
     prediction: SessionPrediction | None = None,
+    spec: PipelineSpec = SPEC_A,
 ) -> ValidationResult:
     """Score the session's validation blocks from the calibration attempt on. The predictions are
     made here unless the caller already has them."""
     derived = derived_dir(root, study_id, session_id)
-    calibration = json.loads((derived / CALIBRATION_FILE).read_text(encoding="utf-8"))
+    calibration = json.loads((derived / spec.calibration_file).read_text(encoding="utf-8"))
     if calibration["status"] != "ok":
         raise ValueError(
             f"the calibration failed ({calibration['failed_reason']}): nothing to score"
         )
     since = float(calibration["attempt_used"]["start_t"])
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
-    prediction = prediction or predict_session(root, study_id, session_id, config)
+    prediction = prediction or predict_session(root, study_id, session_id, config, spec)
     gaze = prediction.gaze
     return score_validation(
         validation_blocks(events, since), prediction.t_ms, gaze.x_px, gaze.y_px, gaze.valid,
