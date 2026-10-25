@@ -1,4 +1,4 @@
-.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e
+.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e e2e-throttle
 
 # Recorded in each analysis run (PLAN §9); empty outside a git checkout.
 export GIT_SHA := $(shell git describe --always --dirty --abbrev=40 2>/dev/null)
@@ -52,3 +52,8 @@ lint-shell:
 # Playwright end-to-end test against the production stack (PLAN §13).
 e2e:
 	./scripts/e2e.sh
+
+# How playback and tracking hold up on a slow machine: the browser's CPU slowed down 1, 4 and 6 times.
+# Prints numbers, never fails on them (DECISIONS 2026-10-25). E2E_THROTTLE="1,2,4" to change.
+e2e-throttle:
+	E2E_THROTTLE="$${E2E_THROTTLE:-1,4,6}" ./scripts/e2e.sh

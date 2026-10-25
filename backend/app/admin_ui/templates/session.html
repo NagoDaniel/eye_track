@@ -35,6 +35,7 @@
   <tr><th>Webcam</th><td>{{ num(q.webcam.fps_mean, "%.1f") }} frames/s, {{ q.webcam.gaps }} gaps over 100 ms (longest {{ num(q.webcam.max_gap_ms, "%.0f") }} ms), {{ num(q.webcam.duration_s, "%.1f") }} s</td></tr>
   <tr><th>Face lost</th><td>{{ q.face_lost.episodes }} episode(s), {{ num((q.face_lost.total_ms or 0) / 1000, "%.1f") }} s in total</td></tr>
   <tr><th>Fullscreen exits / stalls</th><td>{{ q.fullscreen_exits }} / {{ q.stalls }}</td></tr>
+  {% if q.stimulus_drops %}<tr><th>Dropped video frames</th><td>{% for d in q.stimulus_drops %}video {{ d.video_id }}: {{ d.dropped }} of {{ d.presented + d.dropped }} ({{ pct(d.dropped_fraction) }}){% if not loop.last %}<br>{% endif %}{% endfor %}{% if q.stimulus_drops_flagged %} <span class="warning">more than {{ pct(q.stimulus_drops_limit) }}: the computer could not keep up with the video</span>{% endif %}</td></tr>{% endif %}
   <tr><th>Sync</th><td>lag {{ num(q.sync_lag_ms, "%.0f") }} ms, correlation {{ num(q.sync_peak, "%.2f") }}{% if q.sync_flags %}, <span class="warning">{{ q.sync_flags | join(", ") }}</span>{% endif %}</td></tr>
 </table>
 {% if q.validation_blocks %}

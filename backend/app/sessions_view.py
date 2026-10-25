@@ -238,6 +238,7 @@ def quality_summary(quality: dict[str, Any] | None) -> dict[str, Any] | None:
         or {}
     )
     sync = quality.get("sync") or {}
+    stimulus = quality.get("stimulus_frames") or {}
     return {
         "inclusion": inclusion_of(quality) or {"included": None, "reasons": [], "criteria": {}},
         "webcam": quality.get("webcam") or {},
@@ -246,6 +247,12 @@ def quality_summary(quality: dict[str, Any] | None) -> dict[str, Any] | None:
         "face_lost": lost,
         "fullscreen_exits": events.get("fullscreen_exits"),
         "stalls": events.get("stalls"),
+        "stimulus_drops": [
+            {"video_id": video, **numbers}
+            for video, numbers in (stimulus.get("per_video") or {}).items()
+        ],
+        "stimulus_drops_flagged": bool(stimulus.get("flagged")),
+        "stimulus_drops_limit": stimulus.get("flag_fraction"),
         "calibration_status": calibration.get("status"),
         "calibration_failed_reason": calibration.get("failed_reason"),
         "cv_error_norm": cv.get("error_norm"),

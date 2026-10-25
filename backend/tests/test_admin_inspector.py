@@ -120,6 +120,26 @@ def test_the_quality_numbers_come_from_the_report(admin: Admin, processed: Synth
     assert "1 / 1" in html  # one fullscreen exit, one stall in the designed session
 
 
+def test_dropped_video_frames_are_shown_and_a_high_share_is_a_warning(
+    admin: Admin, processed: Synthetic, migrated_engine: Engine
+) -> None:
+    html = page(admin, processed)
+    assert "Dropped video frames" in html and "video 1: 0 of 200 (0 %)" in html
+    assert "the computer could not keep up" not in html
+    with DbSession(migrated_engine) as db:
+        row = db.get_one(SessionRow, processed.session_id)
+        quality = json.loads(json.dumps(row.quality))
+        quality["stimulus_frames"]["per_video"]["1"].update(
+            {"presented": 150, "dropped": 50, "dropped_fraction": 0.25}
+        )
+        quality["stimulus_frames"]["flagged"] = True
+        row.quality = quality
+        db.commit()
+    html = page(admin, processed)
+    assert "video 1: 50 of 200 (25 %)" in html
+    assert "more than 10 %: the computer could not keep up with the video" in html
+
+
 def data_derived(s: Synthetic) -> Path:
     return s.root / "studies" / "1" / "sessions" / str(s.session_id) / "derived"
 

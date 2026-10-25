@@ -20,9 +20,35 @@ from worker.pipeline.config import PipelineConfig
 
 
 @dataclass(frozen=True)
+class FrameDrops:
+    """Frames of one video that the browser presented and frames it skipped (not drawn in time)."""
+
+    presented: int
+    dropped: int
+
+    @property
+    def fraction(self) -> float:
+        total = self.presented + self.dropped
+        return self.dropped / total if total else 0.0
+
+
+@dataclass(frozen=True)
 class StimulusLookup:
     video_id: list[str | None]  # the video on screen at each time, else None
     stim_time: NDArray[np.float64]  # media time in seconds; NaN in a gap and outside a video
+
+
+def _count_drops(
+    presented: int, media_ms: NDArray[np.float64], gap: NDArray[np.bool_]
+) -> FrameDrops:
+    """A step of k frame periods of media time between two presented frames, with no pause, stall
+    or seek in it (a gap), means k - 1 frames were skipped."""
+    steps = media_ms[(media_ms > 0) & ~gap]
+    if len(steps) == 0:
+        return FrameDrops(presented, 0)
+    period = float(np.median(steps))
+    skipped = np.maximum(np.rint(steps / period) - 1, 0)
+    return FrameDrops(presented, int(skipped.sum()))
 
 
 class _Video:
@@ -45,6 +71,7 @@ class _Video:
         self.frame_ms = float(np.median(steps)) if len(steps) else 0.0
         wall, media = steps, np.diff(self.m) * 1000
         self.gap = (wall - media > tolerance_ms) | (media < 0)
+        self.drops = _count_drops(len(kept), media, self.gap)
         # The video is on screen from its first frame until its end event, or one frame after the
         # last frame when there is none.
         self.start = float(self.e[0])
@@ -96,6 +123,11 @@ class StimulusMap:
         first = min((f.t for f in frames), default=None)
         if first is not None and loads and first < loads[0].t:
             raise ValueError("a stimulus frame was presented before the first video_load event")
+
+    def frame_drops(self) -> dict[str, FrameDrops]:
+        """Per video id: presented and skipped frames (PLAN §14: playback should not drop frames;
+        the quality report flags a session that drops many)."""
+        return {video.video_id: video.drops for video in self._videos}
 
     def lookup(self, t_ms: NDArray[np.float64] | Sequence[float]) -> StimulusLookup:
         times = np.asarray(t_ms, dtype=np.float64)

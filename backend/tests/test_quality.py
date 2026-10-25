@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from app.schemas import EventRecord, InclusionConfig
-from app.storage import meta_path
+from app.storage import meta_path, stimulus_frames_path
 from tests.synthetic_session import (
     BLINK,
     FACE_LOST,
@@ -29,6 +29,7 @@ from worker.pipeline.quality import (
     face_lost,
     webcam_stats,
 )
+from worker.pipeline.runner import STIMULUS_FRAMES_FLAG, is_pipeline_flag, pipeline_flags
 
 CONFIG = PipelineConfig()
 INCLUSION = InclusionConfig(max_validation_error_norm=0.12, min_valid_fraction=0.7)
@@ -281,3 +282,46 @@ def test_the_recorded_session_has_a_complete_report(tmp_path: Path, face_model: 
     # The fake camera does not look at the dots, so the session fails the study's own thresholds.
     assert report["inclusion"]["included"] is False and report["inclusion"]["reasons"]
     json.dumps(report)
+
+
+# --- dropped stimulus frames: flagged, never excluded (DECISIONS 2026-10-25) ------------------
+
+
+def test_a_smooth_session_has_no_dropped_frames_and_no_flag(
+    session: Synthetic, report: dict[str, Any]
+) -> None:
+    part = report["stimulus_frames"]
+    assert part["flag_fraction"] == 0.10 and part["flagged"] is False
+    video = part["per_video"]["1"]
+    assert video["presented"] == 200 and video["dropped"] == 0 and video["dropped_fraction"] == 0.0
+    assert pipeline_flags(derived_of(session)) == []
+
+
+def test_a_session_that_skips_many_frames_is_flagged_but_still_included(tmp_path: Path) -> None:
+    s = build(tmp_path)
+    run_gaze(s.root, s.study_id, s.session_id, CONFIG)
+    before = build_quality(s.root, s.study_id, s.session_id, CONFIG)["inclusion"]
+    path = stimulus_frames_path(s.root, s.study_id, s.session_id)
+    lines = path.read_text("utf-8").splitlines()
+    path.write_text("".join(f"{line}\n" for i, line in enumerate(lines) if i % 5 != 2), "utf-8")
+    report = build_quality(s.root, s.study_id, s.session_id, CONFIG)
+    video = report["stimulus_frames"]["per_video"]["1"]
+    assert video["dropped"] == 40 and video["presented"] == 160
+    assert video["dropped_fraction"] == pytest.approx(0.2)
+    assert report["stimulus_frames"]["flagged"] is True
+    assert pipeline_flags(derived_of(s)) == [STIMULUS_FRAMES_FLAG]
+    assert is_pipeline_flag(STIMULUS_FRAMES_FLAG)
+    assert report["inclusion"] == before  # a flag, not a reason to leave the session out
+    # the limit is the config's: at 25 % the same session is not flagged
+    relaxed = replace(CONFIG, dropped_frames_flag_fraction=0.25)
+    assert (
+        build_quality(s.root, s.study_id, s.session_id, relaxed)["stimulus_frames"]["flagged"]
+        is False
+    )
+
+
+def test_a_session_without_stimulus_frames_has_no_part_for_them(tmp_path: Path) -> None:
+    s = build(tmp_path)
+    run_gaze(s.root, s.study_id, s.session_id, CONFIG)
+    stimulus_frames_path(s.root, s.study_id, s.session_id).write_text("")
+    assert build_quality(s.root, s.study_id, s.session_id, CONFIG)["stimulus_frames"] is None

@@ -40,6 +40,7 @@ log = logging.getLogger("pipeline")
 # Session flags set by the pipeline (and removed again when a run no longer finds the problem).
 CALIBRATION_FAILED_FLAG = "calibration_failed"
 SYNC_FLAG_PREFIX = "sync_"
+STIMULUS_FRAMES_FLAG = "stimulus_frames_dropped"  # more than `dropped_frames_flag_fraction` dropped
 
 
 class StageFailed(Exception):
@@ -261,8 +262,15 @@ def pipeline_flags(derived: Path) -> list[str]:
         flags += [str(f) for f in json.loads(sync.read_text(encoding="utf-8")).get("flags", [])]
     if calibration_status(derived) == "failed":
         flags.append(CALIBRATION_FAILED_FLAG)
+    quality = derived / QUALITY_FILE
+    if quality.exists():
+        stimulus = json.loads(quality.read_text(encoding="utf-8")).get("stimulus_frames")
+        if stimulus is not None and stimulus["flagged"]:
+            flags.append(STIMULUS_FRAMES_FLAG)
     return flags
 
 
 def is_pipeline_flag(flag: str) -> bool:
-    return flag == CALIBRATION_FAILED_FLAG or flag.startswith(SYNC_FLAG_PREFIX)
+    return flag in (CALIBRATION_FAILED_FLAG, STIMULUS_FRAMES_FLAG) or flag.startswith(
+        SYNC_FLAG_PREFIX
+    )

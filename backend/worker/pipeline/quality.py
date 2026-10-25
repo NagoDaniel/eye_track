@@ -18,14 +18,21 @@ import numpy as np
 import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
-from app.events import parse_events
-from app.schemas import EventRecord, InclusionConfig, StudyConfig
-from app.storage import atomic_write_bytes, derived_dir, events_path, meta_path
+from app.events import parse_events, parse_records
+from app.schemas import EventRecord, InclusionConfig, StimulusFrameRecord, StudyConfig
+from app.storage import (
+    atomic_write_bytes,
+    derived_dir,
+    events_path,
+    meta_path,
+    stimulus_frames_path,
+)
 from worker.pipeline.calibration import CALIBRATION_FILE
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE
 from worker.pipeline.gaze import GAZE_FILE, phase_intervals
 from worker.pipeline.ingest import WEBCAM_FRAMES_FILE
+from worker.pipeline.stimulus_map import StimulusMap
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 from worker.pipeline.validation import validate_session
 
@@ -200,6 +207,37 @@ def _mean(values: Sequence[float | None]) -> float | None:
     return float(np.mean(present)) if present else None
 
 
+def stimulus_frames_summary(
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    events: list[EventRecord],
+    config: PipelineConfig,
+) -> dict[str, Any] | None:
+    """Frames of the stimulus video the browser skipped, per video, and whether that is enough to
+    flag the session (never to exclude it). None when the session has no stimulus frames."""
+    path = stimulus_frames_path(root, study_id, session_id)
+    if not path.exists():
+        return None
+    frames = parse_records(path.read_bytes(), StimulusFrameRecord, "stimulus_frames")
+    if not frames:
+        return None
+    per_video = {
+        video: {
+            "presented": drops.presented,
+            "dropped": drops.dropped,
+            "dropped_fraction": drops.fraction,
+        }
+        for video, drops in StimulusMap(frames, events, config).frame_drops().items()
+    }
+    limit = config.dropped_frames_flag_fraction
+    return {
+        "per_video": per_video,
+        "flag_fraction": limit,
+        "flagged": any(v["dropped_fraction"] > limit for v in per_video.values()),
+    }
+
+
 def playback_summary(gaze: Any) -> dict[str, Any]:
     """Valid, blink and interpolated shares of the playback frames of a gaze table, in total and
     per video (one definition for both pipelines)."""
@@ -332,6 +370,7 @@ def build_quality(
         },
         "events": event_counts(events),
         "playback": playback_part,
+        "stimulus_frames": stimulus_frames_summary(root, study_id, session_id, events, config),
         "face_ratio": ratio_part,
         "browser_gate": gate_results(events),
         "calibration": {

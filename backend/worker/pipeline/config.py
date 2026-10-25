@@ -107,6 +107,9 @@ class PipelineConfig:
     # than the media time between them. Dropped frames do not (both advance together). Not in the
     # plan; display refresh jitter in the recorded session is under 10 ms.
     stim_gap_tolerance_ms: float = 50.0
+    # More than this share of a video's frames dropped flags the session as
+    # `stimulus_frames_dropped`; it never changes the inclusion decision (DECISIONS 2026-10-25).
+    dropped_frames_flag_fraction: float = 0.10
 
     def as_dict(self) -> dict[str, Any]:
         """Plain JSON types (tuples as lists), for the files that record the values used."""
