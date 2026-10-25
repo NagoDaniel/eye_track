@@ -33,7 +33,8 @@ from app.models import Session as SessionRow
 from app.models import SessionStatus
 from app.pipeline_b import QUALITY_B_FILE
 from app.storage import atomic_write_bytes, compare_run_dir, derived_dir
-from worker.analysis.config import AnalysisConfig, git_hash
+from app.version import git_hash
+from worker.analysis.config import AnalysisConfig
 from worker.pipeline.quality import QUALITY_FILE
 
 matplotlib.use("Agg")

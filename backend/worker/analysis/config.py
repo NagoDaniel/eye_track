@@ -5,7 +5,6 @@ the values it used in `run.json` (PLAN §1: configuration over constants). Later
 they need.
 """
 
-import os
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -59,9 +58,3 @@ class AnalysisConfig:
     def as_dict(self) -> dict[str, Any]:
         """Plain JSON types, for `run.json`."""
         return asdict(self)
-
-
-def git_hash() -> str | None:
-    """The git hash the image was built from (`GIT_SHA` build argument), None when not known."""
-    value = os.environ.get("GIT_SHA", "").strip()
-    return value or None
