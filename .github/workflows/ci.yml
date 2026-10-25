@@ -21,7 +21,7 @@ jobs:
   checks:
     name: lint, type check, unit tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -32,7 +32,22 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       # the video upload tests run the real ffmpeg and ffprobe on the host; the pipeline tests run the
       # real MediaPipe, which needs the same libraries as the backend image (backend/Dockerfile)
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 libegl1 libgles2
+      # The Azure mirror sometimes stalls for many minutes: each attempt (update + install) is cut off after
+      # 100 s, there are up to 3 attempts, and the step as a whole is cut off after 6 minutes, so a stall
+      # costs a few minutes instead of the whole job.
+      - name: install ffmpeg and the MediaPipe libraries
+        timeout-minutes: 6
+        run: |
+          opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          for attempt in 1 2 3; do
+            if sudo timeout 100 sh -c "apt-get update $opts && apt-get install -y --no-install-recommends $opts ffmpeg libgl1 libglib2.0-0 libegl1 libgles2"; then
+              exit 0
+            fi
+            echo "apt-get attempt $attempt failed" >&2
+            sleep 5
+          done
+          echo "apt-get failed 3 times" >&2
+          exit 1
       - run: cd backend && uv sync --frozen
       - run: cd frontend && npm ci
       - run: cd e2e && npm ci
