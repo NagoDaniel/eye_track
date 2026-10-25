@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-25 — Milestone 6 task choices
+- Plan section: §6 (delete raw video), §11.4, §14 (milestone 6: "playback must not drop frames"), §12.3
+- Decision: (1) No "delete raw video" button or command in Milestone 6 (human: not essential now); removing raw video stays a manual job. (2) Dropped stimulus frames never reject a session or an experiment: the quality report counts them per video and **flags** a session when more than `dropped_frames_flag_fraction` (named config value, default 0.10) of a video's frames were dropped; the flag does not change the inclusion decision. This reads "playback must not drop frames" as "measure and flag". (3) Problems that show on slow machines are noted in PROGRESS, not tuned in this milestone; the human tests on a low-end laptop, and CPU throttling in the e2e stack simulates one. (4) A disk quota (DECISIONS 2026-10-12, "no global disk quota") is put off. (5) The tasks T4 and T6 to T12 of the proposal of 2026-10-23 are approved; T2 (inflated-size cap) and T3 (browser messages) were not in the answer and stay open.
+- Reason: the human's answers of 2026-10-25.
+- Approved by: Nágó Dániel
+
 ## 2026-10-22 — Milestone 6 scope: no retention task, no withdrawal
 - Plan section: §14 (milestone 6), §6 (admin: "withdraw participant"), §7 and §10 (`retention.raw_video_days_after_processing`), §12.3, §14 backend API tests ("withdrawal deletes everything")
 - Decision: Milestone 6 does **not** include (1) the retention task that deletes raw video when it is due and (2) withdrawal (deleting all data of a participant code, raw and derived, including the analysis and Pipeline B outputs that carry codes). The rest of Milestone 6 stays: browser-support messages, performance tuning for low-end laptops (playback must not drop frames), `RUNNING_A_STUDY.md`, and the carry-overs in PROGRESS. The study setting `retention.raw_video_days_after_processing` stays in the config schema and does nothing (`null`, "kept until manually deleted"); the `withdrawn` session status stays in the model, and the study export still leaves withdrawn sessions out. Nothing was built for them, so there is no "delete raw video" or "withdraw participant" button or command either (PLAN §6, §12.3 mention both). A participant's data can only be removed by hand (database rows and files) until this is decided again.
