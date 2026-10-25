@@ -31,16 +31,15 @@ from worker.pipeline.gaze import run_gaze
 from worker.pipeline.ingest import ChunkRecord, ingest
 from worker.pipeline.landmarks import LANDMARKS_FILE, detect_landmarks
 from worker.pipeline.plots import run_plots
-from worker.pipeline.quality import QUALITY_FILE, build_quality
+from worker.pipeline.quality import (
+    QUALITY_FILE,
+    build_quality,
+    worker_flags,
+)
 from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, run_sync
 
 log = logging.getLogger("pipeline")
-
-# Session flags set by the pipeline (and removed again when a run no longer finds the problem).
-CALIBRATION_FAILED_FLAG = "calibration_failed"
-SYNC_FLAG_PREFIX = "sync_"
-STIMULUS_FRAMES_FLAG = "stimulus_frames_dropped"  # more than `dropped_frames_flag_fraction` dropped
 
 
 class StageFailed(Exception):
@@ -256,21 +255,15 @@ def run_pipeline(
 
 def pipeline_flags(derived: Path) -> list[str]:
     """The session flags the stages' files call for: the sync flags and a failed calibration."""
-    flags: list[str] = []
-    sync = derived / SYNC_FILE
-    if sync.exists():
-        flags += [str(f) for f in json.loads(sync.read_text(encoding="utf-8")).get("flags", [])]
-    if calibration_status(derived) == "failed":
-        flags.append(CALIBRATION_FAILED_FLAG)
-    quality = derived / QUALITY_FILE
-    if quality.exists():
-        stimulus = json.loads(quality.read_text(encoding="utf-8")).get("stimulus_frames")
-        if stimulus is not None and stimulus["flagged"]:
-            flags.append(STIMULUS_FRAMES_FLAG)
-    return flags
-
-
-def is_pipeline_flag(flag: str) -> bool:
-    return flag in (CALIBRATION_FAILED_FLAG, STIMULUS_FRAMES_FLAG) or flag.startswith(
-        SYNC_FLAG_PREFIX
+    sync, quality = derived / SYNC_FILE, derived / QUALITY_FILE
+    sync_flags = (
+        json.loads(sync.read_text(encoding="utf-8")).get("flags", []) if sync.exists() else []
+    )
+    stimulus = (
+        json.loads(quality.read_text(encoding="utf-8")).get("stimulus_frames")
+        if quality.exists()
+        else None
+    )
+    return worker_flags(
+        sync_flags, calibration_status(derived) == "failed", bool(stimulus and stimulus["flagged"])
     )

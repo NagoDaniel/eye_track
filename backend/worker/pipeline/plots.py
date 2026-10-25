@@ -273,7 +273,7 @@ def plot_calibration(data: PlotData) -> Figure:
     for k in range(len(attempts), rows * columns):
         axes[k // columns][k % columns].axis("off")
     figure.suptitle(
-        f"Calibration attempts{data.title_suffix}: targets and the model's median predictions",
+        f"Calibration attempts{data.title_suffix}:\ntargets and the model's median predictions",
         fontsize=11,
     )
     return figure

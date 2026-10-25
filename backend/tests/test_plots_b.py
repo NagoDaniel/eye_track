@@ -137,6 +137,8 @@ def test_b_plots_show_b_data(copy: Context) -> None:
     # the calibration plot is fitted on B's feature vector (six columns), not A's
     calibration = plots.plot_calibration(data_b)
     assert "Pipeline B" in calibration.get_suptitle()
+    # two short lines: one long line was cut off at the edge of the one-column figure
+    assert max(len(line) for line in calibration.get_suptitle().split("\n")) <= 50
     assert any(ax.axison and "CV" in ax.get_title() for ax in calibration.axes)
 
 

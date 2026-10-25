@@ -22,14 +22,16 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import run_gaze
 from worker.pipeline.quality import (
     QUALITY_FILE,
+    STIMULUS_FRAMES_FLAG,
     Inclusion,
     build_quality,
     decide_inclusion,
     event_counts,
     face_lost,
+    is_pipeline_flag,
     webcam_stats,
 )
-from worker.pipeline.runner import STIMULUS_FRAMES_FLAG, is_pipeline_flag, pipeline_flags
+from worker.pipeline.runner import pipeline_flags
 
 CONFIG = PipelineConfig()
 INCLUSION = InclusionConfig(max_validation_error_norm=0.12, min_valid_fraction=0.7)
@@ -249,6 +251,7 @@ def test_a_failed_calibration_gives_a_report_without_gaze(tmp_path: Path) -> Non
     assert report["calibration"]["failed_reason"] == "too_few_valid_frames"
     assert report["inclusion"]["included"] is False
     assert report["inclusion"]["reasons"] == ["calibration_failed"]
+    assert "calibration_failed" in report["session_flags"]
     assert report["webcam"]["frames"] > 100 and report["events"]["fullscreen_exits"] == 1
 
 
@@ -271,7 +274,8 @@ def test_the_recorded_session_has_a_complete_report(tmp_path: Path, face_model: 
 
     report = build_quality(s.root, s.study_id, s.session_id, CONFIG)
 
-    assert report["session_flags"] == ["calibration_gate_failed"]
+    # the participant app's flag, then the worker's (the same ones as the database column)
+    assert report["session_flags"] == ["calibration_gate_failed", "sync_short"]
     assert report["webcam"]["fps_mean"] == pytest.approx(30, abs=3)
     assert report["calibration"]["status"] == "ok"
     assert [g["block"] for g in report["browser_gate"]] == ["before_video", "after_last_video"]

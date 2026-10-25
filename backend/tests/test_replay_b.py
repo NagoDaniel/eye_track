@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
+from app.pipeline_b import clear_stale, mark_stale
 from app.storage import derived_dir
 from tests.session_fixture import FixtureSession
 from tests.test_replay import near
@@ -240,6 +241,16 @@ def test_the_legend_names_both_pipelines_only_when_b_is_drawn(with_b: FixtureSes
     line_b = (slice(66, 84), slice(0, 560))
     assert (with_dots[line_b] != plain[line_b]).any()
     assert with_dots[line_b].std() > plain[line_b].std()  # text where there was only the dark panel
+
+
+def test_a_stale_b_is_not_drawn(b_session: FixtureSession, tmp_path: Path) -> None:
+    s = copy_session(b_session, tmp_path / "data")
+    derived = derived_dir(s.root, s.study_id, s.session_id)
+    assert build_timeline(s.root, s.study_id, s.session_id, CONFIG).pipeline_b is not None
+    mark_stale(derived, "sync")  # A made the sync again: B's gaze is from other inputs
+    assert build_timeline(s.root, s.study_id, s.session_id, CONFIG).pipeline_b is None
+    clear_stale(derived)
+    assert build_timeline(s.root, s.study_id, s.session_id, CONFIG).pipeline_b is not None
 
 
 def test_the_video_is_decoded_once(with_b: FixtureSession, monkeypatch: pytest.MonkeyPatch) -> None:

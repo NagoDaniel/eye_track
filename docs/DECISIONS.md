@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-10-25 — Milestone 5 review leftovers: what the comparison leaves out, what stays as it is
+- Plan section: §9.5, §8.5, §12.2
+- Decision: (1) **Comparison exclusions** (completing "Milestone 5 scope", 2026-10-20, item 9, "all sessions with both pipelines and no stale B regardless of A's inclusion"): a session is also left out of the comparison when it is a debug session (`debug_session`), when A's calibration failed (`calibration_failed_a`) or B's did (`calibration_failed_b`), or its quality file is missing (`quality_file_missing`): there is no gaze to compare in those. A's inclusion decision is still not applied. (2) The replay draws Pipeline B's squares only when B is not stale. (3) `cli.py process-b --only features_b` neither clears the stale mark nor the database line: the later stages still hold files of the earlier run, so B stays stale until a run from `features_b` to the end (this is the intended rule, not a defect). (4) `quality.json` `session_flags` now hold the worker's flags too (`sync_*`, `calibration_failed`, `stimulus_frames_dropped`), the same as the database column. (5) A B run that stops part-way marks B stale (DATA_FORMATS, `pipeline_b_stale.json`).
+- Reason: findings of the Milestone 5 review (R6, R7) and of the documentation task of 2026-10-21.
+- Approved by: Nágó Dániel (R6 and R7 were in the proposal of the review; he asked for them in the task list of 2026-10-25, T10)
+
 ## 2026-10-25 — Milestone 6 task choices
 - Plan section: §6 (delete raw video), §11.4, §14 (milestone 6: "playback must not drop frames"), §12.3
 - Decision: (1) No "delete raw video" button or command in Milestone 6 (human: not essential now); removing raw video stays a manual job. (2) Dropped stimulus frames never reject a session or an experiment: the quality report counts them per video and **flags** a session when more than `dropped_frames_flag_fraction` (named config value, default 0.10) of a video's frames were dropped; the flag does not change the inclusion decision. This reads "playback must not drop frames" as "measure and flag". (3) Problems that show on slow machines are noted in PROGRESS, not tuned in this milestone; the human tests on a low-end laptop, and CPU throttling in the e2e stack simulates one. (4) A disk quota (DECISIONS 2026-10-12, "no global disk quota") is put off. (5) The tasks T4 and T6 to T12 of the proposal of 2026-10-23 are approved; T2 (inflated-size cap) and T3 (browser messages) were not in the answer and stay open.

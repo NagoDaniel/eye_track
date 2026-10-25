@@ -39,6 +39,31 @@ from worker.pipeline.validation import validate_session
 QUALITY_FILE = "quality.json"
 QUALITY_VERSION = 1
 
+# Session flags set by the pipeline (and removed again when a run no longer finds the problem).
+CALIBRATION_FAILED_FLAG = "calibration_failed"
+SYNC_FLAG_PREFIX = "sync_"
+STIMULUS_FRAMES_FLAG = "stimulus_frames_dropped"  # more than `dropped_frames_flag_fraction` dropped
+
+
+def worker_flags(
+    sync_flags: Sequence[str], calibration_failed: bool, stimulus_frames_flagged: bool
+) -> list[str]:
+    """The flags the worker's stages call for: the sync flags, a failed calibration, dropped video
+    frames. One definition for the database column and for `session_flags` of the report."""
+    flags = [str(f) for f in sync_flags]
+    if calibration_failed:
+        flags.append(CALIBRATION_FAILED_FLAG)
+    if stimulus_frames_flagged:
+        flags.append(STIMULUS_FRAMES_FLAG)
+    return flags
+
+
+def is_pipeline_flag(flag: str) -> bool:
+    return flag in (CALIBRATION_FAILED_FLAG, STIMULUS_FRAMES_FLAG) or flag.startswith(
+        SYNC_FLAG_PREFIX
+    )
+
+
 Floats = NDArray[np.floating[Any]]
 Bools = NDArray[np.bool_]
 
@@ -356,10 +381,19 @@ def build_quality(
         validation_error_norm=validation_error,
         inclusion=study_config.inclusion,
     )
+    stimulus_part = stimulus_frames_summary(root, study_id, session_id, events, config)
+    session_flags = list(meta.get("flags", []))
+    session_flags += [
+        f
+        for f in worker_flags(
+            sync["flags"], not ok, bool(stimulus_part and stimulus_part["flagged"])
+        )
+        if f not in session_flags
+    ]
     report: dict[str, Any] = {
         "version": QUALITY_VERSION,
         "config": config.as_dict(),
-        "session_flags": list(meta.get("flags", [])),
+        "session_flags": session_flags,
         "is_debug": bool(meta.get("is_debug")),
         "webcam": webcam_stats(pts, config.quality_frame_gap_ms),
         "face_lost": {
@@ -370,7 +404,7 @@ def build_quality(
         },
         "events": event_counts(events),
         "playback": playback_part,
-        "stimulus_frames": stimulus_frames_summary(root, study_id, session_id, events, config),
+        "stimulus_frames": stimulus_part,
         "face_ratio": ratio_part,
         "browser_gate": gate_results(events),
         "calibration": {
