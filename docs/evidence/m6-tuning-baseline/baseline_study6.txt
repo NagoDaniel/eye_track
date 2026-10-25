@@ -1,0 +1,17 @@
+1. distance to the dot
+code    pl  valid unc med unc pause unc move dc med dc pause dc move dc p90 lag ms <=0.12
+DD0101  a    0.85     199       191      205    181      173     206    354    100     83
+BB0101  a    0.95     257       247      273    260      249     279    423    100     61
+CC0101  a    0.90     249       246      262    174      157     206    339      0     69
+AA0101  a    0.94     255       228      340    136      129     173    303    280     65
+AA0101  b    0.93     514       499      589    246      242     253    439    400      6
+
+2. gaze = a * dot + b (per axis), correlation r
+DD0101 a  x: a=0.65 b= +125px r=0.94   y: a=0.91 b=  +40px r=0.89
+BB0101 a  x: a=0.55 b= +235px r=0.94   y: a=0.68 b= +101px r=0.88
+CC0101 a  x: a=0.88 b= +159px r=0.98   y: a=0.84 b=  -31px r=0.78
+AA0101 a  x: a=0.92 b=  +83px r=0.97   y: a=0.85 b= +235px r=0.88
+AA0101 b  x: a=0.87 b= +383px r=0.92   y: a=0.48 b= +374px r=0.70
+
+3. signed error (gaze - dot) at each rest position, mean +- spread over sessions (px)
+ 0 (  640, 360) | A dx   -12+- 67 dy    +1+- 65 | B dx  +358+-  0 dy   +35+-  0
