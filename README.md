@@ -196,6 +196,8 @@ make lint                          # ruff, mypy --strict, eslint, tsc --strict
 make test                          # backend (real PostgreSQL in a container) and frontend unit tests
 ```
 
+To look at a processed session by hand, open `notebooks/inspect_session.ipynb` (PLAN §12.3): set its one path variable to the session's `derived/` directory and it prints the quality report and stage table and draws the pipeline's own debug plots, with Pipeline B's too when it has run. Start it in the backend's environment, e.g. `cd backend && uv run --with jupyterlab jupyter lab ../notebooks/inspect_session.ipynb`; `backend/tests/test_notebook.py` runs it on the fixture session.
+
 Slower suites that build and start real containers (they use temporary directories and never touch your `.env` or `data/`):
 
 | Command | Checks |
