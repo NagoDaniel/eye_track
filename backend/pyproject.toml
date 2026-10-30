@@ -56,7 +56,7 @@ extend-immutable-calls = [
 
 [tool.mypy]
 strict = true
-files = ["app", "worker", "tests", "alembic", "cli.py", "../shared"]
+files = ["app", "worker", "lab", "tests", "alembic", "cli.py", "../shared"]
 
 # These ship no type information; the few calls into them are wrapped in typed functions.
 [[tool.mypy.overrides]]

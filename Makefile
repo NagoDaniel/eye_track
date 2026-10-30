@@ -1,4 +1,4 @@
-.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e e2e-throttle
+.PHONY: dev test test-images test-stack test-dev test-setup test-fetch-models test-backup test-install-docker lint lint-shell e2e e2e-throttle lab
 
 # Recorded in each analysis run (PLAN §9); empty outside a git checkout.
 export GIT_SHA := $(shell git describe --always --dirty --abbrev=40 2>/dev/null)
@@ -57,3 +57,7 @@ e2e:
 # Prints numbers, never fails on them (DECISIONS 2026-10-25). E2E_THROTTLE="1,2,4" to change.
 e2e-throttle:
 	E2E_THROTTLE="$${E2E_THROTTLE:-1,4,6}" ./scripts/e2e.sh
+
+# T13 experiment lab (backend/lab, data in lab_data/): make lab ARGS="run baseline"
+lab:
+	cd backend && uv run python -m lab $(ARGS)

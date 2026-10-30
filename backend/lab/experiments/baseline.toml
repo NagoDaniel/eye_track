@@ -1,0 +1,7 @@
+name = "baseline"
+description = "The product pipeline as it is (PipelineConfig defaults). Every other experiment is compared with this one."
+pipelines = ["a", "b"]
+tune_studies = [7]
+holdout_studies = [6]
+
+[config]

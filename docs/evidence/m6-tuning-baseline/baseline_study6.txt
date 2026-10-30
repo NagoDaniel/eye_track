@@ -1,17 +1,35 @@
-1. distance to the dot
-code    pl  valid unc med unc pause unc move dc med dc pause dc move dc p90 lag ms <=0.12
-DD0101  a    0.85     199       191      205    181      173     206    354    100     83
-BB0101  a    0.95     257       247      273    260      249     279    423    100     61
-CC0101  a    0.90     249       246      262    174      157     206    339      0     69
-AA0101  a    0.94     255       228      340    136      129     173    303    280     65
-AA0101  b    0.93     514       499      589    246      242     253    439    400      6
+1. distance to the dot, viewport px (moving_dot_report); scale = viewport px per video px
+study code    pl  valid unc med unc pause unc move dc med dc pause dc move dc p90 lag ms <=thr% scale
+    6 DD0101  a    0.85     199       191      205    181      173     206    354    100     83  1.34
+    6 BB0101  a    0.95     257       247      273    260      249     279    423    100     61  1.34
+    6 CC0101  a    0.90     249       246      262    174      157     206    339      0     69  1.34
+    6 AA0101  a    0.94     255       228      340    136      129     173    303    280     65  1.34
+    6 AA0101  b    0.93     514       499      589    246      242     253    439    400      6  1.34
 
-2. gaze = a * dot + b (per axis), correlation r
-DD0101 a  x: a=0.65 b= +125px r=0.94   y: a=0.91 b=  +40px r=0.89
-BB0101 a  x: a=0.55 b= +235px r=0.94   y: a=0.68 b= +101px r=0.88
-CC0101 a  x: a=0.88 b= +159px r=0.98   y: a=0.84 b=  -31px r=0.78
-AA0101 a  x: a=0.92 b=  +83px r=0.97   y: a=0.85 b= +235px r=0.88
-AA0101 b  x: a=0.87 b= +383px r=0.92   y: a=0.48 b= +374px r=0.70
+2. gaze = a * dot + b per axis (video px), correlation r
+    6 DD0101 a  x: a=0.65 b= +125px r=0.94   y: a=0.91 b=  +40px r=0.89
+    6 BB0101 a  x: a=0.55 b= +235px r=0.94   y: a=0.68 b= +101px r=0.88
+    6 CC0101 a  x: a=0.88 b= +159px r=0.98   y: a=0.84 b=  -31px r=0.78
+    6 AA0101 a  x: a=0.92 b=  +83px r=0.97   y: a=0.85 b= +235px r=0.88
+    6 AA0101 b  x: a=0.87 b= +383px r=0.92   y: a=0.48 b= +374px r=0.70
 
-3. signed error (gaze - dot) at each rest position, mean +- spread over sessions (px)
+3. signed error (gaze - dot) at each rest position, video px, mean +- spread over the sessions of a study
+study 6
  0 (  640, 360) | A dx   -12+- 67 dy    +1+- 65 | B dx  +358+-  0 dy   +35+-  0
+ 1 (  320, 180) | A dx   +30+- 84 dy    +6+-123 | B dx  +121+-  0 dy  +236+-  0
+ 2 (  960, 180) | A dx   -92+-100 dy   +86+-126 | B dx  +244+-  0 dy  +371+-  0
+ 3 (  960, 540) | A dx  -112+-115 dy   -15+- 97 | B dx  +334+-  0 dy   +44+-  0
+ 4 (  320, 540) | A dx   +89+- 75 dy    -5+- 93 | B dx  +438+-  0 dy   +60+-  0
+ 5 (  128, 648) | A dx  +147+- 55 dy   -72+- 87 | B dx  +391+-  0 dy   -35+-  0
+ 6 (  128,  72) | A dx   +72+- 50 dy   +34+- 94 | B dx  +175+-  0 dy  +350+-  0
+ 7 ( 1152,  72) | A dx   -98+-136 dy   +70+- 80 | B dx  +155+-  0 dy  +302+-  0
+ 8 ( 1152, 648) | A dx  -219+-200 dy   -10+-165 | B dx  +217+-  0 dy  +173+-  0
+ 9 (  640, 360) | A dx   +28+- 48 dy   -58+-122 | B dx  +323+-  0 dy   +92+-  0
+
+4. gain/offset fitted on stimulus time < 11 s, median error on the rest, video px
+    6 DD0101 a  second half:  148 px as measured,  109 px after the affine fit
+    6 BB0101 a  second half:  243 px as measured,  149 px after the affine fit
+    6 CC0101 a  second half:  195 px as measured,  167 px after the affine fit
+    6 AA0101 a  second half:  187 px as measured,  122 px after the affine fit
+    6 AA0101 b  second half:  377 px as measured,  247 px after the affine fit
+
