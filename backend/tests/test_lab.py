@@ -26,6 +26,7 @@ from lab.run import SCORES_FILE, load_scores, run_experiment
 from lab.score import AxisFit, DotTruth, Score, score_gaze
 from tests.session_fixture import FixtureSession
 from worker.pipeline.config import PipelineConfig
+from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 from worker.pipeline.spec import SPEC_A
 
 TRUTH = DotTruth.load(DOT_PATH_FILE)
@@ -245,3 +246,73 @@ def test_the_lab_baseline_reproduces_the_product_pipeline_on_the_real_fixture(
     assert scores == result.scores and header["tune_studies"] == [study]
     assert (results_dir(lab, "baseline") / SCORES_FILE).is_file()
     assert _tree_hash(source) == before  # the source data root was only read
+
+
+# --- E1 diagnostics ---
+
+
+def test_contributions_add_up_to_the_linear_prediction() -> None:
+    from lab.diagnose import contributions, group_sum
+    from worker.pipeline.ridge import fit_ridge, predict
+
+    rng = np.random.default_rng(1)
+    columns = list(FEATURE_VECTOR_COLUMNS)
+    x = rng.normal(size=(200, len(columns)))
+    y = x[:, :2] @ np.array([[300.0, 0.0], [0.0, 200.0]]) + 600
+    model = fit_ridge(x, y, alpha=1.0, degree=1)
+    per_feature = contributions(model, x)
+    np.testing.assert_allclose(per_feature.sum(axis=1) + model.intercepts, predict(model, x))
+    groups = group_sum(per_feature, columns)
+    np.testing.assert_allclose(sum(groups.values()), per_feature.sum(axis=1))
+
+
+def test_the_split_is_refused_for_a_quadratic_model() -> None:
+    from lab.diagnose import contributions
+    from worker.pipeline.ridge import fit_ridge
+
+    x = np.random.default_rng(2).normal(size=(50, 3))
+    with pytest.raises(ValueError, match="linear"):
+        contributions(fit_ridge(x, x[:, :2], alpha=1.0, degree=2), x)
+
+
+def test_stamp_delay_is_t_minus_capture_time(tmp_path: Path) -> None:
+    from lab.diagnose import stamp_delay
+
+    rows: list[dict[str, float | None]] = [
+        {"t": 100.0 + k, "capture_time": 90.0 + k} for k in range(20)
+    ]
+    rows.append({"t": 500.0, "capture_time": None})
+    path = tmp_path / "f.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert stamp_delay(path) == (10.0, 10.0, 10.0)
+    path.write_text(json.dumps({"t": 1.0, "capture_time": None}) + "\n")
+    assert stamp_delay(path) is None
+
+
+def test_contributions_add_up_on_real_fixture_features(a_session: FixtureSession) -> None:
+    """Real MediaPipe features (near-constant columns, real scales): a linear model fitted on them
+    is split exactly. The fixture's own calibration chose the quadratic model, so the linear one is
+    fitted here, on the frames the pipeline predicted."""
+    from lab.diagnose import contributions
+    from worker.pipeline.features_a import FEATURES_FILE
+    from worker.pipeline.ridge import fit_ridge, predict
+
+    derived = derived_dir(a_session.root, a_session.study_id, a_session.session_id)
+    features = pq.read_table(derived / FEATURES_FILE)
+    gaze = pq.read_table(derived / SPEC_A.gaze_file)
+    vectors = np.stack(
+        [np.array(features[c].to_pylist(), dtype=np.float64) for c in FEATURE_VECTOR_COLUMNS],
+        axis=1,
+    )
+    xy = np.stack(
+        [
+            np.array([np.nan if v is None else v for v in gaze[c].to_pylist()])
+            for c in ("x_px", "y_px")
+        ],
+        axis=1,
+    )
+    ok = np.isfinite(xy).all(axis=1) & np.isfinite(vectors).all(axis=1)
+    assert ok.sum() > 50
+    model = fit_ridge(vectors[ok], xy[ok], alpha=1.0, degree=1)
+    split = contributions(model, vectors[ok]).sum(axis=1) + model.intercepts
+    np.testing.assert_allclose(split, predict(model, vectors[ok]), rtol=1e-9, atol=1e-6)

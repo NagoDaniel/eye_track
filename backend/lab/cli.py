@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from lab.compare import format_comparison
+from lab.diagnose import run_diagnosis
 from lab.experiment import ExperimentError, load_experiment
 from lab.importer import LabImportError, import_study
 from lab.layout import DOT_PATH_FILE, EXPERIMENTS_DIR, REPO_ROOT, lab_data_root, sessions_root
@@ -72,6 +73,16 @@ def compare_cmd(
     tune = new_head.get("tune_studies", [])
     holdout = new_head.get("holdout_studies", [])
     typer.echo(format_comparison(base, base_scores, new, new_scores, tune, holdout))
+
+
+@app.command("diagnose")
+def diagnose_cmd(
+    experiment: str = typer.Argument("baseline", help="Experiment whose outputs to diagnose."),
+    sweep: bool = typer.Option(True, help="Also re-run the pipeline with each ridge alpha alone."),
+) -> None:
+    """E1: head pose against calibration, what moves the gaze, timing, regularisation."""
+    _, report = run_diagnosis(lab_data_root(), experiment, DotTruth.load(DOT_PATH_FILE), sweep)
+    typer.echo(report)
 
 
 def main() -> None:
