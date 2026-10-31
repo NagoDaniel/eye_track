@@ -1,0 +1,6 @@
+name = "s8-nf"
+description = "Study 8: without face_ratio (f-no-face)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll"]

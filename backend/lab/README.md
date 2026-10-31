@@ -60,6 +60,10 @@ drift = "affine"         # E6: drift correction: offset (the product's) or affin
 
 Unknown keys, unknown fields, unknown columns and wrong types are refused.
 
+`make lab ARGS="plot <experiment>"`: for each session and dot video, x and y of the dot and of the
+gaze (as measured and drift-corrected) over the video's time, in
+`lab_data/results/<experiment>/plots/`.
+
 `make lab ARGS="diagnose [experiment]"` (E1): head pose against the calibration spread, what each
 feature group contributes to the drift, frame stamping, and a ridge-alpha sweep.
 

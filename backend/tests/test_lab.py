@@ -623,3 +623,12 @@ def test_fit_validation_before_and_between_is_a_known_mode() -> None:
     exp = parse_experiment({"name": "x", "tune_studies": [8],
                             "fit_validation": "before_and_between"})  # fmt: skip
     assert exp.variant.fit_validation == "before_and_between"
+
+
+def test_the_time_plot_is_written_for_a_session_and_video(tmp_path: Path) -> None:
+    from lab.plots import plot_video
+
+    out = tmp_path / "p.png"
+    plot_video(_gaze(offset_px=(20.0, -10.0)), TRUTH, "1", "title", "subtitle", out)
+    assert out.is_file() and out.stat().st_size > 10_000
+    assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

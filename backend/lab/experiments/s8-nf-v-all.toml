@@ -1,0 +1,7 @@
+name = "s8-nf-v-all"
+description = "Study 8: without face_ratio, fit on all validation dots"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll"]
+fit_validation = "all"

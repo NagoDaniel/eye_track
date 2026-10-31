@@ -1,0 +1,9 @@
+name = "s8-v-all-blink0p2"
+description = "Study 8: fit on all validation dots, blink when either eyeBlink score > 0.2 (product: 0.5)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "all"
+
+[config]
+blink_score_threshold = 0.2

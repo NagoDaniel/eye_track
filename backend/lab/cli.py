@@ -88,5 +88,14 @@ def diagnose_cmd(
     typer.echo(report)
 
 
+@app.command("plot")
+def plot_cmd(experiment: str = typer.Argument(..., help="Experiment whose gaze to plot.")) -> None:
+    """x and y of the dot and the gaze over each dot video's time, one PNG per session and video."""
+    from lab.plots import plot_experiment
+
+    for path in plot_experiment(lab_data_root(), experiment):
+        typer.echo(path)
+
+
 def main() -> None:
     app()
