@@ -11,7 +11,7 @@ import datetime
 import json
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,7 @@ from lab.layout import (
     sessions_root,
 )
 from lab.score import DotTruth, Score, format_scores, score_gaze
+from lab.variants import Variant, add_highpass
 from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, compute_features
@@ -38,6 +39,7 @@ from worker.pipeline.landmarks import LANDMARKS_FILE
 from worker.pipeline.spec import SPECS
 from worker.pipeline.sync import run_sync
 
+PRODUCT = Variant()  # the product's feature columns, nothing derived
 SCORES_FILE = "scores.json"
 REPORT_FILE = "report.txt"
 
@@ -87,7 +89,11 @@ def prepare_session(lab_sessions: Path, work: Path, ref: SessionRef) -> Path:
 
 
 def run_stages(
-    work: Path, ref: SessionRef, config: PipelineConfig, pipelines: tuple[str, ...]
+    work: Path,
+    ref: SessionRef,
+    config: PipelineConfig,
+    pipelines: tuple[str, ...],
+    variant: Variant = PRODUCT,
 ) -> tuple[list[str], list[Failure]]:
     """Features, sync, then calibration and gaze of each pipeline. Returns the pipelines that have
     a gaze table, and why a calibration failed. A pipeline without its features file (B not run on
@@ -95,9 +101,13 @@ def run_stages(
     derived = derived_dir(work, ref.study_id, ref.session_id)
     compute_features(derived / LANDMARKS_FILE, derived / FEATURES_FILE, config)
     run_sync(work, ref.study_id, ref.session_id, config)
+    if variant.highpass is not None:
+        add_highpass(derived / FEATURES_FILE, variant.highpass)
     done, failures = [], []
     for p in pipelines:
         spec = SPECS[p]
+        if p == "a":
+            spec = replace(spec, feature_columns=variant.feature_columns)
         if not (derived / spec.features_file).exists():  # B never ran on this session: skip
             continue
         fit = run_calibration(work, ref.study_id, ref.session_id, config, spec)
@@ -150,6 +160,16 @@ def _header(name: str, description: str, overrides: dict[str, Any], config: Pipe
     }
 
 
+def variant_summary(v: Variant) -> dict[str, Any]:
+    """The variant's departures from the product, for the report header."""
+    out: dict[str, Any] = {}
+    if v.feature_columns != Variant().feature_columns:
+        out["features"] = list(v.feature_columns)
+    if v.highpass is not None:
+        out["highpass"] = {"columns": list(v.highpass.columns), "window_s": v.highpass.window_s}
+    return out
+
+
 def run_experiment(exp: Experiment, lab_data: Path, truth: DotTruth) -> tuple[RunResult, str]:
     lab_sessions = sessions_root(lab_data)
     out = results_dir(lab_data, exp.name)
@@ -165,13 +185,14 @@ def run_experiment(exp: Experiment, lab_data: Path, truth: DotTruth) -> tuple[Ru
             raise FileNotFoundError(f"study {study} is not in the lab (run `lab import-study`)")
         for ref in refs:
             prepare_session(lab_sessions, work, ref)
-            done, failed = run_stages(work, ref, exp.config, exp.pipelines)
+            done, failed = run_stages(work, ref, exp.config, exp.pipelines, exp.variant)
             failures += failed
             derived = derived_dir(work, ref.study_id, ref.session_id)
             for p in done:
                 scores.append(score_session(work, derived, ref, p, truth, exp.config))
     result = RunResult(scores, failures)
-    header = _header(exp.name, exp.description, exp.overrides, exp.config,
+    overrides = {**exp.overrides, **variant_summary(exp.variant)}
+    header = _header(exp.name, exp.description, overrides, exp.config,
                      {"tune_studies": list(exp.tune_studies),
                       "holdout_studies": list(exp.holdout_studies)})  # fmt: skip
     return result, write_results(out, header, result, truth)

@@ -35,7 +35,21 @@ holdout_studies = [6]    # only checks the choice
 calib_alphas = [0.3, 1, 3, 10, 30, 100]
 ```
 
-Unknown keys, unknown fields and wrong types are refused.
+Pipeline A's regression input and derived features (`lab/variants.py`; Pipeline A only):
+
+```toml
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l_hp", "open_r_hp",
+            "yaw", "pitch", "roll"]   # any column of features_a.parquet, or a high-passed one
+
+[highpass]                            # adds <column>_hp = column minus its running trimmed mean
+columns = ["open_l", "open_r"]
+window_s = 60
+```
+
+Unknown keys, unknown fields, unknown columns and wrong types are refused.
+
+`make lab ARGS="diagnose [experiment]"` (E1): head pose against the calibration spread, what each
+feature group contributes to the drift, frame stamping, and a ridge-alpha sweep.
 
 ## Reading the numbers
 

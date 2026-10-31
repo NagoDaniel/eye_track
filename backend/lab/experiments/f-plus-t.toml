@@ -1,0 +1,6 @@
+name = "f-plus-t"
+description = "E4: the product's features plus the head translation tx, ty, tz"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll", "face_ratio", "tx", "ty", "tz"]

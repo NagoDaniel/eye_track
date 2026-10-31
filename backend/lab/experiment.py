@@ -8,6 +8,13 @@ TOML, in `backend/lab/experiments/`:
     tune_studies = [7]              # the studies a parameter may be chosen on
     holdout_studies = [6]           # the studies that only check the choice
 
+    features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l_hp", "open_r_hp",
+                "yaw", "pitch", "roll"]   # A's regression input (default: the product's 10)
+
+    [highpass]                      # adds `<column>_hp` = column minus its running median
+    columns = ["open_l", "open_r"]
+    window_s = 20
+
     [config]                        # PipelineConfig fields; anything else is an error
     calib_alphas = [1.0, 10.0]
 
@@ -20,10 +27,15 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
+from lab.variants import Highpass, Variant, check_variant
 from worker.pipeline.config import PipelineConfig
+from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 
 PIPELINES = ("a", "b")
-_TOP_KEYS = {"name", "description", "pipelines", "tune_studies", "holdout_studies", "config"}
+_TOP_KEYS = {
+    "name", "description", "pipelines", "tune_studies", "holdout_studies", "config", "features",
+    "highpass",
+}  # fmt: skip
 
 
 class ExperimentError(Exception):
@@ -39,6 +51,7 @@ class Experiment:
     holdout_studies: tuple[int, ...]
     config: PipelineConfig
     overrides: dict[str, Any]  # what the file changed, for the report
+    variant: Variant = Variant()  # Pipeline A's feature columns and derived features
 
     @property
     def studies(self) -> tuple[int, ...]:
@@ -106,6 +119,9 @@ def parse_experiment(data: dict[str, Any]) -> Experiment:
     overrides = data.get("config", {})
     if not isinstance(overrides, dict):
         raise ExperimentError("config must be a table")
+    variant = _variant(data)
+    if variant != Variant() and "b" in pipelines:
+        raise ExperimentError('features and highpass change Pipeline A only: use pipelines = ["a"]')
     return Experiment(
         name=name,
         description=str(data.get("description", "")),
@@ -114,7 +130,30 @@ def parse_experiment(data: dict[str, Any]) -> Experiment:
         holdout_studies=holdout,
         config=config_with(overrides),
         overrides=dict(overrides),
+        variant=variant,
     )
+
+
+def _variant(data: dict[str, Any]) -> Variant:
+    hp = data.get("highpass")
+    highpass = None
+    if hp is not None:
+        if not isinstance(hp, dict) or set(hp) - {"columns", "window_s"}:
+            raise ExperimentError("highpass must be a table with columns and window_s")
+        columns, window = hp.get("columns", []), hp.get("window_s")
+        if not isinstance(columns, list) or not all(isinstance(c, str) for c in columns):
+            raise ExperimentError("highpass.columns must be a list of column names")
+        if not isinstance(window, int | float) or isinstance(window, bool):
+            raise ExperimentError("highpass.window_s must be a number of seconds")
+        highpass = Highpass(tuple(columns), float(window))
+    features = data.get("features", list(FEATURE_VECTOR_COLUMNS))
+    if not isinstance(features, list) or not all(isinstance(c, str) for c in features):
+        raise ExperimentError("features must be a list of column names")
+    variant = Variant(tuple(features), highpass)
+    problems = check_variant(variant)
+    if problems:
+        raise ExperimentError("; ".join(problems))
+    return variant
 
 
 def load_experiment(path: Path) -> Experiment:

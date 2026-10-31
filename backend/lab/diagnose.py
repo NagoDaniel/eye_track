@@ -35,7 +35,8 @@ from lab.experiment import parse_experiment
 from lab.layout import SessionRef, list_sessions, results_dir
 from lab.run import load_scores, run_experiment
 from lab.score import REST_SETTLE_S, DotTruth, Score
-from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS, FEATURES_FILE
+from lab.variants import HP_SUFFIX
+from worker.pipeline.features_a import FEATURES_FILE
 from worker.pipeline.ridge import RidgeModel
 from worker.pipeline.spec import SPEC_A
 
@@ -46,6 +47,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "lids": ("open_l", "open_r"),
     "head angles": ("yaw", "pitch", "roll"),
     "face size": ("face_ratio",),
+    "head position": ("tx", "ty", "tz"),
 }
 POSE_COLUMNS = ("yaw", "pitch", "roll", "face_ratio", "tx", "ty", "tz")
 ALPHAS = (0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
@@ -70,11 +72,13 @@ def contributions(model: RidgeModel, vectors: Floats) -> Floats:
 
 
 def group_sum(per_feature: Floats, columns: Sequence[str]) -> dict[str, Floats]:
-    """Contributions summed over each group: name -> (frames, 2)."""
-    index = {c: i for i, c in enumerate(columns)}
-    return {
-        g: per_feature[:, [index[c] for c in cols], :].sum(axis=1) for g, cols in GROUPS.items()
-    }
+    """Contributions summed over each group: name -> (frames, 2). A high-passed column
+    (`open_l_hp`) counts in the group of its base column; a group without columns sums to 0."""
+    out = {}
+    for g, cols in GROUPS.items():
+        mine = [i for i, c in enumerate(columns) if c.removesuffix(HP_SUFFIX) in cols]
+        out[g] = per_feature[:, mine, :].sum(axis=1)
+    return out
 
 
 @dataclass(frozen=True)
@@ -107,8 +111,6 @@ def diagnose_session(root: Path, ref: SessionRef, truth: DotTruth) -> SessionDia
     calibration = json.loads((derived / SPEC_A.calibration_file).read_text(encoding="utf-8"))
     model = RidgeModel.from_dict(calibration["model"])
     columns = list(calibration["feature_columns"])
-    if columns != list(FEATURE_VECTOR_COLUMNS):
-        raise ValueError(f"{ref.code}: unexpected feature columns {columns}")
 
     phase = np.asarray(gaze["phase"].to_pylist(), dtype=object)
     valid = np.asarray(gaze["valid"].to_pylist(), dtype=bool)

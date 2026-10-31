@@ -1,0 +1,70 @@
+E4 feature experiments (2026-10-31): every experiment against baseline, Pipeline A, viewport px.
+Rule: tune on study 7, check on study 6; better = tuning median down, held-out median not up, no session worse than +10 %.
+dc_pause = drift-corrected error while the dot rests (what the analyses use); pause = as measured.
+High-passed columns use a running trimmed mean (10 % cut at each end) as the baseline.
+
+f-no-face: E4: the product's features without face_ratio (face size drifts, E1)
+  A dc_pause  tune median 237 -> 192, held out 165 -> 159  => BETTER
+  A pause     tune median 228 -> 185, held out 237 -> 205, worse: EE0202(7) +11%, BB0101(6) +31%  => not better
+
+f-no-lids: E4: the product's features without the lid openness (drifts, E1)
+  A dc_pause  tune median 237 -> 210, held out 165 -> 189, worse: DD0101(6) +14%, BB0101(6) +10%, CC0101(6) +15%, AA0101(6) +41%  => not better
+  A pause     tune median 228 -> 206, held out 237 -> 312, worse: BB0101(6) +48%, AA0101(6) +66%  => not better
+
+f-no-head: E4: the product's features without the head angles
+  A dc_pause  tune median 237 -> 208, held out 165 -> 174, worse: FF0101(7) +15%, CC0101(6) +17%  => not better
+  A pause     tune median 228 -> 210, held out 237 -> 207, worse: CC0101(6) +38%  => not better
+
+f-iris-only: E4: only the iris positions
+  A dc_pause  tune median 237 -> 196, held out 165 -> 198, worse: DD0202(7) +24%, CC0101(6) +42%, AA0101(6) +74%  => not better
+  A pause     tune median 228 -> 199, held out 237 -> 233, worse: DD0202(7) +24%, CC0101(6) +36%, AA0101(6) +17%  => not better
+
+f-plus-t: E4: the product's features plus the head translation tx, ty, tz
+  A dc_pause  tune median 237 -> 213, held out 165 -> 188, worse: FF0101(7) +11%, DD0101(6) +10%, BB0101(6) +19%, CC0101(6) +18%, AA0101(6) +12%  => not better
+  A pause     tune median 228 -> 244, held out 237 -> 236, worse: DD0202(7) +13%, AA0101(7) +60%, BB0202(7) +45%, FF0101(7) +29%, BB0101(6) +15%, AA0101(6) +35%  => not better
+
+f-hp-lidsface-10: E4: lids and face size high-passed (running median over 10 s removed)
+  A dc_pause  tune median 237 -> 183, held out 165 -> 191, worse: DD0101(6) +43%, AA0101(6) +10%  => not better
+  A pause     tune median 228 -> 172, held out 237 -> 184, worse: BB0101(6) +25%  => not better
+
+f-hp-lidsface-30: E4: lids and face size high-passed (running median over 30 s removed)
+  A dc_pause  tune median 237 -> 242, held out 165 -> 162, worse: BB0101(6) +17%, AA0101(6) +19%  => not better
+  A pause     tune median 228 -> 212, held out 237 -> 166, worse: BB0101(6) +17%  => not better
+
+f-hp-lidsface-60: E4: lids and face size high-passed (running median over 60 s removed)
+  A dc_pause  tune median 237 -> 247, held out 165 -> 165, worse: BB0202(7) +11%  => not better
+  A pause     tune median 228 -> 221, held out 237 -> 185  => BETTER
+
+f-hp-all-10: E4: lids, head angles and face size high-passed (running median over 10 s removed)
+  A dc_pause  tune median 237 -> 189, held out 165 -> 168, worse: DD0101(6) +39%, CC0101(6) +17%, AA0101(6) +18%  => not better
+  A pause     tune median 228 -> 187, held out 237 -> 201, worse: DD0101(6) +25%  => not better
+
+f-hp-all-30: E4: lids, head angles and face size high-passed (running median over 30 s removed)
+  A dc_pause  tune median 237 -> 232, held out 165 -> 173, worse: GG0101(7) +12%, DD0202(7) +11%, AA0101(6) +35%  => not better
+  A pause     tune median 228 -> 199, held out 237 -> 193  => BETTER
+
+f-hp-all-60: E4: lids, head angles and face size high-passed (running median over 60 s removed)
+  A dc_pause  tune median 237 -> 237, held out 165 -> 176  => not better
+  A pause     tune median 228 -> 206, held out 237 -> 203  => BETTER
+
+f-noface-hplids-30: E4: without face_ratio, and the lid openness high-passed over 30 s
+  A dc_pause  tune median 237 -> 188, held out 165 -> 172, worse: AA0101(6) +34%  => not better
+  A pause     tune median 228 -> 186, held out 237 -> 173, worse: EE0202(7) +15%, BB0101(6) +58%  => not better
+
+f-noface-hplids-60: E4: without face_ratio, and the lid openness high-passed over 60 s
+  A dc_pause  tune median 237 -> 194, held out 165 -> 164, worse: AA0101(6) +26%  => not better
+  A pause     tune median 228 -> 181, held out 237 -> 192, worse: BB0101(6) +31%  => not better
+
+Session by session, f-no-face against baseline:
+                     |      dc_pause      |       pause        |     dc_median      |       median       |        move       
+study code    pl     |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg
+    7 GG0101  a      |    285    190 -33% |    218    163 -25% |    281    193 -31% |    221    176 -20% |    230    197 -14%
+    7 DD0202  a      |    152    152  -0% |    161    150  -7% |    155    154  -1% |    165    155  -6% |    181    199 +10%
+    7 EE0202  a      |    143    140  -3% |    155    172 +11% |    150    150  +0% |    162    170  +5% |    182    167  -8%
+    7 AA0101  a      |    263    247  -6% |    272    260  -4% |    281    263  -6% |    286    271  -5% |    319    315  -1%
+    7 BB0202  a      |    237    193 -19% |    247    198 -20% |    246    215 -13% |    260    230 -12% |    292    263 -10%
+    7 FF0101  a      |    237    233  -2% |    237    225  -5% |    233    231  -1% |    237    219  -8% |    236    211 -11%
+    6 DD0101  a      |    173    169  -3% |    191    189  -1% |    181    176  -3% |    199    196  -1% |    205    208  +2%
+    6 BB0101  a      |    249    241  -3% |    247    323 +31% |    260    280  +7% |    257    343 +33% |    273    385 +41%
+    6 CC0101  a      |    157    150  -5% |    246    221 -10% |    174    176  +1% |    249    234  -6% |    262    280  +7%
+    6 AA0101  a      |    129    141  +9% |    228    172 -24% |    136    145  +7% |    255    194 -24% |    340    253 -25%

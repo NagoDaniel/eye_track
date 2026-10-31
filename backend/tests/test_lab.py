@@ -316,3 +316,95 @@ def test_contributions_add_up_on_real_fixture_features(a_session: FixtureSession
     model = fit_ridge(vectors[ok], xy[ok], alpha=1.0, degree=1)
     split = contributions(model, vectors[ok]).sum(axis=1) + model.intercepts
     np.testing.assert_allclose(split, predict(model, vectors[ok]), rtol=1e-9, atol=1e-6)
+
+
+# --- E4 variants: feature columns and high-passed features ---
+
+
+def test_the_running_baseline_removes_a_slow_drift_and_keeps_fast_changes() -> None:
+    from lab.variants import running_baseline
+
+    t = np.arange(0, 120, 1 / 30)
+    slow = 0.002 * t  # posture drift
+    fast = np.where((t // 1.5) % 2 == 0, 0.05, -0.05)  # 1.5 s gaze changes
+    use = np.ones(len(t), dtype=bool)
+    use[::7] = False  # skipped frames (blinks) are not part of the median
+    x = slow + fast
+    hp = x - running_baseline(t, x, use, window_s=20)
+    inner = (t > 15) & (t < 105)
+    np.testing.assert_allclose(hp[inner], fast[inner], atol=0.006)  # window edges cut a level
+
+
+def test_add_highpass_appends_columns_and_keeps_rows_and_metadata(tmp_path: Path) -> None:
+    from lab.variants import Highpass, add_highpass
+
+    n = 300
+    path = tmp_path / "features_a.parquet"
+    table = pa.table({
+        "pts": pa.array(np.arange(n) / 30.0), "face": pa.array([True] * n),
+        "blink": pa.array([False] * n), "open_l": pa.array(np.linspace(0.3, 0.4, n)),
+    }).replace_schema_metadata({"width": "1280"})  # fmt: skip
+    pq.write_table(table, path)
+    add_highpass(path, Highpass(("open_l",), window_s=2.0))
+    out = pq.read_table(path)
+    assert out.column_names == ["pts", "face", "blink", "open_l", "open_l_hp"]
+    assert out.schema.metadata == {b"width": b"1280"} and out.num_rows == n
+    hp = np.array(out["open_l_hp"].to_pylist())
+    step = 0.1 / (n - 1)  # a window edge may take one sample more on one side
+    assert np.abs(hp[60:-60]).max() <= step  # a straight line is its own centred mean
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"features": ["iris_l_x", "nose"]}, "unknown feature columns"),
+        ({"features": ["open_l_hp"]}, "unknown feature columns"),  # no highpass table
+        ({"features": ["iris_l_x", "iris_l_x"]}, "twice"),
+        ({"features": []}, "at least one"),
+        ({"highpass": {"columns": ["blink_l"], "window_s": 10}}, "highpass.columns"),
+        ({"highpass": {"columns": ["open_l"], "window_s": 0}}, "window_s"),
+        ({"highpass": {"columns": ["open_l"], "window": 10}}, "highpass must be"),
+        ({"features": ["iris_l_x"], "pipelines": ["a", "b"]}, "Pipeline A only"),
+    ],
+)
+def test_wrong_variants_are_refused(data: dict[str, Any], message: str) -> None:
+    with pytest.raises(ExperimentError, match=message):
+        parse_experiment({"name": "x", "tune_studies": [7], **data})
+
+
+def test_a_variant_experiment_parses() -> None:
+    exp = parse_experiment({
+        "name": "x", "tune_studies": [7], "features": ["iris_l_x", "open_l_hp", "tx"],
+        "highpass": {"columns": ["open_l"], "window_s": 30},
+    })  # fmt: skip
+    assert exp.variant.feature_columns == ("iris_l_x", "open_l_hp", "tx")
+    assert exp.variant.highpass is not None and exp.variant.highpass.window_s == 30.0
+
+
+def test_a_variant_runs_on_the_real_fixture_with_its_own_features(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    from worker.pipeline.features_a import FEATURES_FILE
+
+    lab = tmp_path / "lab_data"
+    import_study(a_session.root, sessions_root(lab), a_session.study_id)
+    columns = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l_hp", "open_r_hp", "tx"]
+    exp = parse_experiment({
+        "name": "variant", "tune_studies": [a_session.study_id], "features": columns,
+        "highpass": {"columns": ["open_l", "open_r"], "window_s": 2},
+    })  # fmt: skip
+    result, report = run_experiment(exp, lab, TRUTH)
+    assert result.failures == [] and len(result.scores) == 1
+    derived = derived_dir(results_dir(lab, "variant") / "data", a_session.study_id,
+                          a_session.session_id)  # fmt: skip
+    calibration = json.loads((derived / SPEC_A.calibration_file).read_text())
+    assert calibration["feature_columns"] == columns
+    assert len(calibration["model"]["means"]) == len(columns)
+    features = pq.read_table(derived / FEATURES_FILE)
+    assert "open_l_hp" in features.column_names and "face_ratio_hp" not in features.column_names
+    gaze = pq.read_table(derived / SPEC_A.gaze_file)
+    assert np.isfinite(
+        np.array([np.nan if v is None else v for v in gaze["x_px"].to_pylist()])
+    ).any()
+    header, _ = load_scores(lab, "variant")
+    assert header["overrides"]["features"] == columns

@@ -1,0 +1,10 @@
+name = "f-hp-all-30"
+description = "E4: lids, head angles and face size high-passed (running median over 30 s removed)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l_hp", "open_r_hp", "yaw_hp", "pitch_hp", "roll_hp", "face_ratio_hp"]
+
+[highpass]
+columns = ["open_l", "open_r", "yaw", "pitch", "roll", "face_ratio"]
+window_s = 30

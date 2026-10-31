@@ -112,7 +112,10 @@ def format_comparison(
     lines.append(f"{'':20}" + "".join(f" | {m:^18}" for m in METRICS))
     lines.append(f"{'study':>5} {'code':8}{'pl':3}   " + " |   base    new  chg" * len(METRICS))
     tables = {m: {r.key: r for r in rows(base, new, m)} for m in METRICS}
+    shown = {s.pipeline for s in new}
     for s in base:
+        if s.pipeline not in shown:
+            continue
         key = (s.study_id, s.code, s.pipeline)
         line = f"{s.study_id:5} {s.code:8}{s.pipeline:3}   "
         for m in METRICS:
@@ -122,7 +125,7 @@ def format_comparison(
         lines.append(line)
     lines += ["", f"verdict (tune {list(tune)}, held out {list(holdout)}, no session worse than "
               f"+{MAX_WORSE_FRACTION:.0%}):"]  # fmt: skip
-    for p in sorted({s.pipeline for s in base}):
+    for p in sorted({s.pipeline for s in new}):
         for m in VERDICT_METRICS:
             try:
                 v = verdict(base, new, m, p, tune, holdout)
