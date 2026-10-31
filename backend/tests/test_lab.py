@@ -408,3 +408,113 @@ def test_a_variant_runs_on_the_real_fixture_with_its_own_features(
     ).any()
     header, _ = load_scores(lab, "variant")
     assert header["overrides"]["features"] == columns
+
+
+# --- E7 (validation dots in the fit) and E6 (drift correction) ---
+
+
+def _block(t_ms: float, gain: float, shift: tuple[float, float]) -> Any:
+    """A validation block whose median predictions relate to the targets by a known map:
+    prediction = (target - shift) / gain."""
+    from worker.pipeline.validation import BlockScore, PointScore
+
+    targets = [(640.0, 360.0), (320.0, 180.0), (960.0, 180.0), (960.0, 540.0), (320.0, 540.0)]
+    points = [
+        PointScore(
+            i,
+            x,
+            y,
+            t_ms,
+            20,
+            (x - shift[0]) / gain,
+            (y - shift[1]) / gain,
+            0.0,
+            0.0,
+            None,
+            None,
+            1.0,
+        )  # fmt: skip
+        for i, (x, y) in enumerate(targets)
+    ]
+    return BlockScore(0, "before_video", t_ms, points)
+
+
+def test_the_affine_block_map_recovers_a_known_gain_and_shift() -> None:
+    from lab.variants import block_map
+
+    m = block_map(_block(1000.0, gain=0.8, shift=(50.0, -20.0)), "affine")
+    assert m is not None
+    assert m.gain == pytest.approx((0.8, 0.8)) and m.shift == pytest.approx((50.0, -20.0))
+    off = block_map(_block(1000.0, gain=1.0, shift=(30.0, 10.0)), "offset")
+    assert off is not None and off.gain == (1.0, 1.0) and off.shift == pytest.approx((30.0, 10.0))
+
+
+def test_block_maps_blend_linearly_in_time_and_hold_outside() -> None:
+    from lab.variants import BlockMap, correct
+
+    maps = [BlockMap(0.0, (1.0, 1.0), (0.0, 0.0)), BlockMap(100.0, (1.0, 1.0), (10.0, -10.0))]
+    t = np.array([-50.0, 0.0, 25.0, 100.0, 200.0])
+    x, y = correct(maps, t, np.zeros(5), np.zeros(5))
+    np.testing.assert_allclose(x, [0.0, 0.0, 2.5, 10.0, 10.0])
+    np.testing.assert_allclose(y, [0.0, 0.0, -2.5, -10.0, -10.0])
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [({"fit_validation": "some"}, "fit_validation"), ({"drift": "spline"}, "drift"),
+     ({"drift": "affine", "pipelines": ["a", "b"]}, "Pipeline A only")],
+)  # fmt: skip
+def test_wrong_fit_or_drift_modes_are_refused(data: dict[str, Any], message: str) -> None:
+    with pytest.raises(ExperimentError, match=message):
+        parse_experiment({"name": "x", "tune_studies": [7], **data})
+
+
+def test_offset_drift_rewrite_reproduces_the_products_columns_on_the_real_fixture(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    """The lab's drift code in `offset` mode is the product's correction: same columns."""
+    import shutil
+
+    from lab.layout import SessionRef
+    from lab.variants import rewrite_drift
+
+    root = tmp_path / "data"
+    shutil.copytree(a_session.root, root)
+    derived = derived_dir(root, a_session.study_id, a_session.session_id)
+    before = pq.read_table(derived / SPEC_A.gaze_file)
+    ref = SessionRef(a_session.study_id, a_session.session_id, "X")
+    rewrite_drift(root, ref, PipelineConfig(), SPEC_A, "offset")
+    after = pq.read_table(derived / SPEC_A.gaze_file)
+    assert after.column_names == before.column_names
+    for name in ("x_px_dc", "y_px_dc", "x_sm_dc", "y_sm_dc", "x_vid_dc", "y_vid_dc"):
+        a = np.array([np.nan if v is None else v for v in after[name].to_pylist()])
+        b = np.array([np.nan if v is None else v for v in before[name].to_pylist()])
+        assert np.isfinite(b).any(), name
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-4, err_msg=name)
+    rewrite_drift(root, ref, PipelineConfig(), SPEC_A, "affine")  # runs on real data
+    changed = pq.read_table(derived / SPEC_A.gaze_file)
+    np.testing.assert_array_equal(  # the raw columns are untouched (NaN where unusable)
+        changed["x_px"].to_numpy(), before["x_px"].to_numpy()
+    )
+
+
+def test_validation_dots_join_the_fit_on_the_real_fixture(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    lab = tmp_path / "lab_data"
+    import_study(a_session.root, sessions_root(lab), a_session.study_id)
+    exp = parse_experiment({"name": "e7", "tune_studies": [a_session.study_id],
+                            "fit_validation": "all", "drift": "affine"})  # fmt: skip
+    result, _ = run_experiment(exp, lab, TRUTH)
+    assert result.failures == [] and len(result.scores) == 1
+    derived = derived_dir(results_dir(lab, "e7") / "data", a_session.study_id,
+                          a_session.session_id)  # fmt: skip
+    mine = json.loads((derived / SPEC_A.calibration_file).read_text())
+    product = json.loads(
+        (derived_dir(a_session.root, a_session.study_id, a_session.session_id)
+         / SPEC_A.calibration_file).read_text()
+    )  # fmt: skip
+    assert len(mine["dots"]) > len(product["dots"])  # the validation dots were added
+    assert mine["samples"]["valid"] > product["samples"]["valid"]
+    header, _ = load_scores(lab, "e7")
+    assert header["overrides"] == {"fit_validation": "all", "drift": "affine"}

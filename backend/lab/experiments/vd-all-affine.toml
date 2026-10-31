@@ -1,0 +1,7 @@
+name = "vd-all-affine"
+description = "E7 + E6: all validation dots in the fit, affine drift correction"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+fit_validation = "all"
+drift = "affine"

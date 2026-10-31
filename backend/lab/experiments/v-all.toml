@@ -1,0 +1,6 @@
+name = "v-all"
+description = "E7: calibration fit also on all validation dots (before and after the video)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+fit_validation = "all"

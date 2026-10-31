@@ -46,6 +46,11 @@ columns = ["open_l", "open_r"]
 window_s = 60
 ```
 
+```toml
+fit_validation = "all"   # E7: also fit the calibration on validation dots: none, before_video, all
+drift = "affine"         # E6: drift correction: offset (the product's) or affine (per block)
+```
+
 Unknown keys, unknown fields, unknown columns and wrong types are refused.
 
 `make lab ARGS="diagnose [experiment]"` (E1): head pose against the calibration spread, what each

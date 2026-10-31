@@ -30,7 +30,7 @@ from lab.layout import (
     sessions_root,
 )
 from lab.score import DotTruth, Score, format_scores, score_gaze
-from lab.variants import Variant, add_highpass
+from lab.variants import Variant, add_highpass, refit_with_validation, rewrite_drift
 from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, compute_features
@@ -114,7 +114,14 @@ def run_stages(
         if fit.status != "ok":
             failures.append(Failure(ref.study_id, ref.code, p, f"calibration {fit.failed_reason}"))
             continue
+        if p == "a" and variant.fit_validation != "none":
+            failed = refit_with_validation(work, ref, config, spec, variant.fit_validation)
+            if failed is not None:
+                failures.append(Failure(ref.study_id, ref.code, p, f"refit {failed}"))
+                continue
         run_gaze(work, ref.study_id, ref.session_id, config, spec)
+        if p == "a" and variant.drift != "offset":
+            rewrite_drift(work, ref, config, spec, variant.drift)
         done.append(p)
     return done, failures
 
@@ -167,6 +174,10 @@ def variant_summary(v: Variant) -> dict[str, Any]:
         out["features"] = list(v.feature_columns)
     if v.highpass is not None:
         out["highpass"] = {"columns": list(v.highpass.columns), "window_s": v.highpass.window_s}
+    if v.fit_validation != "none":
+        out["fit_validation"] = v.fit_validation
+    if v.drift != "offset":
+        out["drift"] = v.drift
     return out
 
 

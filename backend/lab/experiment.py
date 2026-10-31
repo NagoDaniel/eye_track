@@ -15,6 +15,9 @@ TOML, in `backend/lab/experiments/`:
     columns = ["open_l", "open_r"]
     window_s = 20
 
+    fit_validation = "all"          # E7: none (default), before_video or all
+    drift = "affine"                # E6: offset (default, the product's) or affine
+
     [config]                        # PipelineConfig fields; anything else is an error
     calib_alphas = [1.0, 10.0]
 
@@ -34,7 +37,7 @@ from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 PIPELINES = ("a", "b")
 _TOP_KEYS = {
     "name", "description", "pipelines", "tune_studies", "holdout_studies", "config", "features",
-    "highpass",
+    "highpass", "fit_validation", "drift",
 }  # fmt: skip
 
 
@@ -149,7 +152,10 @@ def _variant(data: dict[str, Any]) -> Variant:
     features = data.get("features", list(FEATURE_VECTOR_COLUMNS))
     if not isinstance(features, list) or not all(isinstance(c, str) for c in features):
         raise ExperimentError("features must be a list of column names")
-    variant = Variant(tuple(features), highpass)
+    fit_validation, drift = data.get("fit_validation", "none"), data.get("drift", "offset")
+    if not isinstance(fit_validation, str) or not isinstance(drift, str):
+        raise ExperimentError("fit_validation and drift must be strings")
+    variant = Variant(tuple(features), highpass, fit_validation, drift)
     problems = check_variant(variant)
     if problems:
         raise ExperimentError("; ".join(problems))
