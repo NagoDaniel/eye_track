@@ -49,7 +49,7 @@ Hypotheses: H1 head-pose features learned from an almost still head (standardise
 - E2 shrinkage: finer alpha grid, separate alpha for x and y, gain correction on the CV predictions.
 - E3 timestamps: shift by the measured camera delay, or sync on `capture_time`.
 - E4 head pose: fixed physical scales instead of standardising; add `tx, ty, tz`; head-compensated iris; ablation.
-- E5 B's angles as extra regressors next to A's 10.
+- E5 B's angles as extra regressors next to A's 10. **Paused** (human, 2026-10-31: no Pipeline B work for now; revisit later).
 - E6 drift: per-block affine, or drift predicted from head pose.
 - E7 validation dots in a final refit (then only the dot video is an honest metric).
 - E8 extra eye features: `eyeLook*` blendshapes, iris z (re-run landmarks on the copies).
