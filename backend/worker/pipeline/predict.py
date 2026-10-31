@@ -76,6 +76,18 @@ def predict_gaze(
     if usable.any():
         xy = predict(model, vectors[usable])
         x[usable], y[usable] = xy[:, 0], xy[:, 1]
+    return gaze_from_xy(x, y, usable, t_ms, viewport, config)
+
+
+def gaze_from_xy(
+    x: Floats,
+    y: Floats,
+    usable: Bools,
+    t_ms: Floats,
+    viewport: ViewportTimeline,
+    config: PipelineConfig,
+) -> GazePrediction:
+    """Validity of predictions made by any model: usable and inside the expanded viewport."""
     width, height = viewport.at(t_ms)
     margin = config.valid_viewport_margin
     with np.errstate(invalid="ignore"):  # NaN compares false: unusable frames are not valid

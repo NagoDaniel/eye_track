@@ -1,0 +1,7 @@
+name = "t-blink-rel25"
+description = "Item 1: t-base, blink also when the eyeBlink score is 0.25 above the session median"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+blink_relative_delta = 0.25

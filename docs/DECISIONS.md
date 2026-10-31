@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-11-01 — Gaze stage: a prediction can come from outside (seam for the T13 lab)
+- Plan section: §8.7 (prediction, validity), §1 (single source of truth)
+- Decision: `run_gaze(..., prediction=None)` takes an optional `SessionPrediction`; by default the session's calibration model predicts as before. The validity rule of `predict_gaze` moved into `gaze_from_xy(x, y, usable, t_ms, viewport, config)`, which `predict_gaze` calls. Product behaviour is unchanged (the gaze, predict, validation, quality, plots, replay and admin-inspector tests pass; the lab's `ridge` path reproduces the product's gaze table exactly on the real fixture and on all 14 lab sessions).
+- Reason: the T13 lab compares other calibration models (kernel ridge, a Gaussian process, a thin-plate-spline correction, separate x and y models) with the same smoothing, validity, drift correction and video mapping as the product, without a second copy of that code.
+- Approved by: Nágó Dániel (2026-11-01: items 1 to 7 of the T13 plan, which include these models)
+
 ## 2026-10-31 — Validation dots will also train the calibration (agreed in principle, not implemented)
 - Plan section: §8.6 (training samples are the calibration dots), §8.8 (validation is a measurement), §8.10 (inclusion uses the validation error)
 - Decision: the calibration fit will use the calibration dots **and** all validation dots (the lab's `v-all`). Not implemented yet: PROGRESS task T14 holds the work and the lab result (drift-corrected median error on the moving dot 237 -> 178 viewport px in study 7, 165 -> 150 in study 6). When it is built: a `PipelineConfig` switch, and a held-out validation error (leave-one-block-out) replaces the plain validation error wherever it decides something (inclusion, AOI tolerance), because fitted points do not measure honestly.

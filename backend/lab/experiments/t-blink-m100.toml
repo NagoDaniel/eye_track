@@ -1,0 +1,7 @@
+name = "t-blink-m100"
+description = "Item 1: t-base, frames within 100 ms of a blink count as blinks"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+blink_margin_ms = 100

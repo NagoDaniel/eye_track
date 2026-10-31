@@ -1,0 +1,10 @@
+name = "t-win900-m200"
+description = "Items 1 + 4: 900 ms training window and 200 ms blink margin"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+blink_margin_ms = 200
+
+[config]
+calib_window_before_click_ms = 900

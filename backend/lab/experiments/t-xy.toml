@@ -1,0 +1,9 @@
+name = "t-xy"
+description = "Item 2: separate inputs, x from iris x, yaw, roll, face size; y from iris y, lids, pitch, face size"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "ridge_xy"
+x_features = ["iris_l_x", "iris_r_x", "yaw", "roll", "face_ratio"]
+y_features = ["iris_l_y", "iris_r_y", "open_l", "open_r", "pitch", "face_ratio"]

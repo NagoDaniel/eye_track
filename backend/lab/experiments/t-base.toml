@@ -1,0 +1,7 @@
+name = "t-base"
+description = "T14 base (fit on calibration and all validation dots, the product's ridge) on studies 7, 6 and 8: every item 1-7 experiment is compared with this"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+

@@ -1,0 +1,9 @@
+name = "t-mad2"
+description = "Item 4: outlier rule at 2.0 MAD (product 2.5)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+
+[config]
+calib_outlier_mad = 2.0

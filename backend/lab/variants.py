@@ -66,6 +66,12 @@ class Variant:
     highpass: Highpass | None = None
     fit_validation: str = "none"  # E7: also fit on validation dots (FIT_VALIDATION)
     drift: str = "offset"  # E6: drift correction (DRIFT_MODES); "offset" is the product's
+    blink_margin_ms: float = 0.0  # item 1: frames this close to a blink count as blinks too
+    blink_relative_delta: float | None = None  # item 1: blink when score > session median + this
+    model: str = "product"  # items 2, 3, 6, 7 (lab/models.py MODELS)
+    x_features: tuple[str, ...] = ()  # ridge_xy: the columns for x ...
+    y_features: tuple[str, ...] = ()  # ... and for y
+    extra_training: str = "none"  # item 5 (lab/models.py EXTRA_TRAINING)
 
     def available(self) -> tuple[str, ...]:
         extra = () if self.highpass is None else tuple(c + HP_SUFFIX for c in self.highpass.columns)
@@ -125,6 +131,25 @@ def check_variant(v: Variant) -> list[str]:
         problems.append(f"fit_validation must be one of {list(FIT_VALIDATION)}")
     if v.drift not in DRIFT_MODES:
         problems.append(f"drift must be one of {DRIFT_MODES}")
+    from lab.models import EXTRA_TRAINING, MODELS
+
+    if v.model not in MODELS:
+        problems.append(f"model must be one of {MODELS}")
+    if v.extra_training not in EXTRA_TRAINING:
+        problems.append(f"extra_training must be one of {EXTRA_TRAINING}")
+    if v.model == "product" and v.extra_training != "none":
+        problems.append('extra_training needs a lab model (model = "ridge" or another)')
+    if v.model != "product" and v.drift != "offset":
+        problems.append('drift = "affine" works with model = "product" only')
+    if (v.model == "ridge_xy") != bool(v.x_features and v.y_features):
+        problems.append('x_features and y_features go with model = "ridge_xy", and it needs both')
+    bad = [c for c in (*v.x_features, *v.y_features) if c not in v.available()]
+    if bad:
+        problems.append(f"unknown x_features or y_features columns {bad}")
+    if v.blink_margin_ms < 0:
+        problems.append("blink_margin_ms must be 0 or more")
+    if v.blink_relative_delta is not None and not v.blink_relative_delta > 0:
+        problems.append("blink_relative_delta must be positive")
     if v.highpass is not None:
         bad = [c for c in v.highpass.columns if c not in BASE_COLUMNS]
         if bad or not v.highpass.columns:
@@ -277,4 +302,41 @@ def rewrite_drift(
         table = table.set_column(
             i, name, pa.array(values.astype(np.float32), pa.float32(), mask=np.isnan(values))
         )
+    pq.write_table(table.replace_schema_metadata(metadata), path, compression="snappy")
+
+
+# --- Item 1: blink handling --------------------------------------------------------------------
+
+
+def widened_blinks(
+    t_s: Floats, blink: NDArray[np.bool_], score: Floats, margin_s: float, delta: float | None
+) -> NDArray[np.bool_]:
+    """`blink`, plus frames within `margin_s` of a blink frame, plus (with `delta`) frames whose
+    eyeBlink score is above the session's median score plus `delta`."""
+    out = blink.copy()
+    if delta is not None:
+        finite = np.isfinite(score)
+        if finite.any():
+            out |= finite & (score > float(np.median(score[finite])) + delta)
+    if margin_s > 0 and out.any():
+        times = t_s[out]
+        lo = np.searchsorted(times, t_s - margin_s, side="left")
+        hi = np.searchsorted(times, t_s + margin_s, side="right")
+        out = out | (hi > lo)
+    return out
+
+
+def widen_blinks(path: Path, margin_ms: float, delta: float | None) -> None:
+    """Rewrite the `blink` column of a features table (metadata kept)."""
+    table = pq.read_table(path)
+    metadata = table.schema.metadata
+
+    def col(name: str) -> Floats:
+        return np.array([np.nan if v is None else v for v in table[name].to_pylist()])
+
+    blink = np.asarray(table["blink"].to_pylist(), dtype=bool)
+    score = np.fmax(col("blink_l"), col("blink_r"))
+    new = widened_blinks(table["pts"].to_numpy().astype(np.float64), blink, score,
+                         margin_ms / 1000.0, delta)  # fmt: skip
+    table = table.set_column(table.schema.get_field_index("blink"), "blink", pa.array(new))
     pq.write_table(table.replace_schema_metadata(metadata), path, compression="snappy")

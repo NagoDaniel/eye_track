@@ -68,11 +68,15 @@ def run_cmd(experiment: str = typer.Argument(..., help="Experiment name or .toml
 def compare_cmd(
     new: str = typer.Argument(..., help="Experiment to judge."),
     base: str = typer.Option("baseline", help="Experiment to compare with."),
+    only_video: str = typer.Option("", help="Compare only the rows of this dot video."),
 ) -> None:
     """Session-by-session change against the base, and the acceptance verdict."""
     lab = lab_data_root()
     new_head, new_scores = load_scores(lab, new)
     _, base_scores = load_scores(lab, base)
+    if only_video:
+        new_scores = [s for s in new_scores if s.video == only_video]
+        base_scores = [s for s in base_scores if s.video == only_video]
     tune = new_head.get("tune_studies", [])
     holdout = new_head.get("holdout_studies", [])
     typer.echo(format_comparison(base, base_scores, new, new_scores, tune, holdout))

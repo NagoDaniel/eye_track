@@ -1,0 +1,7 @@
+name = "t-tps"
+description = "Item 6: product ridge, then a thin-plate-spline correction of its estimate"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "tps"

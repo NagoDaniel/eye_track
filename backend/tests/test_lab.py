@@ -632,3 +632,92 @@ def test_the_time_plot_is_written_for_a_session_and_video(tmp_path: Path) -> Non
     plot_video(_gaze(offset_px=(20.0, -10.0)), TRUTH, "1", "title", "subtitle", out)
     assert out.is_file() and out.stat().st_size > 10_000
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# --- Items 1-7: blink handling, other models, richer training (lab/models.py) ---
+
+
+def test_widened_blinks_add_a_margin_and_a_session_relative_score() -> None:
+    from lab.variants import widened_blinks
+
+    t = np.arange(0, 2, 0.1)  # 20 frames, 100 ms apart
+    blink = np.zeros(20, dtype=bool)
+    blink[10] = True
+    score = np.full(20, 0.1)
+    score[3] = 0.4  # above median 0.1 + 0.25
+    out = widened_blinks(t, blink, score, margin_s=0.25, delta=None)
+    assert np.flatnonzero(out).tolist() == [8, 9, 10, 11, 12]
+    out = widened_blinks(t, blink, score, margin_s=0.0, delta=0.25)
+    assert np.flatnonzero(out).tolist() == [3, 10]
+
+
+def test_the_models_recover_a_known_mapping_from_dots() -> None:
+    from lab.models import fit_dotmean, fit_krr, fit_product_ridge, fit_tps
+
+    rng = np.random.default_rng(3)
+    n_dots, per = 18, 20
+    centres = rng.uniform(-1, 1, size=(n_dots, 3))
+    x = np.repeat(centres, per, axis=0) + rng.normal(0, 0.02, (n_dots * per, 3))
+    g = np.repeat(np.arange(n_dots), per).astype(np.int64)
+    w = np.array([[400.0, 0.0], [0.0, 300.0], [50.0, -40.0]])
+    y = np.repeat(centres @ w + [800.0, 450.0], per, axis=0)
+    test = rng.uniform(-0.8, 0.8, size=(50, 3))
+    truth_xy = test @ w + [800.0, 450.0]
+    config = PipelineConfig()
+    for fit, tolerance in (
+        (fit_product_ridge, 15),
+        (fit_dotmean, 15),
+        (fit_tps, 20),
+        (fit_krr, 60),
+    ):
+        error = np.linalg.norm(fit(x, y, g, config)(test) - truth_xy, axis=1)
+        assert np.median(error) < tolerance, (fit.__name__, np.median(error))
+
+
+def test_the_lab_ridge_model_reproduces_the_product_gaze_on_the_real_fixture(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    """model = "ridge" goes through the lab's training set, fit and `run_gaze(prediction=...)`;
+    on the product's own training data it must give the product's gaze table."""
+    lab = tmp_path / "lab_data"
+    import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
+    exp = parse_experiment({"name": "ridge", "tune_studies": [a_session.study_id],
+                            "model": "ridge"})  # fmt: skip
+    result, _ = run_experiment(exp, lab)
+    assert result.failures == []
+    mine = pq.read_table(derived_dir(results_dir(lab, "ridge") / "data", a_session.study_id,
+                                     a_session.session_id) / SPEC_A.gaze_file)  # fmt: skip
+    product = pq.read_table(
+        derived_dir(a_session.root, a_session.study_id, a_session.session_id) / SPEC_A.gaze_file
+    )
+    for name in ("x_px", "y_px", "x_sm", "y_sm", "x_vid_dc", "y_vid_dc"):
+        a = np.array([np.nan if v is None else v for v in mine[name].to_pylist()])
+        b = np.array([np.nan if v is None else v for v in product[name].to_pylist()])
+        np.testing.assert_allclose(a, b, rtol=1e-5, atol=1e-3, err_msg=name)
+    assert mine["valid"].to_pylist() == product["valid"].to_pylist()
+
+
+def test_kernel_ridge_and_wider_blinks_run_on_the_real_fixture(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    lab = tmp_path / "lab_data"
+    import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
+    exp = parse_experiment({
+        "name": "krr", "tune_studies": [a_session.study_id], "model": "krr",
+        "fit_validation": "all", "blink_margin_ms": 100, "blink_relative_delta": 0.15,
+    })  # fmt: skip
+    result, _ = run_experiment(exp, lab)
+    assert result.failures == [] and len(result.scores) == 1
+    header, _ = load_scores(lab, "krr")
+    assert header["overrides"]["model"] == "krr" and header["overrides"]["blink_margin_ms"] == 100
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [({"model": "svm"}, "model must be"), ({"extra_training": "l1_rests"}, "lab model"),
+     ({"model": "ridge", "drift": "affine"}, "drift"), ({"model": "ridge_xy"}, "x_features"),
+     ({"blink_margin_ms": -1}, "blink_margin_ms"), ({"blink_relative_delta": 0}, "positive")],
+)  # fmt: skip
+def test_wrong_model_settings_are_refused(data: dict[str, Any], message: str) -> None:
+    with pytest.raises(ExperimentError, match=message):
+        parse_experiment({"name": "x", "tune_studies": [7], **data})

@@ -32,8 +32,16 @@ from lab.layout import (
     results_dir,
     sessions_root,
 )
+from lab.models import ModelSpec, predict_with_model
 from lab.score import Score, format_scores, score_gaze
-from lab.variants import Variant, add_highpass, refit_with_validation, rewrite_drift
+from lab.variants import (
+    FIT_VALIDATION,
+    Variant,
+    add_highpass,
+    refit_with_validation,
+    rewrite_drift,
+    widen_blinks,
+)
 from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE, compute_features
@@ -97,6 +105,7 @@ def run_stages(
     config: PipelineConfig,
     pipelines: tuple[str, ...],
     variant: Variant = PRODUCT,
+    dots: Sequence[DotVideo] = (),
 ) -> tuple[list[str], list[Failure]]:
     """Features, sync, then calibration and gaze of each pipeline. Returns the pipelines that have
     a gaze table, and why a calibration failed. A pipeline without its features file (B not run on
@@ -106,6 +115,8 @@ def run_stages(
     run_sync(work, ref.study_id, ref.session_id, config)
     if variant.highpass is not None:
         add_highpass(derived / FEATURES_FILE, variant.highpass)
+    if variant.blink_margin_ms > 0 or variant.blink_relative_delta is not None:
+        widen_blinks(derived / FEATURES_FILE, variant.blink_margin_ms, variant.blink_relative_delta)
     done, failures = [], []
     for p in pipelines:
         spec = SPECS[p]
@@ -116,6 +127,20 @@ def run_stages(
         fit = run_calibration(work, ref.study_id, ref.session_id, config, spec)
         if fit.status != "ok":
             failures.append(Failure(ref.study_id, ref.code, p, f"calibration {fit.failed_reason}"))
+            continue
+        if p == "a" and variant.model != "product":
+            model_spec = ModelSpec(
+                variant.model, variant.feature_columns, variant.x_features, variant.y_features,
+                FIT_VALIDATION[variant.fit_validation], variant.extra_training,
+            )  # fmt: skip
+            try:
+                prediction = predict_with_model(work, ref, spec.features_file, model_spec, config,
+                                                dots)  # fmt: skip
+            except ValueError as e:
+                failures.append(Failure(ref.study_id, ref.code, p, f"model {e}"))
+                continue
+            run_gaze(work, ref.study_id, ref.session_id, config, spec, prediction)
+            done.append(p)
             continue
         if p == "a" and variant.fit_validation != "none":
             failed = refit_with_validation(work, ref, config, spec, variant.fit_validation)
@@ -211,6 +236,11 @@ def variant_summary(v: Variant) -> dict[str, Any]:
         out["fit_validation"] = v.fit_validation
     if v.drift != "offset":
         out["drift"] = v.drift
+    for key in ("blink_margin_ms", "blink_relative_delta", "model", "x_features", "y_features",
+                "extra_training"):  # fmt: skip
+        if getattr(v, key) != getattr(PRODUCT, key):
+            value = getattr(v, key)
+            out[key] = list(value) if isinstance(value, tuple) else value
     return out
 
 
@@ -229,7 +259,9 @@ def run_experiment(exp: Experiment, lab_data: Path) -> tuple[RunResult, str]:
             raise FileNotFoundError(f"study {study} is not in the lab (run `lab import-study`)")
         for ref in refs:
             prepare_session(lab_sessions, work, ref)
-            done, failed = run_stages(work, ref, exp.config, exp.pipelines, exp.variant)
+            done, failed = run_stages(
+                work, ref, exp.config, exp.pipelines, exp.variant, _dots(lab_sessions, ref)
+            )
             failures += failed
             derived = derived_dir(work, ref.study_id, ref.session_id)
             for p in done:

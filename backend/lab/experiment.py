@@ -37,7 +37,8 @@ from worker.pipeline.features_a import FEATURE_VECTOR_COLUMNS
 PIPELINES = ("a", "b")
 _TOP_KEYS = {
     "name", "description", "pipelines", "tune_studies", "holdout_studies", "config", "features",
-    "highpass", "fit_validation", "drift",
+    "highpass", "fit_validation", "drift", "blink_margin_ms", "blink_relative_delta", "model",
+    "x_features", "y_features", "extra_training",
 }  # fmt: skip
 
 
@@ -155,7 +156,29 @@ def _variant(data: dict[str, Any]) -> Variant:
     fit_validation, drift = data.get("fit_validation", "none"), data.get("drift", "offset")
     if not isinstance(fit_validation, str) or not isinstance(drift, str):
         raise ExperimentError("fit_validation and drift must be strings")
-    variant = Variant(tuple(features), highpass, fit_validation, drift)
+
+    def names(key: str) -> tuple[str, ...]:
+        value = data.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(c, str) for c in value):
+            raise ExperimentError(f"{key} must be a list of column names")
+        return tuple(value)
+
+    def number(key: str, default: float | None) -> float | None:
+        value = data.get(key, default)
+        if value is not None and (not isinstance(value, int | float) or isinstance(value, bool)):
+            raise ExperimentError(f"{key} must be a number")
+        return None if value is None else float(value)
+
+    model, extra = data.get("model", "product"), data.get("extra_training", "none")
+    if not isinstance(model, str) or not isinstance(extra, str):
+        raise ExperimentError("model and extra_training must be strings")
+    margin = number("blink_margin_ms", 0.0)
+    variant = Variant(
+        tuple(features), highpass, fit_validation, drift,
+        blink_margin_ms=0.0 if margin is None else margin,
+        blink_relative_delta=number("blink_relative_delta", None), model=model,
+        x_features=names("x_features"), y_features=names("y_features"), extra_training=extra,
+    )  # fmt: skip
     problems = check_variant(variant)
     if problems:
         raise ExperimentError("; ".join(problems))

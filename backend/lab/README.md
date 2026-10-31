@@ -58,6 +58,20 @@ fit_validation = "all"   # E7: also fit on validation dots: none, before_video,
 drift = "affine"         # E6: drift correction: offset (the product's) or affine (per block)
 ```
 
+Other models, blink handling and extra training data (`lab/models.py`, `lab/variants.py`):
+
+```toml
+model = "krr"              # product (default), ridge (the product's, through the lab), ridge_xy,
+                           # dotmean, tps, krr, gp
+x_features = [...]         # ridge_xy only: columns for x
+y_features = [...]         # ridge_xy only: columns for y
+blink_margin_ms = 200      # frames this close to a blink count as blinks
+blink_relative_delta = 0.15  # blink when the eyeBlink score is this far above the session median
+extra_training = "l1_rests"  # lab models: add video 1's rests / pursuit (l1_rests, l1_pursuit,
+                           # l1_both, l1_pursuit_only); score video 2 with
+                           # `compare <exp> --only-video long_dot_2`
+```
+
 Unknown keys, unknown fields, unknown columns and wrong types are refused.
 
 `make lab ARGS="plot <experiment>"`: for each session and dot video, x and y of the dot and of the
