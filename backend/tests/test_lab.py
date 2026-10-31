@@ -135,7 +135,7 @@ def test_one_session_worse_by_more_than_the_limit_is_not_better() -> None:
     worse = 100 * (1 + MAX_WORSE_FRACTION) + 1
     new = [_fake(7, "A", 150), _fake(7, "B", worse), _fake(7, "C", 280), _fake(6, "D", 140)]
     v = verdict(BASE, new, "pause", "a", [7], [6])
-    assert not v.better and [r.key for r in v.worse] == [(7, "B", "a")]
+    assert not v.better and [r.key for r in v.worse] == [(7, "B", "a", "moving_dot")]
 
 
 def test_a_worse_held_out_median_is_not_better() -> None:
@@ -146,7 +146,7 @@ def test_a_worse_held_out_median_is_not_better() -> None:
 def test_a_session_without_a_score_is_not_better() -> None:
     new = [_fake(7, "A", 150), _fake(7, "B", 90), _fake(6, "D", 140)]
     v = verdict(BASE, new, "pause", "a", [7], [6])
-    assert not v.better and v.missing == [(7, "C", "a")]
+    assert not v.better and v.missing == [(7, "C", "a", "moving_dot")]
 
 
 def test_the_comparison_prints_every_session_and_the_verdict() -> None:
@@ -208,8 +208,8 @@ def test_the_lab_baseline_reproduces_the_product_pipeline_on_the_real_fixture(
     source = a_session.root
     before = _tree_hash(source)
     lab = tmp_path / "lab_data"
-    imported = import_study(source, sessions_root(lab), a_session.study_id)
-    assert [i.status for i in imported] == ["imported"]
+    imported = import_study(source, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
+    assert [i.status for i in imported] == ["imported, dot videos ['moving_dot']"]
     sid, study = a_session.session_id, a_session.study_id
 
     # the copy: raw without the upload chunks, read-only; cached and reference files present
@@ -222,9 +222,11 @@ def test_the_lab_baseline_reproduces_the_product_pipeline_on_the_real_fixture(
     assert import_study(source, sessions_root(lab), study)[0].status == "exists"
 
     exp = parse_experiment({"name": "baseline", "pipelines": ["a", "b"], "tune_studies": [study]})
-    result, report = run_experiment(exp, lab, TRUTH)
+    result, report = run_experiment(exp, lab)
     assert result.failures == []  # B has no features_b here: skipped, not failed
-    assert [(s.code, s.pipeline) for s in result.scores] == [(imported[0].session.code, "a")]
+    assert [(s.code, s.pipeline, s.video) for s in result.scores] == [
+        (imported[0].session.code, "a", "moving_dot")
+    ]
     assert "1. distance to the dot" in report
 
     product = derived_dir(source, study, sid)
@@ -387,13 +389,13 @@ def test_a_variant_runs_on_the_real_fixture_with_its_own_features(
     from worker.pipeline.features_a import FEATURES_FILE
 
     lab = tmp_path / "lab_data"
-    import_study(a_session.root, sessions_root(lab), a_session.study_id)
+    import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
     columns = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l_hp", "open_r_hp", "tx"]
     exp = parse_experiment({
         "name": "variant", "tune_studies": [a_session.study_id], "features": columns,
         "highpass": {"columns": ["open_l", "open_r"], "window_s": 2},
     })  # fmt: skip
-    result, report = run_experiment(exp, lab, TRUTH)
+    result, report = run_experiment(exp, lab)
     assert result.failures == [] and len(result.scores) == 1
     derived = derived_dir(results_dir(lab, "variant") / "data", a_session.study_id,
                           a_session.session_id)  # fmt: skip
@@ -502,10 +504,10 @@ def test_validation_dots_join_the_fit_on_the_real_fixture(
     a_session: FixtureSession, tmp_path: Path
 ) -> None:
     lab = tmp_path / "lab_data"
-    import_study(a_session.root, sessions_root(lab), a_session.study_id)
+    import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
     exp = parse_experiment({"name": "e7", "tune_studies": [a_session.study_id],
                             "fit_validation": "all", "drift": "affine"})  # fmt: skip
-    result, _ = run_experiment(exp, lab, TRUTH)
+    result, _ = run_experiment(exp, lab)
     assert result.failures == [] and len(result.scores) == 1
     derived = derived_dir(results_dir(lab, "e7") / "data", a_session.study_id,
                           a_session.session_id)  # fmt: skip
@@ -518,3 +520,106 @@ def test_validation_dots_join_the_fit_on_the_real_fixture(
     assert mine["samples"]["valid"] > product["samples"]["valid"]
     header, _ = load_scores(lab, "e7")
     assert header["overrides"] == {"fit_validation": "all", "drift": "affine"}
+
+
+# --- Several dot videos per session, the long recording videos, labels ---
+
+
+def test_the_long_dot_videos_match_their_ground_truth() -> None:
+    """Decoded frames of both long videos: the dark dot is where the path says (real ffmpeg via
+    OpenCV), at rests, moves and pursuits."""
+    import cv2
+
+    from lab.dots import KNOWN, identify
+
+    for name in ("long_dot_1", "long_dot_2"):
+        video, path_file = KNOWN[name]
+        assert identify(video) == name
+        data = json.loads(path_file.read_text())
+        assert 110 < data["duration_s"] < 120 and len(data["pauses"]) == 44
+        assert [p["kind"] for p in data["pursuits"]] == ["figure_eight", "ellipse"]
+        truth = DotTruth.load(path_file)
+        assert len(truth.pursuits) == 2
+        cap = cv2.VideoCapture(str(video))
+        checked = 0
+        for frame_no in range(0, len(data["samples"]), 97):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
+            ok, frame = cap.read()
+            assert ok, frame_no
+            dark = frame.max(axis=2) < 60
+            ys, xs = np.nonzero(dark)
+            sample = data["samples"][frame_no]
+            assert abs(xs.mean() - sample["x"]) < 2.0 and abs(ys.mean() - sample["y"]) < 2.0
+            checked += 1
+        cap.release()
+        assert checked > 25
+
+
+def test_every_dot_video_of_a_session_gets_its_own_score() -> None:
+    """Two videos in one gaze table: each is scored against its own path and only its frames."""
+    t1 = _gaze(offset_px=(10.0, 0.0))
+    t2 = _gaze(offset_px=(0.0, 30.0))
+    n = t1.num_rows
+    t2 = t2.set_column(t2.schema.get_field_index("video_id"), "video_id", pa.array(["2"] * n))
+    t2 = t2.set_column(t2.schema.get_field_index("t"), "t",
+                       pa.array(np.array(t2["t"].to_pylist()) + 60_000))  # fmt: skip
+    both = pa.concat_tables([t1, t2])
+    s1 = score_gaze(both, _events(), TRUTH, PipelineConfig(), 7, "X", "a", "1", "moving_dot")
+    s2 = score_gaze(both, _events(), TRUTH, PipelineConfig(), 7, "X", "a", "2", "moving_dot")
+    assert s1.median == pytest.approx(SCALE * 10, rel=1e-6)
+    assert s2.median == pytest.approx(SCALE * 30, rel=1e-6)
+    assert s1.pursuit is None  # the 22 s video has no pursuit segment
+
+
+def test_pursuit_error_is_measured_on_the_pursuit_segments_only() -> None:
+    from lab.dots import truth
+
+    long1 = truth("long_dot_1")
+    stim = np.arange(0.0, long1.path.duration_s - 0.05, 1 / FPS)
+    tx, ty = long1.path.at(stim)
+    in_pursuit = np.zeros(len(stim), dtype=bool)
+    for a, b in long1.pursuits:
+        in_pursuit |= (stim >= a) & (stim <= b)
+    x = tx + np.where(in_pursuit, 20.0 / long1.width, 0.0)  # 20 px off only while pursuing
+    n = len(stim)
+    table = pa.table({
+        "t": pa.array(1000 + stim * 1000), "stim_time": pa.array(stim),
+        "x_vid": pa.array(x), "y_vid": pa.array(ty), "x_vid_dc": pa.array(x),
+        "y_vid_dc": pa.array(ty), "valid": pa.array([True] * n),
+        "phase": pa.array(["playback"] * n), "video_id": pa.array(["5"] * n),
+    })  # fmt: skip
+    s = score_gaze(table, _events(), long1, PipelineConfig(), 8, "X", "a", "5", "long_dot_1")
+    assert s.pursuit == pytest.approx(SCALE * 20, rel=1e-6)
+    assert s.pause == pytest.approx(0, abs=1e-6) and s.video == "long_dot_1"
+    assert len(s.rest_error) == 44
+
+
+def test_old_scores_without_a_video_read_as_the_22_s_video() -> None:
+    s = _score(_gaze())
+    data = s.as_dict()
+    del data["video"], data["pursuit"]
+    old = Score.from_dict(data)
+    assert old.video == "moving_dot" and old.pursuit is None
+
+
+def test_labels_are_read_from_the_csv(tmp_path: Path) -> None:
+    from lab.layout import read_labels
+
+    assert read_labels(tmp_path) == {}
+    (tmp_path / "labels.csv").write_text(
+        "study,code,person,glasses,webcam,notes\n8,da0101,P1,no,built-in,evening\n"
+        "8,DB0202,P1,yes,,\n"
+    )
+    assert read_labels(tmp_path) == {
+        (8, "DA0101"): "person=P1 glasses=no webcam=built-in notes=evening",
+        (8, "DB0202"): "person=P1 glasses=yes",
+    }
+    (tmp_path / "labels.csv").write_text("study,code,who\n")
+    with pytest.raises(ValueError, match="header"):
+        read_labels(tmp_path)
+
+
+def test_fit_validation_before_and_between_is_a_known_mode() -> None:
+    exp = parse_experiment({"name": "x", "tune_studies": [8],
+                            "fit_validation": "before_and_between"})  # fmt: skip
+    assert exp.variant.fit_validation == "before_and_between"

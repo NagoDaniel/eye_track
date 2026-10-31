@@ -17,6 +17,12 @@ make lab ARGS="run my_experiment"         # backend/lab/experiments/my_experimen
 make lab ARGS="compare my_experiment"     # session by session against baseline, with the verdict
 ```
 
+Each session is scored once per **dot video** it played (column `vid`: `dot` = the 22 s video,
+`L1` and `L2` = the two parts of the long recording, `docs/T13_RECORDING.md`). `import-study`
+recognises the dot videos by the sha256 of the uploaded file (`lab/dots.py`); a test session that
+played another video can be scored with `--assume-dot moving_dot`. Session labels (person, glasses,
+webcam, notes) come from `lab_data/labels.csv` (format in `docs/T13_RECORDING.md`).
+
 Results: `lab_data/results/<experiment>/report.txt` and `scores.json`; the experiment's gaze tables
 and calibrations are under `lab_data/results/<experiment>/data/` (same layout as `data/`).
 
@@ -47,7 +53,8 @@ window_s = 60
 ```
 
 ```toml
-fit_validation = "all"   # E7: also fit the calibration on validation dots: none, before_video, all
+fit_validation = "all"   # E7: also fit on validation dots: none, before_video,
+                         # before_and_between (not the block after the last video), all
 drift = "affine"         # E6: drift correction: offset (the product's) or affine (per block)
 ```
 
@@ -61,7 +68,8 @@ feature group contributes to the drift, frame stamping, and a ridge-alpha sweep.
 - **Table 1** (`moving_dot_report`): error in **viewport px** (the participant's screen in CSS px).
   `scale` is viewport px per video px (1.50 in study 7, 1.34 in study 6).
 - **Tables 2 to 4**: **video px** (1280 x 720), as in the old `dot_eval.py`.
-- `pause`: median error while the dot rests (accuracy without lag). `dc_`: drift-corrected (what the
+- `pause`: median error while the dot rests (accuracy without lag). `pursuit`: median error while
+  the dot moves smoothly (long videos only). `dc_`: drift-corrected (what the
   analyses use).
 - **Verdict** (DECISIONS 2026-10-30): better when the median over the tuning sessions falls, no
   session gets worse by more than 10 %, and the held-out median does not get worse. Shown for

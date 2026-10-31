@@ -11,6 +11,7 @@ import datetime
 import json
 import shutil
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -18,18 +19,20 @@ from typing import Any
 import pyarrow.parquet as pq
 
 from app.events import parse_events
-from app.storage import derived_dir, events_path, raw_dir
+from app.storage import derived_dir, events_path, raw_dir, session_dir
+from lab.dots import DotVideo, read_dot_videos, truth
 from lab.experiment import Experiment
 from lab.layout import (
     CACHED_FILES,
     REPO_ROOT,
     SessionRef,
     list_sessions,
+    read_labels,
     reference_dir,
     results_dir,
     sessions_root,
 )
-from lab.score import DotTruth, Score, format_scores, score_gaze
+from lab.score import Score, format_scores, score_gaze
 from lab.variants import Variant, add_highpass, refit_with_validation, rewrite_drift
 from worker.pipeline.calibration import run_calibration
 from worker.pipeline.config import PipelineConfig
@@ -131,15 +134,38 @@ def score_session(
     gaze_dir: Path,
     ref: SessionRef,
     pipeline: str,
-    truth: DotTruth,
+    dots: Sequence[DotVideo],
     config: PipelineConfig,
-) -> Score:
+) -> list[Score]:
+    """One score per dot video the session played."""
     events = parse_events(events_path(root, ref.study_id, ref.session_id).read_bytes())
     gaze = pq.read_table(gaze_dir / SPECS[pipeline].gaze_file)
-    return score_gaze(gaze, events, truth, config, ref.study_id, ref.code, pipeline)
+    return [
+        score_gaze(
+            gaze,
+            events,
+            truth(d.name),
+            config,
+            ref.study_id,
+            ref.code,
+            pipeline,
+            d.video_id,
+            d.name,
+        )  # fmt: skip
+        for d in dots
+    ]
 
 
-def write_results(out: Path, header: dict[str, Any], result: RunResult, truth: DotTruth) -> str:
+def _dots(lab_sessions: Path, ref: SessionRef) -> list[DotVideo]:
+    return read_dot_videos(session_dir(lab_sessions, ref.study_id, ref.session_id))
+
+
+def write_results(
+    out: Path,
+    header: dict[str, Any],
+    result: RunResult,
+    labels: Mapping[tuple[int, str], str] | None = None,
+) -> str:
     """`scores.json` and `report.txt` in `out`; returns the report."""
     data = {
         **header,
@@ -149,7 +175,14 @@ def write_results(out: Path, header: dict[str, Any], result: RunResult, truth: D
     (out / SCORES_FILE).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
     lines = [f"{k}: {v}" for k, v in header.items() if k != "config"]
     lines += [f"failed: {f.study_id} {f.code} {f.pipeline}: {f.reason}" for f in result.failures]
-    report = "\n".join(lines) + "\n\n" + format_scores(result.scores, truth)
+    if labels:
+        lines += ["", "sessions (lab_data/labels.csv):"]
+        lines += [
+            f"  {st:5} {code:8} {labels.get((st, code), '(no label)')}"
+            for st, code in sorted({(s.study_id, s.code) for s in result.scores})
+        ]
+    truths = {name: truth(name) for name in {s.video for s in result.scores}}
+    report = "\n".join(lines) + "\n\n" + format_scores(result.scores, truths)
     (out / REPORT_FILE).write_text(report, encoding="utf-8")
     return report
 
@@ -181,7 +214,7 @@ def variant_summary(v: Variant) -> dict[str, Any]:
     return out
 
 
-def run_experiment(exp: Experiment, lab_data: Path, truth: DotTruth) -> tuple[RunResult, str]:
+def run_experiment(exp: Experiment, lab_data: Path) -> tuple[RunResult, str]:
     lab_sessions = sessions_root(lab_data)
     out = results_dir(lab_data, exp.name)
     if out.exists():
@@ -200,18 +233,16 @@ def run_experiment(exp: Experiment, lab_data: Path, truth: DotTruth) -> tuple[Ru
             failures += failed
             derived = derived_dir(work, ref.study_id, ref.session_id)
             for p in done:
-                scores.append(score_session(work, derived, ref, p, truth, exp.config))
+                scores += score_session(work, derived, ref, p, _dots(lab_sessions, ref), exp.config)
     result = RunResult(scores, failures)
     overrides = {**exp.overrides, **variant_summary(exp.variant)}
     header = _header(exp.name, exp.description, overrides, exp.config,
                      {"tune_studies": list(exp.tune_studies),
                       "holdout_studies": list(exp.holdout_studies)})  # fmt: skip
-    return result, write_results(out, header, result, truth)
+    return result, write_results(out, header, result, read_labels(lab_data))
 
 
-def score_reference(
-    lab_data: Path, studies: tuple[int, ...], truth: DotTruth
-) -> tuple[RunResult, str]:
+def score_reference(lab_data: Path, studies: tuple[int, ...]) -> tuple[RunResult, str]:
     """Score the product pipeline's own gaze tables (copied at import) like an experiment, as the
     pseudo-experiment `reference`: what the sessions in `data/` say today."""
     lab_sessions = sessions_root(lab_data)
@@ -225,11 +256,12 @@ def score_reference(
             ref_dir = reference_dir(lab_sessions, ref.study_id, ref.session_id)
             for p, spec in SPECS.items():
                 if (ref_dir / spec.gaze_file).exists():
-                    scores.append(score_session(lab_sessions, ref_dir, ref, p, truth, config))
+                    dots = _dots(lab_sessions, ref)
+                    scores += score_session(lab_sessions, ref_dir, ref, p, dots, config)
     result = RunResult(scores, failures)
     header = _header("reference", "the product pipeline's outputs as they are in data/", {},
                      config, {"studies": list(studies)})  # fmt: skip
-    return result, write_results(out, header, result, truth)
+    return result, write_results(out, header, result, read_labels(lab_data))
 
 
 def load_scores(lab_data: Path, experiment: str) -> tuple[dict[str, Any], list[Score]]:

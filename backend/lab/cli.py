@@ -8,9 +8,8 @@ from lab.compare import format_comparison
 from lab.diagnose import run_diagnosis
 from lab.experiment import ExperimentError, load_experiment
 from lab.importer import LabImportError, import_study
-from lab.layout import DOT_PATH_FILE, EXPERIMENTS_DIR, REPO_ROOT, lab_data_root, sessions_root
+from lab.layout import EXPERIMENTS_DIR, REPO_ROOT, lab_data_root, sessions_root
 from lab.run import load_scores, run_experiment, score_reference
-from lab.score import DotTruth
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -31,10 +30,14 @@ def import_study_cmd(
     study: int = typer.Argument(..., help="Study id."),
     source: Path = typer.Option(REPO_ROOT / "data", help="Data root to copy from (only read)."),
     force: bool = typer.Option(False, help="Replace sessions already in the lab."),
+    assume_dot: str = typer.Option(
+        "", help="Score every played video against this dot video (test sessions only)."
+    ),
 ) -> None:
-    """Copy a study's processed sessions into the lab."""
+    """Copy a study's processed sessions into the lab; records which dot videos each played."""
     try:
-        results = import_study(source, sessions_root(lab_data_root()), study, force)
+        results = import_study(source, sessions_root(lab_data_root()), study, force,
+                               assume_dot or None)  # fmt: skip
     except LabImportError as e:
         raise typer.BadParameter(str(e)) from e
     for r in results:
@@ -44,7 +47,7 @@ def import_study_cmd(
 @app.command("reference")
 def reference_cmd(studies: list[int] = typer.Argument(..., help="Study ids.")) -> None:
     """Score the product pipeline's own outputs (as copied from data/) as `reference`."""
-    result, report = score_reference(lab_data_root(), tuple(studies), DotTruth.load(DOT_PATH_FILE))
+    result, report = score_reference(lab_data_root(), tuple(studies))
     typer.echo(report)
 
 
@@ -55,7 +58,7 @@ def run_cmd(experiment: str = typer.Argument(..., help="Experiment name or .toml
         exp = load_experiment(_experiment_file(experiment))
     except ExperimentError as e:
         raise typer.BadParameter(str(e)) from e
-    result, report = run_experiment(exp, lab_data_root(), DotTruth.load(DOT_PATH_FILE))
+    result, report = run_experiment(exp, lab_data_root())
     typer.echo(report)
     if result.failures:
         raise typer.Exit(1)
@@ -81,7 +84,7 @@ def diagnose_cmd(
     sweep: bool = typer.Option(True, help="Also re-run the pipeline with each ridge alpha alone."),
 ) -> None:
     """E1: head pose against calibration, what moves the gaze, timing, regularisation."""
-    _, report = run_diagnosis(lab_data_root(), experiment, DotTruth.load(DOT_PATH_FILE), sweep)
+    _, report = run_diagnosis(lab_data_root(), experiment, sweep)
     typer.echo(report)
 
 

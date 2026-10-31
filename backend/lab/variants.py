@@ -122,7 +122,7 @@ def check_variant(v: Variant) -> list[str]:
     if len(set(v.feature_columns)) != len(v.feature_columns):
         problems.append("a feature column is named twice")
     if v.fit_validation not in FIT_VALIDATION:
-        problems.append(f"fit_validation must be one of {FIT_VALIDATION}")
+        problems.append(f"fit_validation must be one of {list(FIT_VALIDATION)}")
     if v.drift not in DRIFT_MODES:
         problems.append(f"drift must be one of {DRIFT_MODES}")
     if v.highpass is not None:
@@ -141,7 +141,15 @@ def replace_with_highpass(columns: Sequence[str], hp_columns: Sequence[str]) -> 
 
 # --- E7: validation dots in the calibration fit ---------------------------------------------------
 
-FIT_VALIDATION = ("none", "before_video", "all")
+# Which validation blocks join the calibration fit, by the block's kind. `before_and_between`
+# leaves out the block after the last video: with two videos the second one is then scored on a
+# model that saw nothing recorded after it started (the honest check of T14).
+FIT_VALIDATION: dict[str, tuple[str, ...]] = {
+    "none": (),
+    "before_video": ("before_video",),
+    "before_and_between": ("before_video", "between_videos"),
+    "all": ("before_video", "between_videos", "after_last_video"),
+}
 
 
 def refit_with_validation(
@@ -167,7 +175,8 @@ def refit_with_validation(
         return "no_calibration_dots"
     attempt, reason = chosen
     blocks = validation_blocks(events, attempt.start_t)
-    extra = [d for blk in blocks if which == "all" or blk.kind == which for d in blk.dots]
+    kinds = FIT_VALIDATION[which]
+    extra = [d for blk in blocks if blk.kind in kinds for d in blk.dots]
     combined = replace(attempt, dots=[*attempt.dots, *extra])
     fit = fit_attempt(combined, t, vectors, usable, config)
     if fit.model is None or fit.selection is None:

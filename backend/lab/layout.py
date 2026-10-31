@@ -77,3 +77,28 @@ def list_sessions(root: Path, study_id: int) -> list[SessionRef]:
         meta = json.loads(meta_path(root, study_id, sid).read_text(encoding="utf-8"))
         refs.append(SessionRef(study_id, sid, str(meta["participant_code"])))
     return refs
+
+
+LABELS_FILE = "labels.csv"  # in lab_data/: study,code,person,glasses,webcam,notes (gitignored)
+LABEL_COLUMNS = ("study", "code", "person", "glasses", "webcam", "notes")
+
+
+def read_labels(lab_data: Path) -> dict[tuple[int, str], str]:
+    """(study, code) -> "person glasses webcam notes" from `lab_data/labels.csv`, when it exists.
+    The file is written by hand (docs/T13_RECORDING.md); a wrong header fails loudly."""
+    import csv
+
+    path = lab_data / LABELS_FILE
+    if not path.is_file():
+        return {}
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if tuple(reader.fieldnames or ()) != LABEL_COLUMNS:
+            raise ValueError(f"{path}: the header must be {','.join(LABEL_COLUMNS)}")
+        out = {}
+        for row in reader:
+            text = " ".join(
+                f"{k}={row[k].strip()}" for k in LABEL_COLUMNS[2:] if row[k] and row[k].strip()
+            )
+            out[(int(row["study"]), row["code"].strip().upper())] = text
+        return out

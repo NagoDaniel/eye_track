@@ -14,13 +14,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from lab.score import Score
+from lab.score import Score, short_name
 
 MAX_WORSE_FRACTION = 0.10
 METRICS = ("dc_pause", "pause", "dc_median", "median", "move")
 VERDICT_METRICS = ("dc_pause", "pause")
 
-Key = tuple[int, str, str]  # study, code, pipeline
+Key = tuple[int, str, str, str]  # study, code, pipeline, dot video
 
 
 @dataclass(frozen=True)
@@ -54,11 +54,15 @@ def _value(score: Score, metric: str) -> float | None:
     return None if value is None else float(value)
 
 
+def _key(s: Score) -> Key:
+    return (s.study_id, s.code, s.pipeline, s.video)
+
+
 def rows(base: Sequence[Score], new: Sequence[Score], metric: str) -> list[Row]:
-    by_key = {(s.study_id, s.code, s.pipeline): s for s in new}
+    by_key = {_key(s): s for s in new}
     out = []
     for s in base:
-        key = (s.study_id, s.code, s.pipeline)
+        key = _key(s)
         other = by_key.get(key)
         out.append(Row(key, _value(s, metric), None if other is None else _value(other, metric)))
     return out
@@ -109,15 +113,17 @@ def format_comparison(
     holdout: Sequence[int],
 ) -> str:
     lines = [f"{new_name} against {base_name} (viewport px; change = new / base - 1)", ""]
-    lines.append(f"{'':20}" + "".join(f" | {m:^18}" for m in METRICS))
-    lines.append(f"{'study':>5} {'code':8}{'pl':3}   " + " |   base    new  chg" * len(METRICS))
+    lines.append(f"{'':20}" + "".join(f" | {m:^18}" for m in METRICS))  # fmt: skip
+    lines.append(
+        f"{'study':>5} {'code':8}{'vid':4}{'pl':3}" + " |   base    new  chg" * len(METRICS)
+    )
     tables = {m: {r.key: r for r in rows(base, new, m)} for m in METRICS}
     shown = {s.pipeline for s in new}
     for s in base:
         if s.pipeline not in shown:
             continue
-        key = (s.study_id, s.code, s.pipeline)
-        line = f"{s.study_id:5} {s.code:8}{s.pipeline:3}   "
+        key = _key(s)
+        line = f"{s.study_id:5} {s.code:8}{short_name(s.video):4}{s.pipeline:3}"
         for m in METRICS:
             r = tables[m][key]
             change = "   -" if r.change is None else f"{r.change * 100:+3.0f}%"
@@ -132,8 +138,10 @@ def format_comparison(
             except ValueError as e:
                 lines.append(f"  {p.upper()} {m}: {e}")
                 continue
-            worse = ", ".join(f"{k[1]}({k[0]}) {r.change * 100:+.0f}%" for r in v.worse
-                              for k in [r.key] if r.change is not None)  # fmt: skip
+            worse = ", ".join(
+                f"{r.key[1]}/{short_name(r.key[3])}({r.key[0]}) {r.change * 100:+.0f}%"
+                for r in v.worse if r.change is not None
+            )  # fmt: skip
             lines.append(
                 f"  {p.upper()} {m:9} tune median {v.tune_base:.0f} -> {v.tune_new:.0f}, "
                 f"held out {_n(v.holdout_base, '.0f')} -> {_n(v.holdout_new, '.0f')}"

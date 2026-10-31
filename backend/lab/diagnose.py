@@ -30,9 +30,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
-from app.storage import browser_features_path, derived_dir
+from app.storage import browser_features_path, derived_dir, session_dir
+from lab.dots import read_dot_videos, truth
 from lab.experiment import parse_experiment
-from lab.layout import SessionRef, list_sessions, results_dir
+from lab.layout import SessionRef, list_sessions, results_dir, sessions_root
 from lab.run import load_scores, run_experiment
 from lab.score import REST_SETTLE_S, DotTruth, Score
 from lab.variants import HP_SUFFIX
@@ -102,7 +103,10 @@ def _rest_rows(stim: Floats, ok: NDArray[np.bool_], truth: DotTruth, k: int) -> 
         return ok & (stim >= r.start_s + REST_SETTLE_S) & (stim <= r.end_s)
 
 
-def diagnose_session(root: Path, ref: SessionRef, truth: DotTruth) -> SessionDiagnosis:
+def diagnose_session(
+    root: Path, ref: SessionRef, truth: DotTruth, video_id: str | None = None
+) -> SessionDiagnosis:
+    """`video_id`: the dot video whose first and last rests are compared (None: any playback)."""
     derived = derived_dir(root, ref.study_id, ref.session_id)
     features = pq.read_table(derived / FEATURES_FILE)
     gaze = pq.read_table(derived / SPEC_A.gaze_file)
@@ -116,6 +120,8 @@ def diagnose_session(root: Path, ref: SessionRef, truth: DotTruth) -> SessionDia
     valid = np.asarray(gaze["valid"].to_pylist(), dtype=bool)
     stim = _floats(gaze, "stim_time")
     playback = (phase == "playback") & valid
+    if video_id is not None:
+        playback &= np.asarray(gaze["video_id"].to_pylist(), dtype=object) == video_id
     calib = (phase == "calibration") & valid
 
     pose = {}
@@ -185,7 +191,7 @@ def _median(values: Sequence[float | None]) -> float | None:
 
 
 def alpha_sweep(
-    lab_data: Path, studies: tuple[int, ...], truth: DotTruth, alphas: Sequence[float] = ALPHAS
+    lab_data: Path, studies: tuple[int, ...], alphas: Sequence[float] = ALPHAS
 ) -> list[AlphaRow]:
     rows = []
     for alpha in alphas:
@@ -194,7 +200,7 @@ def alpha_sweep(
             "name": name, "description": f"diagnose: ridge alpha fixed at {alpha:g}",
             "pipelines": ["a"], "tune_studies": list(studies), "config": {"calib_alphas": [alpha]},
         })  # fmt: skip
-        result, _ = run_experiment(exp, lab_data, truth)
+        result, _ = run_experiment(exp, lab_data)
         work = results_dir(lab_data, name) / "data"
         for study in studies:
             mine = [s for s in result.scores if s.study_id == study]
@@ -277,15 +283,19 @@ def format_diagnosis(
 
 
 def run_diagnosis(
-    lab_data: Path, experiment: str, truth: DotTruth, sweep: bool = True
+    lab_data: Path, experiment: str, sweep: bool = True
 ) -> tuple[list[SessionDiagnosis], str]:
     header, scores = load_scores(lab_data, experiment)
     studies = tuple(header.get("tune_studies", [])) + tuple(header.get("holdout_studies", []))
     work = results_dir(lab_data, experiment) / "data"
-    sessions = [
-        diagnose_session(work, ref, truth) for st in studies for ref in list_sessions(work, st)
-    ]
-    alphas = alpha_sweep(lab_data, studies, truth) if sweep else []
+    lab_sessions = sessions_root(lab_data)
+    sessions = []
+    for st in studies:
+        for ref in list_sessions(work, st):
+            dots = read_dot_videos(session_dir(lab_sessions, ref.study_id, ref.session_id))
+            if dots:  # the first dot video the session played
+                sessions.append(diagnose_session(work, ref, truth(dots[0].name), dots[0].video_id))
+    alphas = alpha_sweep(lab_data, studies) if sweep else []
     report = f"diagnosis of experiment '{experiment}'\n\n" + format_diagnosis(
         sessions, scores, alphas
     )
