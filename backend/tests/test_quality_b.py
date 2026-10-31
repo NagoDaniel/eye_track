@@ -69,7 +69,9 @@ def test_inclusion_follows_the_studys_thresholds(b_session: FixtureSession, tmp_
     path.write_text(json.dumps(meta))
     strict = report_of(s)["inclusion"]
     assert strict["included"] is False
-    assert set(strict["reasons"]) == {"validation_error_high", "valid_fraction_low"}
+    # T14 (the default): the validation error is reported but does not decide
+    assert set(strict["reasons"]) == {"valid_fraction_low"}
+    assert strict["criteria"]["validation_decides"] is False
     assert strict["criteria"]["max_validation_error_norm"] == 0.001
 
 

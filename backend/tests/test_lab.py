@@ -161,7 +161,7 @@ def test_the_comparison_prints_every_session_and_the_verdict() -> None:
 def test_the_baseline_experiment_is_the_default_config() -> None:
     exp = load_experiment(EXPERIMENTS_DIR / "baseline.toml")
     assert exp.config == PipelineConfig() and exp.overrides == {}
-    assert exp.tune_studies == (7,) and exp.holdout_studies == (6,)
+    assert exp.tune_studies == (7,) and exp.holdout_studies == (6, 8)
 
 
 def test_overrides_take_the_type_of_the_default() -> None:
@@ -516,8 +516,10 @@ def test_validation_dots_join_the_fit_on_the_real_fixture(
         (derived_dir(a_session.root, a_session.study_id, a_session.session_id)
          / SPEC_A.calibration_file).read_text()
     )  # fmt: skip
-    assert len(mine["dots"]) > len(product["dots"])  # the validation dots were added
-    assert mine["samples"]["valid"] > product["samples"]["valid"]
+    # the lab's refit uses the same dots as the product's T14 fit (calibration + all validation)
+    assert [d["source"] for d in mine["dots"]] == [d["source"] for d in product["dots"]]
+    assert sum(d["source"] == "validation" for d in mine["dots"]) > 0
+    assert mine["model"] == product["model"]
     header, _ = load_scores(lab, "e7")
     assert header["overrides"] == {"fit_validation": "all", "drift": "affine"}
 
@@ -678,11 +680,12 @@ def test_the_lab_ridge_model_reproduces_the_product_gaze_on_the_real_fixture(
     a_session: FixtureSession, tmp_path: Path
 ) -> None:
     """model = "ridge" goes through the lab's training set, fit and `run_gaze(prediction=...)`;
-    on the product's own training data it must give the product's gaze table."""
+    on the product's own training data (T14: calibration and all validation dots) it must give
+    the product's gaze table."""
     lab = tmp_path / "lab_data"
     import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
     exp = parse_experiment({"name": "ridge", "tune_studies": [a_session.study_id],
-                            "model": "ridge"})  # fmt: skip
+                            "model": "ridge", "fit_validation": "all"})  # fmt: skip
     result, _ = run_experiment(exp, lab)
     assert result.failures == []
     mine = pq.read_table(derived_dir(results_dir(lab, "ridge") / "data", a_session.study_id,
@@ -721,3 +724,65 @@ def test_kernel_ridge_and_wider_blinks_run_on_the_real_fixture(
 def test_wrong_model_settings_are_refused(data: dict[str, Any], message: str) -> None:
     with pytest.raises(ExperimentError, match=message):
         parse_experiment({"name": "x", "tune_studies": [7], **data})
+
+
+# --- E8: blendshapes and iris depth (lab/blendshapes.py) ---
+
+
+def test_extra_columns_join_the_features_by_frame_and_fail_on_other_frames(tmp_path: Path) -> None:
+    from lab.blendshapes import join_extra_columns
+
+    features, extras = tmp_path / "f.parquet", tmp_path / "b.parquet"
+    pq.write_table(pa.table({"index": [0, 1, 2], "pts": [0.0, 0.033, 0.066], "open_l": [1.0] * 3})
+                   .replace_schema_metadata({"width": "1280"}), features)  # fmt: skip
+    pq.write_table(pa.table({"index": [0, 1, 2], "pts": [0.0, 0.033, 0.066],
+                             "iris_l_z": [0.1, 0.2, None]}), extras)  # fmt: skip
+    join_extra_columns(features, extras, ("iris_l_z",))
+    joined = pq.read_table(features)
+    assert joined["iris_l_z"].to_pylist() == pytest.approx([0.1, 0.2, None])
+    assert joined.schema.metadata == {b"width": b"1280"}
+    with pytest.raises(ValueError, match="no columns"):
+        join_extra_columns(features, extras, ("bs_eyeLookUpLeft",))
+    pq.write_table(pa.table({"index": [0, 1], "pts": [0.0, 0.033], "iris_l_z": [0.1, 0.2]}), extras)
+    with pytest.raises(ValueError, match="different frames"):
+        join_extra_columns(features, extras, ("iris_l_z",))
+
+
+def test_blendshape_columns_are_accepted_as_features() -> None:
+    exp = parse_experiment({"name": "x", "tune_studies": [7],
+                            "features": ["iris_l_x", "bs_eyeLookUpLeft", "iris_r_z"]})  # fmt: skip
+    from lab.variants import extra_columns
+
+    assert extra_columns(exp.variant) == ("bs_eyeLookUpLeft", "iris_r_z")
+
+
+def test_blendshapes_are_extracted_with_real_mediapipe_and_used_by_an_experiment(
+    a_session: FixtureSession, face_model: Path, tmp_path: Path
+) -> None:
+    from lab.blendshapes import BLENDSHAPES_FILE, extract
+
+    lab = tmp_path / "lab_data"
+    import_study(a_session.root, sessions_root(lab), a_session.study_id, assume_dot="moving_dot")
+    sid, study = a_session.session_id, a_session.study_id
+    columns = [*FEATURE_VECTOR_COLUMNS, "iris_l_z", "iris_r_z"]
+    exp = parse_experiment(
+        {"name": "e8", "tune_studies": [study], "fit_validation": "all", "features": columns}
+    )
+    with pytest.raises(FileNotFoundError, match="extract-blendshapes"):
+        run_experiment(exp, lab)  # fails loudly without the cached file
+    out = derived_dir(sessions_root(lab), study, sid) / BLENDSHAPES_FILE
+    n = extract(face_model, raw_dir(sessions_root(lab), study, sid) / "webcam.webm", out)
+    landmarks = pq.read_table(derived_dir(a_session.root, study, sid) / "landmarks.parquet",
+                              columns=["index", "blink_l"])  # fmt: skip
+    table = pq.read_table(out)
+    assert n == landmarks.num_rows and table["index"].to_pylist() == landmarks["index"].to_pylist()
+    assert "bs_eyeLookUpLeft" in table.column_names and "iris_l_z" in table.column_names
+    mine = np.array([np.nan if v is None else v for v in table["bs_eyeBlinkLeft"].to_pylist()])
+    theirs = np.array([np.nan if v is None else v for v in landmarks["blink_l"].to_pylist()])
+    ok = np.isfinite(mine) & np.isfinite(theirs)
+    assert ok.sum() > 50 and np.abs(mine[ok] - theirs[ok]).max() < 1e-3  # the same model
+    result, _ = run_experiment(exp, lab)
+    assert result.failures == [] and len(result.scores) == 1
+    calibration = json.loads((derived_dir(results_dir(lab, "e8") / "data", study, sid)
+                              / SPEC_A.calibration_file).read_text())  # fmt: skip
+    assert calibration["feature_columns"][-2:] == ["iris_l_z", "iris_r_z"]

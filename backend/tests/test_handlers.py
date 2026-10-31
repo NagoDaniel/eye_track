@@ -76,7 +76,9 @@ def test_processing_a_session_end_to_end(
     assert seen == [SessionStatus.PROCESSING]  # while the stages ran
     row = session_row(migrated_engine, seeded)
     assert row.status is SessionStatus.PROCESSED
-    assert row.quality is not None and row.quality["inclusion"]["included"] is False
+    # T14: the validation error does not decide inclusion, so the fake camera's session is in
+    assert row.quality is not None and row.quality["inclusion"]["included"] is True
+    assert row.quality["inclusion"]["criteria"]["validation_decides"] is False
     # (JSONB does not keep the order of keys; the file `quality.json` does.)
     assert set(row.quality["stages"]) == {
         "ingest", "landmarks", "features", "sync", "calibration", "gaze", "quality", "plots",

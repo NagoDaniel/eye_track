@@ -2,19 +2,16 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
 from app.schemas import EventRecord
+from worker.pipeline.calibration import ValidationDots, validation_blocks
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.predict import viewport_timeline
-from worker.pipeline.validation import (
-    DriftModel,
-    ValidationDots,
-    score_validation,
-    validation_blocks,
-)
+from worker.pipeline.validation import DriftModel, score_validation, validate_session
 
 CONFIG = PipelineConfig()
 W, H = 1280.0, 720.0
@@ -267,3 +264,41 @@ def test_the_recorded_session_is_scored(tmp_path: Path, face_model: Path) -> Non
     assert d["drift"] is not None and len(d["drift"]["t_ms"]) == len(with_data)
     assert result.precision_px is not None and result.precision_px >= 0
     json.dumps(d)
+
+
+def test_with_t14_each_block_is_scored_by_a_fit_without_it_on_the_real_fixture(
+    a_session: Any,
+) -> None:
+    """DECISIONS 2026-11-01: the validation dots trained the model, so each block's error comes
+    from a calibration fitted without that block; the drift stays the model's own."""
+    from app.events import parse_events
+    from app.storage import events_path
+    from worker.pipeline.predict import predict_session
+
+    root, study, sid = a_session.root, a_session.study_id, a_session.session_id
+    held = validate_session(root, study, sid, CONFIG)
+    assert held.held_out is True and held.as_dict()["held_out"] is True
+    prediction = predict_session(root, study, sid, CONFIG)
+    g = prediction.gaze
+    events = parse_events(events_path(root, study, sid).read_bytes())
+    own = score_validation(
+        validation_blocks(events), prediction.t_ms, g.x_px, g.y_px, g.valid,
+        viewport_timeline(events), CONFIG,
+    )  # fmt: skip
+    assert held.drift is not None and own.drift is not None
+    np.testing.assert_allclose(held.drift.dx, own.drift.dx)  # the model's own drift
+    held_errors = [p.error_px for b in held.blocks for p in b.points if p.error_px is not None]
+    own_errors = [p.error_px for b in own.blocks for p in b.points if p.error_px is not None]
+    assert len(held_errors) == len(own_errors) > 0
+    assert held_errors != own_errors  # other models scored the points
+
+
+def test_a_block_without_a_held_out_fit_has_no_data() -> None:
+    blocks = validation_blocks(SESSION_EVENTS)[:2]
+    t = np.arange(0.0, 40_000.0, 33.0)
+    xy = np.full(len(t), 640.0)
+    valid = np.ones(len(t), dtype=bool)
+    result = score_validation(blocks, t, xy, xy, valid, VIEWPORT, CONFIG,
+                              [(xy, xy, valid), None])  # fmt: skip
+    assert all(p.error_px is not None for p in result.blocks[0].points if p.click_t is not None)
+    assert all(p.error_px is None for p in result.blocks[1].points)

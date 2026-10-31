@@ -54,6 +54,11 @@ class PipelineConfig:
     # `calib_min_frames_per_dot` valid frames.
     calib_min_frames_per_dot: int = 5
     calib_max_sparse_dots: int = 3
+    # The validation dots (every block from the chosen attempt on) are training samples too
+    # (DECISIONS 2026-11-01, T14; the plan's default is False: calibration dots only). With it
+    # the reported validation error is held out (each block scored by a fit without that block)
+    # and the validation error does not decide inclusion.
+    calib_fit_validation: bool = True
 
     # --- Pipeline B features (PLAN §8.5, DECISIONS 2026-10-20) ---
     # The face crop is a square around the centre of the landmark box, with the longer side of the

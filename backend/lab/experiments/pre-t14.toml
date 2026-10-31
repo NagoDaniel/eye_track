@@ -1,0 +1,8 @@
+name = "pre-t14"
+description = "The product before T14: calibration dots only (calib_fit_validation = false). baseline.toml is the product as it is (with T14 since 2026-11-01)."
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+
+[config]
+calib_fit_validation = false

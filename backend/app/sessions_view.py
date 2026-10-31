@@ -260,6 +260,7 @@ def quality_summary(quality: dict[str, Any] | None) -> dict[str, Any] | None:
         "validation_error_norm": validation.get("mean_error_norm"),
         "validation_error_corrected_norm": validation.get("mean_error_corrected_norm"),
         "validation_blocks": validation.get("blocks") or [],
+        "validation_held_out": bool(validation.get("held_out")),
         "sync_flags": sync.get("flags") or [],
         "sync_lag_ms": sync.get("lag_ms"),
         "sync_peak": sync.get("peak"),

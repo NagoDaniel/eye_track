@@ -24,6 +24,8 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ridge import fit_ridge, predict
 
 CONFIG = PipelineConfig()
+# The plan's calibration: the calibration dots only (T14 off).
+PLAIN = replace(CONFIG, calib_fit_validation=False)
 WIDTH, HEIGHT = 1280.0, 720.0
 POSITIONS = [  # 13 dots: centre first, a 3x3 grid and the four quadrant centres (PLAN §5.5)
     (640, 360), (76.8, 43.2), (640, 43.2), (1203.2, 43.2), (76.8, 360), (1203.2, 360),
@@ -258,7 +260,7 @@ def test_a_synthetic_calibration_is_recovered() -> None:
     mapping = rng.normal(size=(2, 10))
     t, vectors, usable = synthetic_session(rng, events, attempt, mapping)
 
-    fit = fit_calibration(events, t, vectors, usable, CONFIG)
+    fit = fit_calibration(events, t, vectors, usable, PLAIN)
 
     assert fit.status == "ok" and fit.model is not None and fit.selection is not None
     assert fit.attempt is not None and fit.attempt.number == 1
@@ -378,7 +380,11 @@ def test_the_recorded_session_runs_through_the_whole_chain(
     assert written["status"] == "ok", written["failed_reason"]
     assert written["attempt_used"]["attempt"] == 1 and written["attempt_used"]["passed"] is False
     assert written["attempt_used"]["reason"] == "only_attempt"
-    assert len(written["dots"]) == 13 and all(d["valid_frames"] >= 5 for d in written["dots"])
+    # T14: the 13 calibration dots and the validation dots of both blocks trained the model.
+    assert written["fit_validation"] is True
+    own = [d for d in written["dots"] if d["source"] == "calibration"]
+    assert len(own) == 13 and all(d["valid_frames"] >= 5 for d in own)
+    assert [d["source"] for d in written["dots"][13:]] == ["validation"] * 10
     assert written["viewport"] == {"width": 1280.0, "height": 720.0}
     assert written["cv"]["chosen"] in ("linear", "quadratic") and np.isfinite(
         written["cv"]["error_px"]
@@ -387,4 +393,27 @@ def test_the_recorded_session_runs_through_the_whole_chain(
     # The server found about as many usable frames per dot as the browser did (8 to 12), since both
     # saw the same webcam frames; the browser's rate was lower, so the server has at least as many.
     browser = [8, 11, 10, 12, 11, 11, 10, 11, 10, 12, 10, 11, 12]
-    assert sum(d["valid_frames"] for d in written["dots"]) >= 0.8 * sum(browser)
+    assert sum(d["valid_frames"] for d in own) >= 0.8 * sum(browser)
+
+
+def test_with_t14_the_validation_dots_are_training_dots_too() -> None:
+    """DECISIONS 2026-11-01: the validation dots join the fit and are listed after the
+    calibration dots; a validation dot without frames cannot fail the calibration (the sparse-dot
+    rule counts the attempt's own dots only)."""
+    rng = np.random.default_rng(6)
+    events = calibration_block(1000) + validation_block(20_000) + [gate(26_000, 1, True)]
+    (attempt,) = calibration_attempts(events)
+    mapping = rng.normal(size=(2, 10))
+    t, vectors, usable = synthetic_session(rng, events, attempt, mapping)
+    fit = fit_calibration(events, t, vectors, usable, CONFIG)
+    assert fit.status == "ok" and len(fit.validation_dots) == 5
+    data = fit.as_dict()
+    assert data["fit_validation"] is True
+    sources = [d["source"] for d in data["dots"]]
+    assert sources == ["calibration"] * len(attempt.dots) + ["validation"] * 5
+    plain = fit_calibration(events, t, vectors, usable, PLAIN)
+    assert plain.validation_dots == () and plain.as_dict()["fit_validation"] is False
+    assert len(plain.as_dict()["dots"]) == len(attempt.dots)
+    # every validation frame unusable: the calibration still passes, as without T14
+    in_validation = t >= 20_000
+    assert fit_calibration(events, t, vectors, usable & ~in_validation, CONFIG).status == "ok"

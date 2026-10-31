@@ -20,7 +20,7 @@
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,20 +30,23 @@ from numpy.typing import NDArray
 
 from app.events import parse_events
 from app.storage import atomic_write_bytes, derived_dir, events_path
+from lab.blendshapes import is_extra_column
 from lab.layout import SessionRef
 from worker.pipeline.calibration import (
     CalibrationFit,
     calibration_attempts,
     choose_attempt,
     fit_attempt,
+    validation_blocks,
     viewport_before,
 )
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURE_COLUMNS, FEATURE_VECTOR_COLUMNS
+from worker.pipeline.predict import predict_session, viewport_timeline
 from worker.pipeline.spec import PipelineSpec
 from worker.pipeline.stimulus_map import VideoRectTimeline
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
-from worker.pipeline.validation import BlockScore, validate_session, validation_blocks
+from worker.pipeline.validation import BlockScore, score_validation
 
 Floats = NDArray[np.float64]
 HP_SUFFIX = "_hp"
@@ -122,7 +125,7 @@ def check_variant(v: Variant) -> list[str]:
     problems = []
     if not v.feature_columns:
         problems.append("features must name at least one column")
-    unknown = [c for c in v.feature_columns if c not in v.available()]
+    unknown = [c for c in v.feature_columns if c not in v.available() and not is_extra_column(c)]
     if unknown:
         problems.append(f"unknown feature columns {unknown} (available: {list(v.available())})")
     if len(set(v.feature_columns)) != len(v.feature_columns):
@@ -143,7 +146,11 @@ def check_variant(v: Variant) -> list[str]:
         problems.append('drift = "affine" works with model = "product" only')
     if (v.model == "ridge_xy") != bool(v.x_features and v.y_features):
         problems.append('x_features and y_features go with model = "ridge_xy", and it needs both')
-    bad = [c for c in (*v.x_features, *v.y_features) if c not in v.available()]
+    bad = [
+        c
+        for c in (*v.x_features, *v.y_features)
+        if c not in v.available() and not is_extra_column(c)
+    ]
     if bad:
         problems.append(f"unknown x_features or y_features columns {bad}")
     if v.blink_margin_ms < 0:
@@ -202,13 +209,13 @@ def refit_with_validation(
     blocks = validation_blocks(events, attempt.start_t)
     kinds = FIT_VALIDATION[which]
     extra = [d for blk in blocks if blk.kind in kinds for d in blk.dots]
-    combined = replace(attempt, dots=[*attempt.dots, *extra])
-    fit = fit_attempt(combined, t, vectors, usable, config)
+    fit = fit_attempt(attempt, t, vectors, usable, config, extra)
     if fit.model is None or fit.selection is None:
         return fit.failed_reason or "fit_impossible"
     result = CalibrationFit(
-        "ok", None, combined, reason, attempts, fit.valid_per_dot, fit.kept_per_dot, fit.model,
+        "ok", None, attempt, reason, attempts, fit.valid_per_dot, fit.kept_per_dot, fit.model,
         fit.selection, viewport_before(events, attempt.start_t), config, spec.feature_columns,
+        validation_dots=tuple(extra),
     )  # fmt: skip
     atomic_write_bytes(
         derived / spec.calibration_file, (json.dumps(result.as_dict(), indent=1) + "\n").encode()
@@ -276,7 +283,16 @@ def rewrite_drift(
     """Recompute the drift-corrected columns of the gaze table with `mode` (the fixation table's
     corrected centroids are left as they are; the lab does not score them)."""
     derived = derived_dir(root, ref.study_id, ref.session_id)
-    validation = validate_session(root, ref.study_id, ref.session_id, config, spec=spec)
+    # The drift of the session's own model (as the product's correction), not the held-out
+    # validation errors that T14 reports.
+    calibration = json.loads((derived / spec.calibration_file).read_text(encoding="utf-8"))
+    events_all = parse_events(events_path(root, ref.study_id, ref.session_id).read_bytes())
+    prediction = predict_session(root, ref.study_id, ref.session_id, config, spec)
+    g = prediction.gaze
+    validation = score_validation(
+        validation_blocks(events_all, float(calibration["attempt_used"]["start_t"])),
+        prediction.t_ms, g.x_px, g.y_px, g.valid, viewport_timeline(events_all), config,
+    )  # fmt: skip
     maps = [m for blk in validation.blocks if (m := block_map(blk, mode)) is not None]
     path = derived / spec.gaze_file
     table = pq.read_table(path)
@@ -340,3 +356,12 @@ def widen_blinks(path: Path, margin_ms: float, delta: float | None) -> None:
                          margin_ms / 1000.0, delta)  # fmt: skip
     table = table.set_column(table.schema.get_field_index("blink"), "blink", pa.array(new))
     pq.write_table(table.replace_schema_metadata(metadata), path, compression="snappy")
+
+
+def extra_columns(v: Variant) -> tuple[str, ...]:
+    """The E8 columns (blendshapes, iris depth) a variant uses, in first-use order."""
+    out: list[str] = []
+    for c in (*v.feature_columns, *v.x_features, *v.y_features):
+        if is_extra_column(c) and c not in out:
+            out.append(c)
+    return tuple(out)

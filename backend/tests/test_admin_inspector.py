@@ -98,6 +98,9 @@ def test_the_page_shows_the_report_the_stages_and_the_plots(
     assert "Quality report" in html and "Included in the analysis" in html
     assert "Valid gaze during playback" in html and "Validation error" in html
     assert "before_video" in html and "after_last_video" in html  # the validation blocks
+    report = json.loads((data_derived(processed) / "quality.json").read_text())
+    held_out_note = "fitted without that block" in html
+    assert held_out_note == bool(report["validation"]["held_out"])  # T14 says so
     for stage in STAGE_NAMES:
         assert f"<td>{stage}</td>" in html, stage
     # One re-run button per stage, each a form with the CSRF token and the stage name.

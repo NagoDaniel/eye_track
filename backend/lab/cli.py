@@ -101,5 +101,28 @@ def plot_cmd(experiment: str = typer.Argument(..., help="Experiment whose gaze t
         typer.echo(path)
 
 
+@app.command("extract-blendshapes")
+def extract_blendshapes_cmd(
+    studies: list[int] = typer.Argument(..., help="Study ids already in the lab."),
+    force: bool = typer.Option(False, help="Extract again even when the file exists."),
+) -> None:
+    """E8: run MediaPipe once per session and cache every blendshape score and the iris depth."""
+    from app.storage import derived_dir, raw_dir
+    from lab.blendshapes import BLENDSHAPES_FILE, extract, model_file
+    from lab.layout import list_sessions
+
+    lab = lab_data_root()
+    model = model_file(lab / "models")
+    for study in studies:
+        for ref in list_sessions(sessions_root(lab), study):
+            out = derived_dir(sessions_root(lab), study, ref.session_id) / BLENDSHAPES_FILE
+            if out.exists() and not force:
+                typer.echo(f"{study} {ref.code:8} exists")
+                continue
+            n = extract(model, raw_dir(sessions_root(lab), study, ref.session_id) / "webcam.webm",
+                        out)  # fmt: skip
+            typer.echo(f"{study} {ref.code:8} {n} frames")
+
+
 def main() -> None:
     app()

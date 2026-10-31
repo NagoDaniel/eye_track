@@ -109,7 +109,8 @@ def test_a_full_run_produces_every_file_and_records_every_stage(processed: Fixtu
     assert report["stages"]["sync"]["summary"]["flags"] == ["sync_short"]
     assert report["stages"]["calibration"]["summary"]["status"] == "ok"
     assert report["stages"]["gaze"]["summary"]["frames"] > 200
-    assert report["stages"]["quality"]["summary"]["included"] is False  # the fake camera
+    # T14: the validation error does not decide inclusion; the fake camera is valid enough
+    assert report["stages"]["quality"]["summary"]["included"] is True
     assert pipeline_flags(derived) == ["sync_short"]
 
 

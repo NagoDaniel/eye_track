@@ -72,6 +72,7 @@ def build_quality_b(
         valid_fraction=None if playback_part is None else playback_part["valid_fraction"],
         validation_error_norm=validation_error,
         inclusion=study_config.inclusion,
+        validation_decides=not bool(calibration.get("fit_validation")),
     )
     report: dict[str, Any] = {
         "version": QUALITY_B_VERSION,

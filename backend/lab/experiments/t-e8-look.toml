@@ -1,0 +1,7 @@
+name = "t-e8-look"
+description = "E8: T14 plus all eight eyeLook blendshapes"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll", "face_ratio", "bs_eyeLookUpLeft", "bs_eyeLookUpRight", "bs_eyeLookDownLeft", "bs_eyeLookDownRight", "bs_eyeLookInLeft", "bs_eyeLookInRight", "bs_eyeLookOutLeft", "bs_eyeLookOutRight"]

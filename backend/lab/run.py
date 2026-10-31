@@ -20,6 +20,7 @@ import pyarrow.parquet as pq
 
 from app.events import parse_events
 from app.storage import derived_dir, events_path, raw_dir, session_dir
+from lab.blendshapes import BLENDSHAPES_FILE, join_extra_columns
 from lab.dots import DotVideo, read_dot_videos, truth
 from lab.experiment import Experiment
 from lab.layout import (
@@ -38,6 +39,7 @@ from lab.variants import (
     FIT_VALIDATION,
     Variant,
     add_highpass,
+    extra_columns,
     refit_with_validation,
     rewrite_drift,
     widen_blinks,
@@ -115,6 +117,13 @@ def run_stages(
     run_sync(work, ref.study_id, ref.session_id, config)
     if variant.highpass is not None:
         add_highpass(derived / FEATURES_FILE, variant.highpass)
+    if extra := extra_columns(variant):
+        cached = derived / BLENDSHAPES_FILE
+        if not cached.exists():
+            raise FileNotFoundError(
+                f"{ref.code}: no {BLENDSHAPES_FILE} (run `lab extract-blendshapes {ref.study_id}`)"
+            )
+        join_extra_columns(derived / FEATURES_FILE, cached, extra)
     if variant.blink_margin_ms > 0 or variant.blink_relative_delta is not None:
         widen_blinks(derived / FEATURES_FILE, variant.blink_margin_ms, variant.blink_relative_delta)
     done, failures = [], []

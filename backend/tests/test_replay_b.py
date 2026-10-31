@@ -56,9 +56,29 @@ def copy_session(b_session: FixtureSession, target: Path) -> FixtureSession:
     )  # fmt: skip
 
 
+def separate_b(s: FixtureSession) -> None:
+    """Move B's three gaze dots by known offsets, away from A's and from each other. These tests
+    check the drawing, not B's accuracy: since the validation dots train both calibrations (T14),
+    A and B agree so closely, and B's drift is so small, that the dots would overlap."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    path = derived_dir(s.root, s.study_id, s.session_id) / SPEC_B.gaze_file
+    table = pq.read_table(path)
+    for name, offset in (("x_px", -150.0), ("x_vid", 0.15), ("x_vid_dc", 0.15),
+                         ("y_vid_dc", 0.12)):  # fmt: skip
+        i = table.schema.get_field_index(name)
+        shifted = pc.add(table[name], pa.scalar(offset, table.schema.field(name).type))
+        table = table.set_column(i, name, shifted)
+    pq.write_table(table.replace_schema_metadata(pq.read_schema(path).metadata), path)
+
+
 @pytest.fixture(scope="module")
 def with_b(b_session: FixtureSession, tmp_path_factory: pytest.TempPathFactory) -> FixtureSession:
-    return copy_session(b_session, tmp_path_factory.mktemp("replay_with_b") / "data")
+    s = copy_session(b_session, tmp_path_factory.mktemp("replay_with_b") / "data")
+    separate_b(s)
+    return s
 
 
 @pytest.fixture(scope="module")

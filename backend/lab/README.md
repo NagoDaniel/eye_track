@@ -72,6 +72,12 @@ extra_training = "l1_rests"  # lab models: add video 1's rests / pursuit (l1_res
                            # `compare <exp> --only-video long_dot_2`
 ```
 
+E8 columns: `make lab ARGS="extract-blendshapes 7 6 8"` runs MediaPipe once per session (about
+1 minute per 4-minute session) and caches every blendshape (`bs_eyeLookUpLeft`, `bs_eyeSquintRight`,
+...) and the iris depth (`iris_l_z`, `iris_r_z`); name them in `features` to use them.
+
+`baseline` is the product as it is (since 2026-11-01 with T14); `pre-t14` is the product before.
+
 Unknown keys, unknown fields, unknown columns and wrong types are refused.
 
 `make lab ARGS="plot <experiment>"`: for each session and dot video, x and y of the dot and of the

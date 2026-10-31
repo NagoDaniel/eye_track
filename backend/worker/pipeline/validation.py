@@ -25,16 +25,25 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.events import parse_events
-from app.schemas import EventRecord
 from app.storage import derived_dir, events_path
-from worker.pipeline.calibration import Dot, build_dots
+from worker.pipeline.calibration import (
+    Dot,
+    ValidationDots,
+    calibration_attempts,
+    choose_attempt,
+    fit_attempt,
+    fit_inputs,
+    validation_blocks,
+)
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.predict import (
     SessionPrediction,
     ViewportTimeline,
+    gaze_from_xy,
     predict_session,
     viewport_timeline,
 )
+from worker.pipeline.ridge import predict
 from worker.pipeline.spec import SPEC_A, PipelineSpec
 
 Floats = NDArray[np.float64]
@@ -42,60 +51,6 @@ Bools = NDArray[np.bool_]
 
 
 # --- Blocks, from the events --------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ValidationDots:
-    index: int  # position among the session's validation blocks
-    kind: str  # before_video, between_videos or after_last_video
-    start_t: float
-    dots: list[Dot]
-
-
-def _kind(start_t: float, events: Sequence[EventRecord]) -> str:
-    """Where in the session a block is, from the video events."""
-    loads = [e.t for e in events if e.type == "video_load"]
-    ends = [e.t for e in events if e.type == "video_ended"]
-    started = sum(1 for t in loads if t < start_t)
-    if started == 0:
-        return "before_video"
-    if started == len(loads) and sum(1 for t in ends if t < start_t) >= len(loads):
-        return "after_last_video"
-    return "between_videos"
-
-
-def validation_blocks(events: Sequence[EventRecord], since_t: float = 0.0) -> list[ValidationDots]:
-    """The validation blocks that start at or after `since_t`. A block is a run of validation-phase
-    dot events; calibration dots, a gate result and the start or end of a video close it."""
-    blocks: list[ValidationDots] = []
-    shows: dict[int, tuple[float, float]] = {}
-    clicks: dict[int, float] = {}
-    start: float | None = None
-
-    def close() -> None:
-        nonlocal shows, clicks, start
-        if start is not None and start >= since_t:
-            blocks.append(
-                ValidationDots(len(blocks), _kind(start, events), start, build_dots(shows, clicks))
-            )
-        shows, clicks, start = {}, {}, None
-
-    for event in events:
-        if event.type in ("calib_dot_show", "calib_dot_click", "calib_dot_hide"):
-            if event.data.get("phase") != "validation":
-                close()
-                continue
-            if start is None:
-                start = event.t
-            dot_id = int(event.data["id"])
-            if event.type == "calib_dot_show":
-                shows[dot_id] = (float(event.data["x"]), float(event.data["y"]))
-            elif event.type == "calib_dot_click":
-                clicks[dot_id] = event.t
-        elif event.type in ("calib_gate_result", "video_load", "video_ended"):
-            close()
-    close()
-    return blocks
 
 
 # --- Scores -------------------------------------------------------------------------------------
@@ -203,9 +158,13 @@ class ValidationResult:
     blocks: list[BlockScore]
     drift: DriftModel | None  # None when no block has data
     precision_px: float | None  # median over the blocks of their precision (for I-DT, §8.9)
+    # T14: the points' errors come from fits without their own block (the dots were training
+    # samples of the session's model); the drift is still the model's own.
+    held_out: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "held_out": self.held_out,
             "blocks": [b.as_dict() for b in self.blocks],
             "precision_px": self.precision_px,
             "drift": None
@@ -249,6 +208,9 @@ def _point(
     )  # fmt: skip
 
 
+Predictions = tuple[Floats, Floats, Bools]  # x_px, y_px, valid of every frame
+
+
 def score_validation(
     blocks: Sequence[ValidationDots],
     t_ms: Floats,
@@ -257,15 +219,24 @@ def score_validation(
     valid: Bools,
     viewport: ViewportTimeline,
     config: PipelineConfig,
+    per_block: Sequence[Predictions | None] | None = None,
 ) -> ValidationResult:
-    """Score every block on the raw predictions of the valid frames (`t_ms` increasing)."""
-    raw = [
-        BlockScore(
-            b.index, b.kind, None,
-            [_point(d, t_ms, x_px, y_px, valid, viewport, config) for d in b.dots],
-        )
-        for b in blocks
-    ]  # fmt: skip
+    """Score every block on the raw predictions of the valid frames (`t_ms` increasing).
+    `per_block`: other predictions for each block (None: that block has no data)."""
+
+    def source(i: int) -> Predictions | None:
+        return (x_px, y_px, valid) if per_block is None else per_block[i]
+
+    raw = []
+    for i, b in enumerate(blocks):
+        pred = source(i)
+        points = [
+            _point(d, t_ms, pred[0], pred[1], pred[2], viewport, config)
+            if pred is not None
+            else _point(d, t_ms, x_px, y_px, np.zeros(len(t_ms), dtype=np.bool_), viewport, config)
+            for d in b.dots
+        ]
+        raw.append(BlockScore(b.index, b.kind, None, points))
     timed = []
     for block in raw:
         clicks = [
@@ -284,9 +255,17 @@ def score_validation(
         dx=np.array([b.offset[0] for b in with_data if b.offset]),
         dy=np.array([b.offset[1] for b in with_data if b.offset]),
     )
-    # The same points, with the drift at their time taken out of the median prediction.
+    corrected = with_drift(timed, drift, viewport)
+    precisions = [b.precision_px for b in corrected if b.precision_px is not None]
+    return ValidationResult(corrected, drift, float(np.median(precisions)) if precisions else None)
+
+
+def with_drift(
+    blocks: Sequence[BlockScore], drift: DriftModel, viewport: ViewportTimeline
+) -> list[BlockScore]:
+    """The same points, with the drift at their time taken out of the median prediction."""
     corrected: list[BlockScore] = []
-    for block in timed:
+    for block in blocks:
         points = []
         for p in block.points:
             if p.median_x is None or p.median_y is None or p.click_t is None:
@@ -301,8 +280,7 @@ def score_validation(
                 p.error_norm, error, norm, p.precision_px,
             ))  # fmt: skip
         corrected.append(BlockScore(block.index, block.kind, block.t_ms, points))
-    precisions = [b.precision_px for b in corrected if b.precision_px is not None]
-    return ValidationResult(corrected, drift, float(np.median(precisions)) if precisions else None)
+    return corrected
 
 
 def validate_session(
@@ -314,7 +292,8 @@ def validate_session(
     spec: PipelineSpec = SPEC_A,
 ) -> ValidationResult:
     """Score the session's validation blocks from the calibration attempt on. The predictions are
-    made here unless the caller already has them."""
+    made here unless the caller already has them. When the validation dots were training samples
+    (`fit_validation`, T14), each block's errors come from a fit without that block."""
     derived = derived_dir(root, study_id, session_id)
     calibration = json.loads((derived / spec.calibration_file).read_text(encoding="utf-8"))
     if calibration["status"] != "ok":
@@ -325,7 +304,53 @@ def validate_session(
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
     prediction = prediction or predict_session(root, study_id, session_id, config, spec)
     gaze = prediction.gaze
-    return score_validation(
-        validation_blocks(events, since), prediction.t_ms, gaze.x_px, gaze.y_px, gaze.valid,
-        viewport_timeline(events), config,
+    blocks = validation_blocks(events, since)
+    viewport = viewport_timeline(events)
+    full = score_validation(
+        blocks, prediction.t_ms, gaze.x_px, gaze.y_px, gaze.valid, viewport, config
+    )
+    if not calibration.get("fit_validation"):
+        return full
+    held = score_validation(
+        blocks, prediction.t_ms, gaze.x_px, gaze.y_px, gaze.valid, viewport, config,
+        held_out_predictions(root, study_id, session_id, config, spec, blocks, viewport),
     )  # fmt: skip
+    timed = [
+        BlockScore(h.index, h.kind, f.t_ms, h.points)
+        for h, f in zip(held.blocks, full.blocks, strict=True)
+    ]  # the block times of the model's own scoring (the drift's times)
+    scored = timed if full.drift is None else with_drift(timed, full.drift, viewport)
+    return ValidationResult(scored, full.drift, held.precision_px, held_out=True)
+
+
+def held_out_predictions(
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    config: PipelineConfig,
+    spec: PipelineSpec,
+    blocks: Sequence[ValidationDots],
+    viewport: ViewportTimeline,
+) -> list[Predictions | None]:
+    """For each block, every frame predicted by the calibration fitted on the chosen attempt's
+    dots plus the other blocks' dots (None when that fit fails)."""
+    inputs = fit_inputs(root, study_id, session_id, spec)
+    chosen = choose_attempt(calibration_attempts(inputs.events))
+    if chosen is None:
+        return [None] * len(blocks)
+    attempt, _ = chosen
+    out: list[Predictions | None] = []
+    for k in range(len(blocks)):
+        others = [d for j, b in enumerate(blocks) if j != k for d in b.dots]
+        fit = fit_attempt(attempt, inputs.t_ms, inputs.vectors, inputs.usable, config, others)
+        if fit.model is None:
+            out.append(None)
+            continue
+        x = np.full(len(inputs.t_ms), np.nan)
+        y = np.full(len(inputs.t_ms), np.nan)
+        if inputs.usable.any():
+            xy = predict(fit.model, inputs.vectors[inputs.usable])
+            x[inputs.usable], y[inputs.usable] = xy[:, 0], xy[:, 1]
+        g = gaze_from_xy(x, y, inputs.usable, inputs.t_ms, viewport, config)
+        out.append((g.x_px, g.y_px, g.valid))
+    return out

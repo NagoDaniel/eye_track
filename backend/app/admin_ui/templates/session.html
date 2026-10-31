@@ -39,6 +39,7 @@
   <tr><th>Sync</th><td>lag {{ num(q.sync_lag_ms, "%.0f") }} ms, correlation {{ num(q.sync_peak, "%.2f") }}{% if q.sync_flags %}, <span class="warning">{{ q.sync_flags | join(", ") }}</span>{% endif %}</td></tr>
 </table>
 {% if q.validation_blocks %}
+{% if q.validation_held_out %}<p class="muted">The validation dots also trained the gaze model (T14), so each block's error is measured with a model fitted without that block. It is reported only: it does not decide whether the session is included.</p>{% endif %}
 <table>
   <thead><tr><th>Validation block</th><th class="num">Points with data</th><th class="num">Error (px)</th><th class="num">Error (screen diagonal)</th><th class="num">After drift correction</th><th class="num">Precision (px)</th></tr></thead>
   <tbody>

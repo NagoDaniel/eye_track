@@ -40,13 +40,13 @@ from worker.pipeline.calibration import (
     inlier_mask,
     select_model,
     training_samples,
+    validation_blocks,
 )
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.predict import SessionPrediction, gaze_from_xy, viewport_timeline
 from worker.pipeline.ridge import fit_ridge, predict
 from worker.pipeline.stimulus_map import StimulusMap, VideoRectTimeline
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
-from worker.pipeline.validation import validation_blocks
 
 Floats = NDArray[np.float64]
 Ints = NDArray[np.int64]

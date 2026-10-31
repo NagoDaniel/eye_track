@@ -32,7 +32,7 @@ EXPERIMENTS_DIR = Path(__file__).resolve().parent / "experiments"
 
 # Derived files an experiment starts from instead of recomputing them (MediaPipe on every frame,
 # the gaze network on every face). They depend only on the raw video and the model files.
-CACHED_FILES = (LANDMARKS_FILE, WEBCAM_FRAMES_FILE, FEATURES_B_FILE)
+CACHED_FILES = (LANDMARKS_FILE, WEBCAM_FRAMES_FILE, FEATURES_B_FILE, "blendshapes.parquet")
 # The product pipeline's outputs, kept to check that the lab reproduces them.
 REFERENCE_FILES = (
     SYNC_FILE, SPEC_A.calibration_file, SPEC_A.gaze_file, CALIBRATION_B_FILE, GAZE_B_FILE,

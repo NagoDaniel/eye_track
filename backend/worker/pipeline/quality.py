@@ -89,10 +89,12 @@ def decide_inclusion(
     valid_fraction: float | None,
     validation_error_norm: float | None,
     inclusion: InclusionConfig,
+    validation_decides: bool = True,
 ) -> Inclusion:
     """Is the session used in the analysis? Every reason it is not is listed. Debug sessions are
     left out by default (PLAN §12.1). The two thresholds are the study's (`inclusion`, PLAN §4.1);
-    a value equal to its threshold passes."""
+    a value equal to its threshold passes. With `validation_decides` false (the validation dots
+    trained the model, T14, DECISIONS 2026-11-01) the validation error is reported only."""
     reasons: list[str] = []
     if is_debug:
         reasons.append("debug_session")
@@ -103,7 +105,9 @@ def decide_inclusion(
             reasons.append("no_playback_data")
         elif valid_fraction is not None and valid_fraction < inclusion.min_valid_fraction:
             reasons.append("valid_fraction_low")
-        if validation_error_norm is None:
+        if not validation_decides:
+            pass
+        elif validation_error_norm is None:
             reasons.append("no_validation_data")
         elif validation_error_norm > inclusion.max_validation_error_norm:
             reasons.append("validation_error_high")
@@ -115,6 +119,7 @@ def decide_inclusion(
             "min_valid_fraction": inclusion.min_valid_fraction,
             "validation_error_norm": validation_error_norm,
             "max_validation_error_norm": inclusion.max_validation_error_norm,
+            "validation_decides": validation_decides,
         },
     )
 
@@ -380,6 +385,7 @@ def build_quality(
         valid_fraction=valid_fraction,
         validation_error_norm=validation_error,
         inclusion=study_config.inclusion,
+        validation_decides=not bool(calibration.get("fit_validation")),
     )
     stimulus_part = stimulus_frames_summary(root, study_id, session_id, events, config)
     session_flags = list(meta.get("flags", []))

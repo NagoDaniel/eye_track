@@ -66,6 +66,15 @@ def test_each_failure_gives_its_reason_and_all_are_listed() -> None:
     assert not both.included
 
 
+def test_with_t14_the_validation_error_does_not_decide_inclusion() -> None:
+    """DECISIONS 2026-11-01: the validation dots trained the model, so their error is reported
+    but excludes nobody; the valid-frame rule still does."""
+    result = inclusion(validation_error_norm=0.5, validation_decides=False)
+    assert result.included and result.criteria["validation_decides"] is False
+    assert inclusion(validation_error_norm=None, validation_decides=False).included
+    assert inclusion(valid_fraction=0.5, validation_decides=False).reasons == ["valid_fraction_low"]
+
+
 def test_a_value_equal_to_its_threshold_passes() -> None:
     assert inclusion(validation_error_norm=0.12, valid_fraction=0.7).included
 
@@ -283,9 +292,18 @@ def test_the_recorded_session_has_a_complete_report(tmp_path: Path, face_model: 
     assert report["playback"]["frames"] > 50
     assert report["events"]["stalls_at_start"] == 1
     assert report["validation"]["blocks"][0]["kind"] == "before_video"
-    # The fake camera does not look at the dots, so the session fails the study's own thresholds.
-    assert report["inclusion"]["included"] is False and report["inclusion"]["reasons"]
+    # T14: the validation error is held out and does not decide inclusion.
+    assert report["validation"]["held_out"] is True
+    assert report["inclusion"]["criteria"]["validation_decides"] is False
+    assert "validation_error_high" not in report["inclusion"]["reasons"]
     json.dumps(report)
+    # Without T14 the fake camera, which does not look at the dots, fails the study's thresholds.
+    plain = replace(CONFIG, calib_fit_validation=False)
+    run_calibration(s.root, s.study_id, s.session_id, plain)
+    run_gaze(s.root, s.study_id, s.session_id, plain)
+    old = build_quality(s.root, s.study_id, s.session_id, plain)
+    assert old["validation"]["held_out"] is False
+    assert old["inclusion"]["included"] is False and old["inclusion"]["reasons"]
 
 
 # --- dropped stimulus frames: flagged, never excluded (DECISIONS 2026-10-25) ------------------

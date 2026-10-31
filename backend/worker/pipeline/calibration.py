@@ -4,7 +4,9 @@
    calibration block each). The attempt used is the last one that passed the browser gate, else the
    last one (DECISIONS milestone 3 item 3: attempts are told apart by event order).
 2. The training samples of a dot are the usable frames (a face, no blink) from 700 ms before its
-   click to 100 ms after it; their target is the dot's position in viewport px.
+   click to 100 ms after it; their target is the dot's position in viewport px. With
+   `calib_fit_validation` (T14, DECISIONS 2026-11-01) the validation dots from the attempt on are
+   training dots too; the sparse-dot rule of step 5 counts the attempt's own dots only.
 3. Leave-one-dot-out cross-validation chooses the regularisation for a degree-2 and for a plain
    linear ridge model (`ridge.py`); the one with the lower error is kept and both errors are
    recorded.
@@ -111,6 +113,65 @@ def calibration_attempts(events: Sequence[EventRecord]) -> list[Attempt]:
                 attempts[-1] = Attempt(last.index, last.start_t, last.dots, result)
     close()
     return attempts
+
+
+@dataclass(frozen=True)
+class ValidationDots:
+    index: int  # position among the session's validation blocks
+    kind: str  # before_video, between_videos or after_last_video
+    start_t: float
+    dots: list[Dot]
+
+
+def _kind(start_t: float, events: Sequence[EventRecord]) -> str:
+    """Where in the session a block is, from the video events."""
+    loads = [e.t for e in events if e.type == "video_load"]
+    ends = [e.t for e in events if e.type == "video_ended"]
+    started = sum(1 for t in loads if t < start_t)
+    if started == 0:
+        return "before_video"
+    if started == len(loads) and sum(1 for t in ends if t < start_t) >= len(loads):
+        return "after_last_video"
+    return "between_videos"
+
+
+def validation_blocks(events: Sequence[EventRecord], since_t: float = 0.0) -> list[ValidationDots]:
+    """The validation blocks that start at or after `since_t`. A block is a run of validation-phase
+    dot events; calibration dots, a gate result and the start or end of a video close it."""
+    blocks: list[ValidationDots] = []
+    shows: dict[int, tuple[float, float]] = {}
+    clicks: dict[int, float] = {}
+    start: float | None = None
+
+    def close() -> None:
+        nonlocal shows, clicks, start
+        if start is not None and start >= since_t:
+            blocks.append(
+                ValidationDots(len(blocks), _kind(start, events), start, build_dots(shows, clicks))
+            )
+        shows, clicks, start = {}, {}, None
+
+    for event in events:
+        if event.type in ("calib_dot_show", "calib_dot_click", "calib_dot_hide"):
+            if event.data.get("phase") != "validation":
+                close()
+                continue
+            if start is None:
+                start = event.t
+            dot_id = int(event.data["id"])
+            if event.type == "calib_dot_show":
+                shows[dot_id] = (float(event.data["x"]), float(event.data["y"]))
+            elif event.type == "calib_dot_click":
+                clicks[dot_id] = event.t
+        elif event.type in ("calib_gate_result", "video_load", "video_ended"):
+            close()
+    close()
+    return blocks
+
+
+def validation_dots(events: Sequence[EventRecord], since_t: float) -> list[Dot]:
+    """Every validation dot from `since_t` on (the chosen attempt's start), in block order."""
+    return [d for block in validation_blocks(events, since_t) for d in block.dots]
 
 
 def choose_attempt(attempts: Sequence[Attempt]) -> tuple[Attempt, str] | None:
@@ -261,6 +322,9 @@ class CalibrationFit:
     config: PipelineConfig
     # The feature vector the model was fitted on (the pipeline's, PLAN §8.6).
     feature_columns: tuple[str, ...] = FEATURE_VECTOR_COLUMNS
+    # T14: validation dots that were training samples too (after the attempt's own dots in
+    # `valid_per_dot` and `kept_per_dot`).
+    validation_dots: tuple[Dot, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         used = self.attempt
@@ -276,6 +340,7 @@ class CalibrationFit:
             "status": self.status,
             "failed_reason": self.failed_reason,
             "feature_columns": list(self.feature_columns),
+            "fit_validation": self.config.calib_fit_validation,
             "attempt_used": None
             if used is None
             else {
@@ -306,10 +371,11 @@ class CalibrationFit:
                     "x": d.x,
                     "y": d.y,
                     "click_t": d.click_t,
-                    "valid_frames": self.valid_per_dot[k],
-                    "kept_frames": self.kept_per_dot[k],
+                    "source": "calibration" if k < len(used.dots) else "validation",
+                    "valid_frames": self.valid_per_dot[k] if k < len(self.valid_per_dot) else 0,
+                    "kept_frames": self.kept_per_dot[k] if k < len(self.kept_per_dot) else 0,
                 }
-                for k, d in enumerate(used.dots)
+                for k, d in enumerate([*used.dots, *self.validation_dots])
             ],  # fmt: skip
             "samples": {
                 "valid": sum(self.valid_per_dot),
@@ -358,11 +424,16 @@ def fit_attempt(
     vectors: Floats,
     usable: NDArray[np.bool_],
     config: PipelineConfig,
+    extra_dots: Sequence[Dot] = (),
 ) -> AttemptFit:
-    """Steps 2 to 5 of the module docstring for one attempt."""
-    train = training_samples(attempt.dots, frame_t_ms, vectors, usable, config)
+    """Steps 2 to 5 of the module docstring for one attempt, on its dots plus `extra_dots`
+    (validation dots, T14). The sparse-dot rule looks at the attempt's own dots only, so a
+    validation dot without frames never fails a calibration that passes without it."""
+    dots = [*attempt.dots, *extra_dots]
+    train = training_samples(dots, frame_t_ms, vectors, usable, config)
     none = [0] * len(train.valid_per_dot)
-    sparse = sum(1 for n in train.valid_per_dot if n < config.calib_min_frames_per_dot)
+    own = train.valid_per_dot[: len(attempt.dots)]
+    sparse = sum(1 for n in own if n < config.calib_min_frames_per_dot)
     if sparse > config.calib_max_sparse_dots:
         return AttemptFit("too_few_valid_frames", train.valid_per_dot, none, None, None)
     first = select_model(train.features, train.targets, train.dot_index, config)
@@ -370,12 +441,12 @@ def fit_attempt(
         return AttemptFit("fit_impossible", train.valid_per_dot, none, None, None)
     model = fit_ridge(train.features, train.targets, first.chosen.alpha, first.chosen.degree)
     keep = inlier_mask(model, train.features, train.dot_index, config)
-    features, targets, dots = train.features[keep], train.targets[keep], train.dot_index[keep]
-    selection = select_model(features, targets, dots, config)
+    features, targets, dot_rows = train.features[keep], train.targets[keep], train.dot_index[keep]
+    selection = select_model(features, targets, dot_rows, config)
     if not np.isfinite(selection.chosen.error_px):
         return AttemptFit("fit_impossible", train.valid_per_dot, none, None, None)
     final = fit_ridge(features, targets, selection.chosen.alpha, selection.chosen.degree)
-    kept = np.bincount(dots, minlength=len(attempt.dots)).tolist()
+    kept = np.bincount(dot_rows, minlength=len(dots)).tolist()
     return AttemptFit(None, train.valid_per_dot, kept, final, selection)
 
 
@@ -406,18 +477,44 @@ def fit_calibration(
         return _failed("no_calibration_dots", attempts, config)
     attempt, reason = chosen
     viewport = viewport_before(events, attempt.start_t)
-    fit = fit_attempt(attempt, frame_t_ms, vectors, usable, config)
+    extra = validation_dots(events, attempt.start_t) if config.calib_fit_validation else []
+    fit = fit_attempt(attempt, frame_t_ms, vectors, usable, config, extra)
     if fit.failed_reason is not None or fit.model is None or fit.selection is None:
         return _failed(fit.failed_reason or "fit_impossible", attempts, config,
                        valid_per_dot=fit.valid_per_dot, kept_per_dot=fit.kept_per_dot,
                        attempt=attempt, attempt_reason=reason, viewport=viewport)  # fmt: skip
     return CalibrationFit(
         "ok", None, attempt, reason, attempts, fit.valid_per_dot, fit.kept_per_dot, fit.model,
-        fit.selection, viewport, config,
+        fit.selection, viewport, config, validation_dots=tuple(extra),
     )  # fmt: skip
 
 
 # --- The stage: files in, calibration_a.json out ---
+
+
+@dataclass(frozen=True)
+class FitInputs:
+    """What a calibration fit reads from a session: frame times, feature vectors, usable rows."""
+
+    t_ms: Floats
+    vectors: Floats
+    usable: NDArray[np.bool_]
+    events: list[EventRecord]
+
+
+def fit_inputs(
+    root: Path, study_id: int, session_id: uuid.UUID, spec: PipelineSpec = SPEC_A
+) -> FitInputs:
+    derived = derived_dir(root, study_id, session_id)
+    table = pq.read_table(derived / spec.features_file)
+    a_ms, b = read_t_of_pts(derived / SYNC_FILE)
+    t = a_ms + 1000.0 * b * table["pts"].to_numpy()
+    vectors = np.stack(
+        [table[c].to_numpy(zero_copy_only=False) for c in spec.feature_columns], axis=1
+    )
+    usable = np.isfinite(vectors).all(axis=1) & ~np.asarray(table["blink"].to_pylist(), dtype=bool)
+    events = list(parse_events(events_path(root, study_id, session_id).read_bytes()))
+    return FitInputs(t, vectors, usable, events)
 
 
 def run_calibration(
@@ -428,14 +525,8 @@ def run_calibration(
     spec: PipelineSpec = SPEC_A,
 ) -> CalibrationFit:
     derived = derived_dir(root, study_id, session_id)
-    table = pq.read_table(derived / spec.features_file)
-    a_ms, b = read_t_of_pts(derived / SYNC_FILE)
-    t = a_ms + 1000.0 * b * table["pts"].to_numpy()
-    vectors = np.stack(
-        [table[c].to_numpy(zero_copy_only=False) for c in spec.feature_columns], axis=1
-    )
-    usable = np.isfinite(vectors).all(axis=1) & ~np.asarray(table["blink"].to_pylist(), dtype=bool)
-    events = parse_events(events_path(root, study_id, session_id).read_bytes())
+    inputs = fit_inputs(root, study_id, session_id, spec)
+    t, vectors, usable, events = inputs.t_ms, inputs.vectors, inputs.usable, inputs.events
     fit = replace(fit_calibration(events, t, vectors, usable, config),
                   feature_columns=spec.feature_columns)  # fmt: skip
     atomic_write_bytes(
