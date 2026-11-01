@@ -222,4 +222,6 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 ## Next step
 **T13 is done in the product**: T14 (validation dots train the calibration, held-out validation error, inclusion without it) and the 900 ms training window (DECISIONS 2026-11-01), confirmed on fresh sessions. Not adopted, by evidence: kernel ridge, blink rules, iris depth, eyeLook/squint blendshapes, separate x/y models, per-dot medians, TPS, GP, affine drift, high-passed features, dropping face size, pursuit calibration. Open: the other person's sessions (the test across people) when possible; then T12 (fresh-VM run) and T3 (browser messages). Before the pilot: rebuild the images (`docker compose up -d --build`) and re-run processed sessions from `calibration`. Pipeline B stays paused.
 
-Working state: Docker Desktop is needed for `make test` (PostgreSQL) but not for the lab; the branch `m6-hardening` is committed and not pushed.
+**Lab replay (branch `m7-lab-replay`)**: `make lab ARGS="replay <study> <code> <experiments...> --video <dot video>"` and `make lab ARGS="ui"` (page with buttons, 127.0.0.1:8765) render a film with one dot per experiment; new models `mlp`, `svr`, `gbr` (experiments `t-mlp`, `t-svr`, `t-gbr`, not yet scored on all studies). `m6-hardening` is merged (PR #7). T12, T3, T2 are minor and left open by decision of the user.
+
+Working state: Docker Desktop is needed for `make test` (PostgreSQL) but not for the lab; the lab replay work is on `m7-lab-replay`.

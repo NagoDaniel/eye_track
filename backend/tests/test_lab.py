@@ -654,7 +654,15 @@ def test_widened_blinks_add_a_margin_and_a_session_relative_score() -> None:
 
 
 def test_the_models_recover_a_known_mapping_from_dots() -> None:
-    from lab.models import fit_dotmean, fit_krr, fit_product_ridge, fit_tps
+    from lab.models import (
+        fit_dotmean,
+        fit_gbr,
+        fit_krr,
+        fit_mlp,
+        fit_product_ridge,
+        fit_svr,
+        fit_tps,
+    )
 
     rng = np.random.default_rng(3)
     n_dots, per = 18, 20
@@ -671,6 +679,9 @@ def test_the_models_recover_a_known_mapping_from_dots() -> None:
         (fit_dotmean, 15),
         (fit_tps, 20),
         (fit_krr, 60),
+        (fit_mlp, 60),
+        (fit_svr, 60),
+        (fit_gbr, 120),
     ):
         error = np.linalg.norm(fit(x, y, g, config)(test) - truth_xy, axis=1)
         assert np.median(error) < tolerance, (fit.__name__, np.median(error))
@@ -786,3 +797,104 @@ def test_blendshapes_are_extracted_with_real_mediapipe_and_used_by_an_experiment
     calibration = json.loads((derived_dir(results_dir(lab, "e8") / "data", study, sid)
                               / SPEC_A.calibration_file).read_text())  # fmt: skip
     assert calibration["feature_columns"][-2:] == ["iris_l_z", "iris_r_z"]
+
+
+# --- Replay films and the page (lab/replay.py, lab/ui.py) ---
+
+
+def _frame_count(film: Path) -> int:
+    import cv2
+
+    capture = cv2.VideoCapture(str(film))
+    try:
+        return int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    finally:
+        capture.release()
+
+
+def test_a_replay_film_shows_each_experiment_on_the_real_fixture(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    from lab.replay import render_replay
+
+    lab = tmp_path / "lab_data"
+    imported = import_study(a_session.root, sessions_root(lab), a_session.study_id,
+                            assume_dot="moving_dot")  # fmt: skip
+    code = imported[0].session.code
+    product = parse_experiment({"name": "prod", "tune_studies": [a_session.study_id],
+                                "fit_validation": "all"})  # fmt: skip
+    net = parse_experiment({"name": "net", "tune_studies": [a_session.study_id],
+                            "fit_validation": "all", "model": "mlp"})  # fmt: skip
+    seen: list[str] = []
+    film, failures = render_replay(lab, a_session.study_id, code, "moving_dot", [product, net],
+                                   lambda message, share: seen.append(message))  # fmt: skip
+    assert failures == [] and film.parent == lab / "replays" and film.suffix == ".mp4"
+    assert "running net" in seen and seen[-1] == "done"
+    assert _frame_count(film) > 30
+    # each experiment ran in its own work root, on this session only
+    for name in ("prod", "net"):
+        gaze = derived_dir(lab / "replay_work" / name / "data", a_session.study_id,
+                           a_session.session_id) / SPEC_A.gaze_file  # fmt: skip
+        assert gaze.is_file()
+
+
+def test_a_replay_of_a_video_the_session_did_not_play_is_refused(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    from lab.replay import render_replay
+    from worker.pipeline.replay import ReplayError
+
+    lab = tmp_path / "lab_data"
+    code = import_study(a_session.root, sessions_root(lab), a_session.study_id,
+                        assume_dot="moving_dot")[0].session.code  # fmt: skip
+    exp = parse_experiment({"name": "prod", "tune_studies": [a_session.study_id]})
+    with pytest.raises(ReplayError, match="did not play"):
+        render_replay(lab, a_session.study_id, code, "long_dot_1", [exp])
+    with pytest.raises(ReplayError, match="at least one"):
+        render_replay(lab, a_session.study_id, code, "moving_dot", [])
+
+
+def test_the_new_model_experiments_parse() -> None:
+    for model in ("mlp", "svr", "gbr"):
+        exp = load_experiment(EXPERIMENTS_DIR / f"t-{model}.toml")
+        assert exp.variant.model == model and exp.variant.fit_validation == "all"
+
+
+def test_the_page_lists_sessions_and_renders_a_film(
+    a_session: FixtureSession, tmp_path: Path
+) -> None:
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from lab.ui import create_app
+
+    lab = tmp_path / "lab_data"
+    code = import_study(a_session.root, sessions_root(lab), a_session.study_id,
+                        assume_dot="moving_dot")[0].session.code  # fmt: skip
+    client = TestClient(create_app(lab))
+    assert "Render film" in client.get("/").text
+    state = client.get("/api/state").json()
+    assert state["sessions"] == [{"study": a_session.study_id, "code": code,
+                                  "videos": ["moving_dot"], "label": ""}]  # fmt: skip
+    names = [e["name"] for e in state["experiments"]]
+    assert names[0] == "baseline" and {"t-mlp", "t-svr", "t-gbr", "t-krr"} <= set(names)
+    assert {"mlp", "svr", "gbr"} <= set(state["models"])
+
+    bad = {"study": a_session.study_id, "code": code, "video": "moving_dot",
+           "experiments": ["no-such-experiment"]}  # fmt: skip
+    assert client.post("/api/replay", json=bad).status_code == 404
+    body = {**bad, "experiments": [], "custom": [{"model": "ridge", "fit_validation": "all",
+                                                    "window_ms": 900}]}  # fmt: skip
+    assert client.post("/api/replay", json=body).json() == {"state": "running"}
+    assert client.post("/api/replay", json=body).status_code == 409
+    for _ in range(300):
+        job = client.get("/api/job").json()
+        if job["state"] != "running":
+            break
+        time.sleep(0.2)
+    assert job["state"] == "done", job
+    film = client.get(f"/films/{job['film']}")
+    assert film.status_code == 200 and film.headers["content-type"] == "video/mp4"
+    assert client.get("/films/..%2Fsecret").status_code == 404
+    assert job["film"] in client.get("/api/state").json()["films"]

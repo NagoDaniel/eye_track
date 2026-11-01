@@ -87,6 +87,22 @@ gaze (as measured and drift-corrected) over the video's time, in
 `make lab ARGS="diagnose [experiment]"` (E1): head pose against the calibration spread, what each
 feature group contributes to the drift, frame stamping, and a ridge-alpha sweep.
 
+## Replay films and the page
+
+A film of a dot video with each chosen experiment's gaze as a coloured dot (drift-corrected,
+smoothed), the webcam with landmarks in the corner, and each experiment's `dc_pause` in the legend.
+Each experiment is re-run on that one session (`lab_data/replay_work/`), so a film takes seconds
+plus the video's length to render; films go to `lab_data/replays/` (they contain the webcam).
+
+```
+make lab ARGS="replay 8 DE0202 baseline t-krr t-mlp --video long_dot_1"
+make lab ARGS="ui"       # the same with buttons, http://127.0.0.1:8765 (this machine only)
+```
+
+The page picks a session and a dot video, ticks experiments from `lab/experiments/` and adds custom
+variants (model, validation dots in the fit, training window, relative blink delta).
+Models added for it: `mlp` (2 x 32, L-BFGS), `svr` (RBF), `gbr` (boosted trees); see `lab/models.py`.
+
 ## Reading the numbers
 
 - **Table 1** (`moving_dot_report`): error in **viewport px** (the participant's screen in CSS px).

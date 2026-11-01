@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-11-01 — Lab replay films and a local page (dev tool, no product change)
+- Plan section: §12.2 (the debug replay's drawing helpers are reused, not changed)
+- Decision: `backend/lab` gets `replay` (a film of a dot video with the gaze of several experiments as coloured dots, each experiment re-run on that one session), `ui` (a page on 127.0.0.1 with buttons for it) and three more models (`mlp`, `svr`, `gbr`). Films go to `lab_data/replays/` (gitignored: they contain webcam video).
+- Reason: comparing models and settings by eye on the recorded dot videos; the user asked for it instead of a live browser tool (the app's debug mode already records, replays and processes a session).
+- Approved by: Nágó Dániel
+
 ## 2026-11-01 — Training window 900 ms before the click (server and browser gate)
 - Plan section: §5.5 ("the training window for the dot is from 700 ms before the click to 100 ms after it. This excludes the saccade at onset"), §8.6
 - Decision: `PipelineConfig.calib_window_before_click_ms` 700 -> **900**, and the browser gate's `TRAIN_WINDOW_BEFORE_CLICK_MS` likewise (the gate keeps using the server's method). The window after the click stays 100 ms. Validation dots are scored in the same window. The lab references `t-base` and `pre-t14` are pinned to 700 so earlier results stay reproducible.

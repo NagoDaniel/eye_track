@@ -18,9 +18,14 @@ Models (`model` in the experiment file):
 - `krr`: kernel ridge regression (RBF) on the standardised features, alpha and gamma by
   leave-one-dot-out;
 - `gp`: a Gaussian process (constant x RBF with one length scale per feature, plus white noise),
-  fitted by its marginal likelihood.
+  fitted by its marginal likelihood;
+- `mlp`: a small neural net (two hidden layers of 32, L-BFGS) on standardised features and
+  targets, the L2 penalty chosen by grouped 5-fold CV over the dots;
+- `svr`: support vector regression (RBF), one per axis, C and gamma by grouped 5-fold CV;
+- `gbr`: gradient-boosted trees, one per axis (cannot extrapolate beyond the dots it was fitted on).
 """
 
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -52,13 +57,21 @@ Floats = NDArray[np.float64]
 Ints = NDArray[np.int64]
 Bools = NDArray[np.bool_]
 
-MODELS = ("product", "ridge", "ridge_xy", "dotmean", "tps", "krr", "gp")
+MODELS = ("product", "ridge", "ridge_xy", "dotmean", "tps", "krr", "gp", "mlp", "svr", "gbr")
 EXTRA_TRAINING = ("none", "l1_rests", "l1_pursuit", "l1_both", "l1_pursuit_only")
 EXTRA_SETTLE_S = 0.5  # frames of a rest or a pursuit segment count from this long after its start
 PURSUIT_CHUNK_S = 1.0  # a pursuit segment is cut into "dots" of this length for leave-one-out
 TPS_SMOOTHING = (0.0, 1e-3, 1e-2, 1e-1, 1.0, 10.0)
 KRR_ALPHAS = (0.01, 0.1, 1.0, 10.0)
 KRR_GAMMAS = (0.01, 0.03, 0.1, 0.3)  # times 1 / number of features
+CV_FOLDS = 5  # grouped folds (by dot) for the models that are too slow for leave-one-dot-out
+MLP_HIDDEN = (32, 32)
+MLP_ALPHAS = (0.1, 3.0)
+MLP_MAX_ITER = 500
+SVR_CS = (1.0, 10.0, 100.0)
+SVR_GAMMAS = (0.03, 0.1, 0.3)  # times 1 / number of features
+SVR_EPSILON = 0.05  # in standard deviations of the target
+GBR_MAX_DEPTH, GBR_MAX_ITER, GBR_LEARNING_RATE = 3, 150, 0.1
 
 
 @dataclass(frozen=True)
@@ -325,6 +338,81 @@ def fit_gp(x: Floats, y: Floats, g: Ints, config: PipelineConfig) -> Predictor:
     return lambda rows: np.asarray(model.predict((rows - mean) / std), dtype=np.float64)
 
 
+def _grouped_folds(g: Ints) -> list[tuple[Ints, Ints]]:
+    from sklearn.model_selection import GroupKFold
+
+    return list(GroupKFold(n_splits=min(CV_FOLDS, len(np.unique(g)))).split(g, groups=g))
+
+
+def _standardised(x: Floats, y: Floats) -> tuple[Floats, Floats, Floats, Floats, Floats, Floats]:
+    xm, xs = _standardise(x)
+    ym, ys = _standardise(y)
+    return (x - xm) / xs, (y - ym) / ys, xm, xs, ym, ys
+
+
+def fit_mlp(x: Floats, y: Floats, g: Ints, config: PipelineConfig) -> Predictor:
+    from sklearn.exceptions import ConvergenceWarning
+    from sklearn.neural_network import MLPRegressor
+
+    def net(alpha: float) -> MLPRegressor:
+        return MLPRegressor(hidden_layer_sizes=MLP_HIDDEN, solver="lbfgs", alpha=alpha,
+                            max_iter=MLP_MAX_ITER, random_state=0)  # fmt: skip
+
+    keep = _inliers(x, y, g, config)
+    x, y, g = x[keep], y[keep], g[keep]
+    z, t, xm, xs, ym, ys = _standardised(x, y)
+    folds = _grouped_folds(g)
+    # L-BFGS often stops at its iteration cap on noisy dots; the CV error already judges the result
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        errors = [
+            sum(float(np.linalg.norm(net(a).fit(z[tr], t[tr]).predict(z[te]) - t[te],
+                                     axis=1).mean()) for tr, te in folds)
+            for a in MLP_ALPHAS
+        ]  # fmt: skip
+        model = net(MLP_ALPHAS[int(np.argmin(errors))]).fit(z, t)
+    return lambda rows: np.asarray(model.predict((rows - xm) / xs), dtype=np.float64) * ys + ym
+
+
+def fit_svr(x: Floats, y: Floats, g: Ints, config: PipelineConfig) -> Predictor:
+    from sklearn.multioutput import MultiOutputRegressor
+    from sklearn.svm import SVR
+
+    def svr(c: float, gamma: float) -> MultiOutputRegressor:
+        return MultiOutputRegressor(SVR(kernel="rbf", C=c, gamma=gamma, epsilon=SVR_EPSILON))
+
+    keep = _inliers(x, y, g, config)
+    x, y, g = x[keep], y[keep], g[keep]
+    z, t, xm, xs, ym, ys = _standardised(x, y)
+    folds = _grouped_folds(g)
+    best: tuple[float, float, float] = (float("inf"), SVR_CS[0], SVR_GAMMAS[0] / x.shape[1])
+    for c in SVR_CS:
+        for gamma in SVR_GAMMAS:
+            gm = gamma / x.shape[1]
+            err = sum(
+                float(np.linalg.norm(svr(c, gm).fit(z[tr], t[tr]).predict(z[te]) - t[te],
+                                     axis=1).mean())
+                for tr, te in folds
+            )  # fmt: skip
+            if err < best[0]:
+                best = (err, c, gm)
+    model = svr(best[1], best[2]).fit(z, t)
+    return lambda rows: np.asarray(model.predict((rows - xm) / xs), dtype=np.float64) * ys + ym
+
+
+def fit_gbr(x: Floats, y: Floats, g: Ints, config: PipelineConfig) -> Predictor:
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.multioutput import MultiOutputRegressor
+
+    keep = _inliers(x, y, g, config)
+    boost = HistGradientBoostingRegressor(
+        max_depth=GBR_MAX_DEPTH, max_iter=GBR_MAX_ITER, learning_rate=GBR_LEARNING_RATE,
+        random_state=0,
+    )  # fmt: skip
+    model = MultiOutputRegressor(boost).fit(x[keep], y[keep])
+    return lambda rows: np.asarray(model.predict(rows), dtype=np.float64)
+
+
 # --- The session's prediction -------------------------------------------------------------------
 
 
@@ -362,7 +450,8 @@ def predict_with_model(
     else:
         x = m.vectors(spec.columns)
         fit = {"ridge": fit_product_ridge, "dotmean": fit_dotmean, "tps": fit_tps,
-               "krr": fit_krr, "gp": fit_gp}[spec.model]  # fmt: skip
+               "krr": fit_krr, "gp": fit_gp, "mlp": fit_mlp, "svr": fit_svr,
+               "gbr": fit_gbr}[spec.model]  # fmt: skip
         out = fit(x[training.rows], y, g, config)(x[usable])
     x_all[usable], y_all[usable] = out[:, 0], out[:, 1]
     events = parse_events(events_path(root, ref.study_id, ref.session_id).read_bytes())
