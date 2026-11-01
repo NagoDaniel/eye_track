@@ -1,0 +1,8 @@
+name = "s8x-rests"
+description = "Item 5: plus the 40 rests of video 1 as extra calibration points (score video 2 only)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "all"
+model = "ridge"
+extra_training = "l1_rests"

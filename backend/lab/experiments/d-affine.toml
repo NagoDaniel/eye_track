@@ -1,0 +1,6 @@
+name = "d-affine"
+description = "E6: drift correction with a gain and offset per axis per validation block"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+drift = "affine"

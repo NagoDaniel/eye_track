@@ -1,0 +1,8 @@
+name = "s8x-pursuit-only"
+description = "Item 5: only the 18 s of pursuit of video 1, no clicked dots at all (score video 2 only)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "all"
+model = "ridge"
+extra_training = "l1_pursuit_only"

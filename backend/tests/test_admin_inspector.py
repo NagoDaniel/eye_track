@@ -98,6 +98,9 @@ def test_the_page_shows_the_report_the_stages_and_the_plots(
     assert "Quality report" in html and "Included in the analysis" in html
     assert "Valid gaze during playback" in html and "Validation error" in html
     assert "before_video" in html and "after_last_video" in html  # the validation blocks
+    report = json.loads((data_derived(processed) / "quality.json").read_text())
+    held_out_note = "fitted without that block" in html
+    assert held_out_note == bool(report["validation"]["held_out"])  # T14 says so
     for stage in STAGE_NAMES:
         assert f"<td>{stage}</td>" in html, stage
     # One re-run button per stage, each a form with the CSRF token and the stage name.
@@ -118,6 +121,26 @@ def test_the_quality_numbers_come_from_the_report(admin: Admin, processed: Synth
     assert f"{valid} %" in html
     assert f"{report['webcam']['fps_mean']:.1f} frames/s" in html
     assert "1 / 1" in html  # one fullscreen exit, one stall in the designed session
+
+
+def test_dropped_video_frames_are_shown_and_a_high_share_is_a_warning(
+    admin: Admin, processed: Synthetic, migrated_engine: Engine
+) -> None:
+    html = page(admin, processed)
+    assert "Dropped video frames" in html and "video 1: 0 of 200 (0 %)" in html
+    assert "the computer could not keep up" not in html
+    with DbSession(migrated_engine) as db:
+        row = db.get_one(SessionRow, processed.session_id)
+        quality = json.loads(json.dumps(row.quality))
+        quality["stimulus_frames"]["per_video"]["1"].update(
+            {"presented": 150, "dropped": 50, "dropped_fraction": 0.25}
+        )
+        quality["stimulus_frames"]["flagged"] = True
+        row.quality = quality
+        db.commit()
+    html = page(admin, processed)
+    assert "video 1: 50 of 200 (25 %)" in html
+    assert "more than 10 %: the computer could not keep up with the video" in html
 
 
 def data_derived(s: Synthetic) -> Path:

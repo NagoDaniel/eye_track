@@ -1,0 +1,49 @@
+E7 (validation dots in the calibration fit) and E6 (drift correction per block), 2026-10-31. Pipeline A, viewport px, against baseline.
+Rule: tune on study 7, check on study 6; better = tuning median down, held-out median not up, no session worse than +10 %.
+nf- = without face_ratio (f-no-face). fit_validation: before_video / all. drift: affine = gain and offset per axis per validation block.
+
+v-before: E7: calibration fit also on the validation dots before the video
+  A dc_pause  tune median 237 -> 198, held out 165 -> 147, worse: BB0101(6) +98%  => not better
+  A pause     tune median 228 -> 207, held out 237 -> 172, worse: BB0101(6) +110%  => not better
+
+v-all: E7: calibration fit also on all validation dots (before and after the video)
+  A dc_pause  tune median 237 -> 178, held out 165 -> 150  => BETTER
+  A pause     tune median 228 -> 175, held out 237 -> 150  => BETTER
+
+d-affine: E6: drift correction with a gain and offset per axis per validation block
+  A dc_pause  tune median 237 -> 241, held out 165 -> 157, worse: EE0202(7) +29%  => not better
+  A pause     tune median 228 -> 228, held out 237 -> 237  => not better
+
+vd-all-affine: E7 + E6: all validation dots in the fit, affine drift correction
+  A dc_pause  tune median 237 -> 173, held out 165 -> 148  => BETTER
+  A pause     tune median 228 -> 175, held out 237 -> 150  => BETTER
+
+nf-v-before: f-no-face + E7 (validation dots before the video)
+  A dc_pause  tune median 237 -> 185, held out 165 -> 148  => BETTER
+  A pause     tune median 228 -> 183, held out 237 -> 158, worse: BB0101(6) +37%  => not better
+
+nf-v-all: f-no-face + E7 (all validation dots)
+  A dc_pause  tune median 237 -> 174, held out 165 -> 157  => BETTER
+  A pause     tune median 228 -> 168, held out 237 -> 156  => BETTER
+
+nf-d-affine: f-no-face + E6 (affine drift)
+  A dc_pause  tune median 237 -> 192, held out 165 -> 168, worse: CC0101(6) +18%, AA0101(6) +17%  => not better
+  A pause     tune median 228 -> 185, held out 237 -> 205, worse: EE0202(7) +11%, BB0101(6) +31%  => not better
+
+nf-vd-all-affine: f-no-face + E7 (all validation dots) + E6 (affine drift)
+  A dc_pause  tune median 237 -> 172, held out 165 -> 160  => BETTER
+  A pause     tune median 228 -> 168, held out 237 -> 156  => BETTER
+
+Session by session, v-all against baseline:
+                     |      dc_pause      |       pause        |     dc_median      |       median       |        move       
+study code    pl     |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg
+    7 GG0101  a      |    285    204 -28% |    218    189 -13% |    281    207 -26% |    221    192 -13% |    230    208  -9%
+    7 DD0202  a      |    152    140  -8% |    161    140 -13% |    155    145  -7% |    165    147 -11% |    181    180  -0%
+    7 EE0202  a      |    143    129 -10% |    155    127 -18% |    150    133 -11% |    162    132 -19% |    182    162 -11%
+    7 AA0101  a      |    263    229 -13% |    272    231 -15% |    281    241 -14% |    286    245 -14% |    319    280 -12%
+    7 BB0202  a      |    237    160 -32% |    247    161 -35% |    246    174 -29% |    260    173 -33% |    292    199 -32%
+    7 FF0101  a      |    237    196 -17% |    237    191 -19% |    233    191 -18% |    237    188 -21% |    236    176 -25%
+    6 DD0101  a      |    173    183  +6% |    191    182  -5% |    181    191  +6% |    199    189  -5% |    205    208  +2%
+    6 BB0101  a      |    249    140 -44% |    247    140 -43% |    260    158 -40% |    257    157 -39% |    273    208 -24%
+    6 CC0101  a      |    157    160  +2% |    246    161 -35% |    174    169  -3% |    249    168 -33% |    262    190 -27%
+    6 AA0101  a      |    129    130  +1% |    228    132 -42% |    136    145  +7% |    255    149 -41% |    340    218 -36%

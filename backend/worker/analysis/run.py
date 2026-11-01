@@ -14,7 +14,8 @@ from typing import Any
 
 from app.analysis_runs import RUN_FILE
 from app.storage import analysis_run_dir, atomic_write_bytes
-from worker.analysis.config import AnalysisConfig, git_hash
+from app.version import git_hash
+from worker.analysis.config import AnalysisConfig
 from worker.analysis.select import Selection
 
 RUN_VERSION = 1

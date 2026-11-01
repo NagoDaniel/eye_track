@@ -47,9 +47,14 @@ compose up -d --build --wait --wait-timeout 600 >/dev/null 2>&1 || {
 printf '%s\n' "$admin_password" | compose exec -T api python cli.py create-admin \
   --username e2e --password-stdin >/dev/null
 
-echo "== test video (3 s, H.264, made with the ffmpeg in the backend image)"
+# E2E_THROTTLE="1,4,6" runs only the playback-under-load measurement (e2e/tests/throttle.spec.ts):
+# a 20 s 720p video and the browser's CPU slowed down by each factor. It prints numbers; nothing in
+# it fails a run (DECISIONS 2026-10-25). Run it with `make e2e-throttle`.
+clip_source="testsrc=duration=3:size=320x240:rate=25"
+[ -z "${E2E_THROTTLE:-}" ] || clip_source="testsrc2=duration=20:size=1280x720:rate=25"
+echo "== test video ($clip_source, H.264, made with the ffmpeg in the backend image)"
 docker run --rm -u "$(id -u):$(id -g)" -v "$work:/w" --entrypoint ffmpeg eyetrack-backend:local \
-  -loglevel error -f lavfi -i testsrc=duration=3:size=320x240:rate=25 -pix_fmt yuv420p -c:v libx264 \
+  -loglevel error -f lavfi -i "$clip_source" -pix_fmt yuv420p -c:v libx264 \
   /w/clip.mp4 || fail "could not create the test video"
 
 echo "== fake camera clip (the committed face clip as .y4m, made with the ffmpeg in the backend image)"
@@ -61,10 +66,14 @@ echo "== browser tests"
 # Chained with && on purpose: `set -e` is ignored inside a subshell that is followed by `||`.
 install_browser="npx playwright install chromium"
 [ -z "${CI:-}" ] || install_browser="npx playwright install --with-deps chromium"
+specs=()
+[ -z "${E2E_THROTTLE:-}" ] || specs=(throttle)  # only the measurement: it makes its own sessions
 ( cd e2e && npm ci >/dev/null && $install_browser >/dev/null \
   && E2E_BASE_URL="https://localhost:$https_port" E2E_ADMIN_USER=e2e E2E_ADMIN_PASSWORD="$admin_password" \
-     E2E_VIDEO="$work/clip.mp4" E2E_FACE_Y4M="$work/face.y4m" npx playwright test ) \
+     E2E_VIDEO="$work/clip.mp4" E2E_FACE_Y4M="$work/face.y4m" E2E_THROTTLE="${E2E_THROTTLE:-}" \
+     npx playwright test "${specs[@]+"${specs[@]}"}" ) \
   || { compose logs --tail 60 api proxy >&2; fail "playwright tests failed"; }
+if [ -n "${E2E_THROTTLE:-}" ]; then echo "THROTTLE MEASUREMENT DONE"; exit 0; fi
 
 echo "== raw data on the server is complete (PLAN §14, milestone 2)"
 python3 - "$project" "$envf" <<'PY'

@@ -7,8 +7,8 @@ import type { Page } from "@playwright/test";
  * action: consent box, a Continue / I understand button, the fullscreen button, or a calibration/validation dot
  * (early clicks on a dot only flash it, so repeating is harmless).
  */
-export async function runSession(page: Page, until: string = "Thank you"): Promise<void> {
-  const deadline = Date.now() + 100_000;
+export async function runSession(page: Page, until: string = "Thank you", timeoutMs: number = 100_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await page.getByRole("heading", { name: until }).isVisible()) return;
     const box = page.locator("#consent-box");

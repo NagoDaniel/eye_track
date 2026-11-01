@@ -66,7 +66,8 @@ def test_process_runs_the_pipeline_and_prints_the_stages(
         "plots",
     ):
         assert stage in result.output
-    assert "included in the analysis: False" in result.output
+    # T14: the validation error does not decide inclusion; the fake camera's gaze is valid enough
+    assert "included in the analysis: True" in result.output
     assert (derived(here) / "quality.json").exists()
     with Db(migrated_engine) as db:
         assert db.get_one(SessionRow, here.session_id).status is SessionStatus.PROCESSED

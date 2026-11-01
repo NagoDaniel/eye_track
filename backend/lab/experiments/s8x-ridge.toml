@@ -1,0 +1,8 @@
+name = "s8x-ridge"
+description = "Item 5 reference: study 8, lab ridge on calibration and all validation dots (score video 2 only)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "all"
+model = "ridge"
+

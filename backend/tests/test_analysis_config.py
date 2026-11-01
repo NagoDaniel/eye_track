@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from worker.analysis.config import AnalysisConfig, git_hash
+from app.version import git_hash
+from worker.analysis.config import AnalysisConfig
 
 
 def test_defaults_are_the_plan_values() -> None:

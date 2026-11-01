@@ -103,6 +103,8 @@ Containers restart automatically (`restart: unless-stopped`) and Docker starts a
 
 ### Running a study (admin)
 
+**The order of work for a study (before, during, after, what to expect from the data) is in [`docs/RUNNING_A_STUDY.md`](docs/RUNNING_A_STUDY.md); this section describes the admin screens.**
+
 Log in at `https://<your domain>/admin/login`.
 
 1. **Videos**: upload the stimulus MP4 (title + file). H.264 with a constant frame rate is best; other files are accepted with a warning. A video that a study or an existing session uses cannot be deleted.
@@ -122,6 +124,8 @@ Log in at `https://<your domain>/admin/login`.
 8. **Comparing the pipelines**: in *Analysis*, *Compare the pipelines* takes a study and, for every session that has both pipelines (a successful calibration in both, Pipeline B not stale; A's inclusion decision does not matter), puts the validation error, the precision and the valid gaze side by side, with a paired Wilcoxon test per metric (a p-value from six sessions on), a CSV, a Markdown report and box plots; `cli.py compare <study_id>` does the same from a terminal. *Analysis* can also be run on Pipeline B's gaze (the *Pipeline* choice, `cli.py analyze --pipeline b`); sessions without a fresh Pipeline B are listed as left out.
 
 **Moving a whole study to another machine.** On the study's page *Export the study* downloads one ZIP (settings, stimulus videos, sessions with their raw and derived files, analyses); from a terminal `cli.py export-study <id> [--out f.zip] [--no-raw-video] [--include-debug] [--no-analysis]`. Debug sessions are left out unless you ask. On the other machine `cli.py import-study f.zip` creates the study, its videos and its sessions under the same ids (it refuses if the study or a different video is already there). The ZIP holds the participants' webcam video: treat it as personal data.
+
+**Diagnostics.** *Diagnostics* in the admin menu shows whether the worker is alive (its last heartbeat), the jobs running, waiting and failed (with the end of the log of the last failures), the free disk space and the size of `studies`, `analysis` and `videos`, the version of the running code, and the browsers, screens and cameras of the last 20 sessions.
 
 **What the worker does.** The *Studies* list shows which study has jobs running or waiting. A study's page has a *Jobs* section: what runs, what waits, and the last ten finished jobs (processing, Pipeline B, debug replays, analyses, comparisons) with the participant or video each is for and the reason a failed one failed. **Cancel** ends a waiting job at once; a running job is asked to stop and the worker stops it within seconds (between its steps, and every few frames in the long ones; a step that cannot be interrupted finishes first). A stopped processing job leaves the session as it was before; a stopped Pipeline B job leaves no half-written files. The same page lists the analyses and comparisons made with the study, with links.
 
@@ -196,6 +200,8 @@ make lint                          # ruff, mypy --strict, eslint, tsc --strict
 make test                          # backend (real PostgreSQL in a container) and frontend unit tests
 ```
 
+To look at a processed session by hand, open `notebooks/inspect_session.ipynb` (PLAN §12.3): set its one path variable to the session's `derived/` directory and it prints the quality report and stage table and draws the pipeline's own debug plots, with Pipeline B's too when it has run. Start it in the backend's environment, e.g. `cd backend && uv run --with jupyterlab jupyter lab ../notebooks/inspect_session.ipynb`; `backend/tests/test_notebook.py` runs it on the fixture session.
+
 Slower suites that build and start real containers (they use temporary directories and never touch your `.env` or `data/`):
 
 | Command | Checks |
@@ -207,6 +213,7 @@ Slower suites that build and start real containers (they use temporary directori
 | `make test-backup` | backup, destroy everything, restore, compare every row and file |
 | `make test-fetch-models` | verified model download |
 | `make test-install-docker` | `scripts/install-docker.sh` in fresh Ubuntu and Debian containers |
+| `make e2e-throttle` | how playback holds up on a slow computer: the same session with the browser's CPU slowed down 1, 4 and 6 times (`E2E_THROTTLE="1,2,4"` to change); prints dropped video frames, stalls and the webcam rate, never fails on them |
 | `make e2e` | Playwright end-to-end test: real Chromium with a fake camera that plays the recorded face `e2e/fixtures/face.mp4`, against the real stack: complete raw data per session (webcam WebM, face features, stimulus frames, events), resume after a reload, debug mode |
 
 CI (`.github/workflows/ci.yml`) runs the same targets.

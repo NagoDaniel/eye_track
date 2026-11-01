@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics{% endblock %}
+{% block width %}72rem{% endblock %}
+{% macro size(n) %}{% if n >= 1073741824 %}{{ "%.1f"|format(n / 1073741824) }} GB{% elif n >= 1048576 %}{{ "%.0f"|format(n / 1048576) }} MB{% else %}{{ "%.0f"|format(n / 1024) }} KB{% endif %}{% endmacro %}
+{% macro age(s) %}{% if s is none %}–{% elif s < 120 %}{{ "%.0f"|format(s) }} s{% elif s < 7200 %}{{ "%.0f"|format(s / 60) }} min{% else %}{{ "%.1f"|format(s / 3600) }} h{% endif %}{% endmacro %}
+{% block body %}
+<h1>Diagnostics</h1>
+<p class="muted">What the server is doing now. Nothing here shows participant video.</p>
+
+<h2>The running code</h2>
+<p>Version: {% if report.version %}<code>{{ report.version }}</code>{% else %}<span class="muted">not known (the image was built without <code>GIT_SHA</code>)</span>{% endif %}</p>
+
+<h2>Worker</h2>
+{% if report.worker.workers == 0 %}
+<p class="error">No worker has reported yet: jobs are not being processed.</p>
+{% elif report.worker.alive %}
+<p class="ok">Alive: the last heartbeat was {{ age(report.worker.age_s) }} ago ({{ report.worker.workers }} worker{{ "s" if report.worker.workers != 1 }}).</p>
+{% else %}
+<p class="error">Not alive: the last heartbeat was {{ age(report.worker.age_s) }} ago. Jobs wait until the worker is running again (<code>docker compose ps</code>, <code>docker compose logs worker</code>).</p>
+{% endif %}
+
+<h2>Jobs</h2>
+<table>
+  <tr><th>Running</th><td class="num">{{ report.queue.running }}</td><th>Queued</th><td class="num">{{ report.queue.queued }}{% if report.queue.oldest_queued_age_s is not none %} <span class="muted">(oldest waits {{ age(report.queue.oldest_queued_age_s) }})</span>{% endif %}</td></tr>
+  <tr><th>Failed</th><td class="num">{{ report.queue.failed }}</td><th>Done</th><td class="num">{{ report.queue.done }}</td></tr>
+</table>
+{% if report.queue.last_failed %}
+<h3>The last failed jobs</h3>
+<table>
+  <thead><tr><th class="num">Job</th><th>Kind</th><th>Finished</th><th>End of its log</th></tr></thead>
+  <tbody>
+  {% for j in report.queue.last_failed %}
+    <tr><td class="num">{{ j.id }}</td><td>{{ j.kind }}</td><td>{{ j.finished_at.strftime("%Y-%m-%d %H:%M") if j.finished_at else "–" }}</td><td><pre>{{ j.log }}</pre></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Disk</h2>
+<p>The volume of the data folder: {{ size(report.disk.used) }} used of {{ size(report.disk.total) }}, <strong{% if report.disk.free < report.disk.total * 0.1 %} class="error"{% endif %}>{{ size(report.disk.free) }} free</strong>.</p>
+<table>
+  <thead><tr><th>Folder of the data folder</th><th class="num">Size</th></tr></thead>
+  <tbody>
+  {% for name, n in report.disk.folders.items() %}
+    <tr><td><code>{{ name }}</code></td><td class="num">{{ size(n) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Browsers and cameras of the last {{ report.browsers.sessions | length }} sessions</h2>
+{% if report.browsers.sessions %}
+<p>{% for name, n in report.browsers.counts.items() %}{{ name }}: {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+<table>
+  <thead><tr><th>Session</th><th>Started</th><th>Browser</th><th>Platform</th><th class="num">Cores</th><th>Screen</th><th>Camera</th></tr></thead>
+  <tbody>
+  {% for s in report.browsers.sessions %}
+    <tr>
+      <td><a href="/admin/sessions/{{ s.id }}"><code>{{ s.id[:8] }}</code></a></td>
+      <td>{{ s.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ s.browser }}</td>
+      <td>{{ s.platform or "–" }}</td>
+      <td class="num">{{ s.cores if s.cores is not none else "–" }}</td>
+      <td>{% if s.screen %}{{ s.screen.width }} x {{ s.screen.height }}{% else %}–{% endif %}</td>
+      <td>{% if s.camera %}{{ s.camera.width }} x {{ s.camera.height }}{% if s.camera.frameRate %} at {{ "%.0f"|format(s.camera.frameRate) }} fps{% endif %}{% else %}–{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No sessions yet.</p>
+{% endif %}
+{% endblock %}

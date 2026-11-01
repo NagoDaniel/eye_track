@@ -1,0 +1,73 @@
+Study 8 (2026-10-31): the long moving-dot recording, 4 sessions of the human (DA0202, DB0202 with glasses; DC0101, DD0101 without; DD0202 was an abandoned start, not processed). Two 113.6 s dot videos (L1, L2) with a validation block between them. Never used to choose anything before this run.
+Pipeline A, viewport px; one row per session and video; rule: median over the rows down, no row worse than +10 %.
+
+Baseline (the product pipeline):
+1. distance to the dot in viewport px (moving_dot_report); scale: viewport px / video px;
+   pursuit = median during the smooth-pursuit segments (long videos only)
+study code    vid pl  valid unc med unc pause unc move dc med dc pause dc move dc p90 lag ms <=thr% scale pursuit
+    8 DC0101  L1  a    0.93     203       185      222    157      149     168    339    180     76  1.34     223
+    8 DC0101  L2  a    0.94     248       240      260    142      140     145    327    120     66  1.34     277
+    8 DB0202  L1  a    0.95     256       250      271    315      320     309    558    240     63  1.34     245
+    8 DB0202  L2  a    0.88     345       362      336    311      306     323    618    260     42  1.34     308
+    8 DA0202  L1  a    0.95     207       184      240    170      160     183    356    140     77  1.34     260
+    8 DA0202  L2  a    0.89     356       326      397    199      187     216    391    140     36  1.34     469
+    8 DD0101  L1  a    0.97     187       185      189    185      181     189    398    120     79  1.34     159
+    8 DD0101  L2  a    0.93     216       218      215    183      200     169    407    140     73  1.34     200
+
+s8-v-all (against s8-baseline): Study 8: calibration fit also on all validation dots (T14 as tested on study 7)
+  A dc_pause  tune median 184 -> 149  => BETTER
+  A pause     tune median 229 -> 153  => BETTER
+
+s8-v-bb (against s8-baseline): Study 8: fit also on the validation dots before and between the videos, not after (honest T14: video 2 scored on a model that saw nothing after it started)
+  A dc_pause  tune median 184 -> 150  => BETTER
+  A pause     tune median 229 -> 171  => BETTER
+
+s8-v-before (against s8-baseline): Study 8: fit also on the validation dots before the first video
+  A dc_pause  tune median 184 -> 153, worse: DB0202/L2(8) +17%  => not better
+  A pause     tune median 229 -> 194  => BETTER
+
+s8-nf (against s8-baseline): Study 8: without face_ratio (f-no-face)
+  A dc_pause  tune median 184 -> 178, worse: DC0101/L1(8) +17%, DC0101/L2(8) +28%, DA0202/L1(8) +10%  => not better
+  A pause     tune median 229 -> 182  => BETTER
+
+s8-nf-v-all (against s8-baseline): Study 8: without face_ratio, fit on all validation dots
+  A dc_pause  tune median 184 -> 150  => BETTER
+  A pause     tune median 229 -> 152  => BETTER
+
+s8-blink0p3 (against s8-baseline): Study 8: product pipeline, blink when either eyeBlink score > 0.3 (product: 0.5)
+  A dc_pause  tune median 184 -> 185  => not better
+  A pause     tune median 229 -> 231  => not better
+
+s8-blink0p2 (against s8-baseline): Study 8: product pipeline, blink when either eyeBlink score > 0.2 (product: 0.5)
+  A dc_pause  tune median 184 -> 150  => BETTER
+  A pause     tune median 229 -> 225, worse: DA0202/L2(8) +12%  => not better
+
+s8-v-all-blink0p3 (against s8-v-all): Study 8: fit on all validation dots, blink when either eyeBlink score > 0.3 (product: 0.5)
+  A dc_pause  tune median 149 -> 145  => BETTER
+  A pause     tune median 153 -> 150  => BETTER
+
+s8-v-all-blink0p2 (against s8-v-all): Study 8: fit on all validation dots, blink when either eyeBlink score > 0.2 (product: 0.5)
+  A dc_pause  tune median 149 -> 138, worse: DB0202/L1(8) +14%  => not better
+  A pause     tune median 153 -> 138, worse: DB0202/L1(8) +11%  => not better
+
+Session by session, s8-v-bb (honest T14) against s8-baseline:
+                     |      dc_pause      |       pause        |     dc_median      |       median       |        move       
+study code    vid pl  |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg
+    8 DC0101  L1  a   |    149    138  -8% |    185    139 -25% |    157    142  -9% |    203    145 -28% |    222    150 -32%
+    8 DC0101  L2  a   |    140    123 -12% |    240    150 -38% |    142    133  -6% |    248    162 -35% |    260    180 -31%
+    8 DB0202  L1  a   |    320    211 -34% |    250    205 -18% |    315    208 -34% |    256    203 -21% |    271    199 -27%
+    8 DB0202  L2  a   |    306    194 -37% |    362    221 -39% |    311    203 -35% |    345    233 -33% |    336    250 -26%
+    8 DA0202  L1  a   |    160    163  +2% |    184    162 -12% |    170    171  +0% |    207    167 -19% |    240    176 -27%
+    8 DA0202  L2  a   |    187    175  -6% |    326    180 -45% |    199    189  -5% |    356    200 -44% |    397    225 -43%
+    8 DD0101  L1  a   |    181    124 -31% |    185    126 -32% |    185    137 -26% |    187    143 -24% |    189    168 -11%
+    8 DD0101  L2  a   |    200    137 -31% |    218    186 -14% |    183    137 -25% |    216    181 -16% |    215    173 -19%
+
+Blink limit on studies 7 and 6 (against v-all):
+v-all-blink0p3
+  A dc_pause  tune median 178 -> 167, held out 150 -> 151  => not better
+  A pause     tune median 175 -> 160, held out 150 -> 150  => BETTER
+v-all-blink0p2
+  A dc_pause  tune median 178 -> 181, held out 150 -> 129, missing: [(7, 'GG0101', 'a', 'moving_dot'), (7, 'DD0202', 'a', 'moving_dot'), (7,
+  A pause     tune median 175 -> 172, held out 150 -> 132, missing: [(7, 'GG0101', 'a', 'moving_dot'), (7, 'DD0202', 'a', 'moving_dot'), (7,
+
+Vertical error during the rests by eyeBlink score (s8-v-all, all frames counted valid): score 0.2-0.3 median +67 px (gaze below the dot), 19 % of frames more than 150 px below; 0.3-0.4 +190 px, 59 %; 0.4-0.5 +512 px (9 frames); below 0.2 +12 to +15 px.

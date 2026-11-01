@@ -1,0 +1,11 @@
+name = "t-krr-win900-rel15"
+description = "Items 7 + 4 + 1: kernel ridge, 900 ms window, blink score 0.15 above the session median"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "krr"
+blink_relative_delta = 0.15
+
+[config]
+calib_window_before_click_ms = 900

@@ -1,0 +1,54 @@
+E8 (2026-11-01): more eye signal from MediaPipe: the 52 blendshapes (eyeLook up/down/in/out, eyeSquint, eyeWide) and the iris depth relative to the eye corners, extracted once per session in the lab (`make lab ARGS="extract-blendshapes 7 6 8"`, native MediaPipe; the eyeBlink scores agree with the product's to 1e-4).
+Pipeline A, viewport px, against t-base (T14: calibration and all validation dots in the fit). Rule: study 7 median down, studies 6+8 median not up, no row worse than +10 %.
+
+t-e8-ud: E8: T14 plus the eyeLookUp/Down blendshapes of both eyes
+  A dc_pause  tune median 178 -> 179, held out 150 -> 146, worse: DD0202/dot(7) +18%, BB0101/dot(6) +121%, DA0202/L2(8) +10%  => not better
+  A pause     tune median 175 -> 173, held out 153 -> 149, worse: DD0202/dot(7) +19%, BB0101/dot(6) +123%  => not better
+
+t-e8-look: E8: T14 plus all eight eyeLook blendshapes
+  A dc_pause  tune median 178 -> 170, held out 150 -> 144, worse: DD0202/dot(7) +14%, BB0101/dot(6) +13%, DD0101/L1(8) +23%, DD0101/L2(8) +23%  => not better
+  A pause     tune median 175 -> 169, held out 153 -> 149, worse: DD0202/dot(7) +13%, BB0101/dot(6) +15%, DD0101/L1(8) +28%, DD0101/L2(8) +18%  => not better
+
+t-e8-z: E8: T14 plus the iris depth of both eyes
+  A dc_pause  tune median 178 -> 178, held out 150 -> 139  => BETTER
+  A pause     tune median 175 -> 173, held out 153 -> 141  => BETTER
+
+t-e8-squint: E8: T14 plus eyeSquint and eyeWide of both eyes
+  A dc_pause  tune median 178 -> 154, held out 150 -> 141, worse: BB0101/dot(6) +53%  => not better
+  A pause     tune median 175 -> 155, held out 153 -> 146, worse: BB0101/dot(6) +53%  => not better
+
+t-e8-all: E8: T14 plus all eight eyeLook blendshapes and the iris depth
+  A dc_pause  tune median 178 -> 175, held out 150 -> 138, worse: DD0202/dot(7) +16%, BB0101/dot(6) +24%, DD0101/L1(8) +25%  => not better
+  A pause     tune median 175 -> 177, held out 153 -> 143, worse: DD0202/dot(7) +18%, BB0101/dot(6) +24%, DD0101/L1(8) +28%  => not better
+
+t-krr-win900-rel15-z: Best of items 1-7 (kernel ridge, 900 ms window, blink score 0.15 above the session median) plus the iris depth (E8)
+  A dc_pause  tune median 178 -> 162, held out 150 -> 137  => BETTER
+  A pause     tune median 175 -> 153, held out 153 -> 137  => BETTER
+
+t-win900-rel15-z: Ridge (product model), 900 ms window, blink score 0.15 above the session median, plus the iris depth (E8)
+  A dc_pause  tune median 178 -> 164, held out 150 -> 134  => BETTER
+  A pause     tune median 175 -> 158, held out 153 -> 136  => BETTER
+
+t-krr-win900-rel15-z against t-krr-win900-rel15 (does the iris depth add to the kernel-ridge combination?):
+  A dc_pause  tune median 156 -> 162, held out 137 -> 137  => not better
+  A pause     tune median 150 -> 153, held out 138 -> 137  => not better
+
+Session by session, t-win900-rel15-z against t-base:
+                     |      dc_pause      |       pause        |     dc_median      |       median       |        move       
+study code    vid pl  |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg
+    7 GG0101  dot a   |    204    186  -9% |    189    176  -7% |    207    191  -8% |    192    184  -4% |    208    215  +3%
+    7 DD0202  dot a   |    140    113 -19% |    140    115 -18% |    145    117 -19% |    147    118 -20% |    180    132 -27%
+    7 EE0202  dot a   |    129    125  -3% |    127    131  +3% |    133    130  -2% |    132    133  +1% |    162    141 -13%
+    7 AA0101  dot a   |    229    210  -8% |    231    208 -10% |    241    224  -7% |    245    228  -7% |    280    246 -12%
+    7 BB0202  dot a   |    160    142 -11% |    161    141 -12% |    174    163  -6% |    173    157  -9% |    199    195  -2%
+    7 FF0101  dot a   |    196    187  -5% |    191    178  -7% |    191    186  -3% |    188    180  -4% |    176    183  +4%
+    6 DD0101  dot a   |    183    128 -30% |    182    132 -27% |    191    138 -28% |    189    142 -25% |    208    168 -19%
+    6 BB0101  dot a   |    140    132  -6% |    140    133  -5% |    158    171  +8% |    157    171  +9% |    208    237 +14%
+    6 CC0101  dot a   |    160    153  -5% |    161    156  -3% |    169    162  -4% |    168    168  +0% |    190    185  -3%
+    6 AA0101  dot a   |    130    136  +4% |    132    136  +3% |    145    149  +3% |    149    154  +4% |    218    222  +2%
+    8 DC0101  L1  a   |    134    131  -3% |    132    129  -2% |    140    139  -0% |    141    139  -1% |    152    149  -2%
+    8 DC0101  L2  a   |    136    129  -5% |    140    136  -3% |    144    138  -4% |    147    144  -2% |    161    158  -2%
+    8 DB0202  L1  a   |    205    187  -9% |    194    184  -5% |    205    188  -9% |    193    183  -5% |    191    181  -5%
+    8 DB0202  L2  a   |    191    188  -1% |    190    186  -2% |    207    209  +1% |    207    207  +0% |    237    232  -2%
+    8 DA0202  L1  a   |    161    163  +1% |    160    162  +1% |    169    171  +1% |    167    169  +1% |    181    182  +1%
+    8 DA0202  L2  a   |    163    155  -5% |    160    154  -4% |    186    174  -6% |    184    173  -6% |    214    200  -6%

@@ -27,9 +27,9 @@ from worker.cancel import JobCancelled
 from worker.pipeline import runner
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ingest import ChunkRecord
-from worker.pipeline.quality import QUALITY_FILE
+from worker.pipeline.quality import QUALITY_FILE, is_pipeline_flag
 from worker.pipeline.replay import render_replay
-from worker.pipeline.runner import Context, is_pipeline_flag, pipeline_flags
+from worker.pipeline.runner import Context, pipeline_flags
 from worker.pipeline.runner_b import run_pipeline_b
 
 log = logging.getLogger("worker")

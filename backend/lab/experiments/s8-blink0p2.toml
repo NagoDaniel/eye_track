@@ -1,0 +1,8 @@
+name = "s8-blink0p2"
+description = "Study 8: product pipeline, blink when either eyeBlink score > 0.2 (product: 0.5)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+
+[config]
+blink_score_threshold = 0.2

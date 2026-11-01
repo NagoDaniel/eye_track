@@ -1,0 +1,7 @@
+name = "t-e8-z"
+description = "E8: T14 plus the iris depth of both eyes"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll", "face_ratio", "iris_l_z", "iris_r_z"]

@@ -143,3 +143,31 @@ def test_the_recorded_session() -> None:
     assert np.isnan(times[0]) and np.isnan(times[2])
     # The video lasted its 3 s (the test clip) within the stimulus frames.
     assert frames[-1].media_time == pytest.approx(2.96)
+
+
+# --- dropped frames (DECISIONS 2026-10-25) ---------------------------------------------------
+
+
+def test_skipped_frames_are_counted_and_a_pause_or_a_stall_is_not() -> None:
+    frames = steady(1000, 0.0, 50)  # 25 fps
+    del frames[10:12]  # two frames the browser never drew: media time jumps three periods
+    del frames[30]  # one more
+    drops = StimulusMap(frames, ONE_VIDEO, CONFIG).frame_drops()["1"]
+    assert (drops.presented, drops.dropped) == (47, 3)
+    assert drops.fraction == pytest.approx(3 / 50)
+    # a pause: the wall clock moves on 2 s, the media time does not
+    paused = steady(1000, 0.0, 20) + steady(3000, 0.76, 20)
+    after = StimulusMap(paused, ONE_VIDEO, CONFIG).frame_drops()["1"]
+    assert (after.presented, after.dropped) == (40, 0)
+
+
+def test_a_smooth_video_has_no_drops_and_each_video_is_counted_apart() -> None:
+    events = [
+        event(900, "video_load", "1"), event(4000, "video_ended", "1"),
+        event(4500, "video_load", "2"), event(9000, "video_ended", "2"),
+    ]  # fmt: skip
+    frames = steady(1000, 0.0, 50) + steady(5000, 0.0, 40)
+    del frames[60]  # a frame of video 2
+    drops = StimulusMap(frames, events, CONFIG).frame_drops()
+    assert drops["1"].dropped == 0 and drops["1"].fraction == 0.0
+    assert drops["2"].dropped == 1 and drops["2"].presented == 39

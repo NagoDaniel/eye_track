@@ -24,6 +24,9 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.ridge import fit_ridge, predict
 
 CONFIG = PipelineConfig()
+# The plan's calibration: the calibration dots only (T14 off).
+PLAIN = replace(CONFIG, calib_fit_validation=False)
+BEFORE = CONFIG.calib_window_before_click_ms
 WIDTH, HEIGHT = 1280.0, 720.0
 POSITIONS = [  # 13 dots: centre first, a 3x3 grid and the four quadrant centres (PLAN §5.5)
     (640, 360), (76.8, 43.2), (640, 43.2), (1203.2, 43.2), (76.8, 360), (1203.2, 360),
@@ -127,12 +130,15 @@ def test_a_restarted_dot_counts_with_its_last_show_and_click() -> None:
 # --- training samples ---
 
 
-def test_the_training_window_is_700_ms_before_to_100_ms_after_the_click() -> None:
-    t = np.array([1299.0, 1300.0, 1500.0, 2000.0, 2100.0, 2101.0])
+def test_the_training_window_is_900_ms_before_to_100_ms_after_the_click_by_default() -> None:
+    """DECISIONS 2026-11-01 (the plan's 700 ms; 900 ms won in the T13 lab)."""
+    assert CONFIG.calib_window_before_click_ms == 900.0
+    assert CONFIG.calib_window_after_click_ms == 100.0
+    t = np.array([1099.0, 1100.0, 1500.0, 2000.0, 2100.0, 2101.0])
     vectors = np.arange(len(t), dtype=float)[:, None] * np.ones((1, 3))
     usable = np.array([True, True, True, True, True, True])
     train = training_samples([Dot(0, 10, 20, 2000.0)], t, vectors, usable, CONFIG)
-    assert train.features[:, 0].tolist() == [1, 2, 3, 4]  # 1300 to 2100 inclusive
+    assert train.features[:, 0].tolist() == [1, 2, 3, 4]  # 1100 to 2100 inclusive
     assert train.targets.tolist() == [[10, 20]] * 4
     assert train.valid_per_dot == [4]
 
@@ -144,7 +150,7 @@ def test_frames_without_a_face_and_blinks_are_not_used_and_dots_do_not_mix() -> 
     usable[[16, 17]] = False  # 1600, 1700: no face or a blink
     dots = [Dot(0, 1, 1, 2000.0), Dot(1, 2, 2, 5000.0), Dot(2, 3, 3, None)]
     train = training_samples(dots, t, vectors, usable, CONFIG)
-    assert train.valid_per_dot == [7, 9, 0]  # 1300..2100 (9 frames) minus two; 4300..5100
+    assert train.valid_per_dot == [9, 11, 0]  # 1100..2100 (11 frames) minus two; 4100..5100
     assert set(train.dot_index.tolist()) == {0, 1}
     assert train.targets[train.dot_index == 1][0].tolist() == [2, 2]
 
@@ -242,7 +248,7 @@ def synthetic_session(
     vectors = rng.normal(scale=3.0, size=(len(t), 10))
     for dot in attempt.dots:
         assert dot.click_t is not None
-        inside = (t >= dot.click_t - 700) & (t <= dot.click_t + 100)
+        inside = (t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)
         u = np.array([dot.x / WIDTH, dot.y / HEIGHT]) - 0.5
         vectors[inside] = u @ mapping + rng.normal(scale=noise, size=(inside.sum(), 10))
         if dot.id == outlier_dot:
@@ -258,7 +264,7 @@ def test_a_synthetic_calibration_is_recovered() -> None:
     mapping = rng.normal(size=(2, 10))
     t, vectors, usable = synthetic_session(rng, events, attempt, mapping)
 
-    fit = fit_calibration(events, t, vectors, usable, CONFIG)
+    fit = fit_calibration(events, t, vectors, usable, PLAIN)
 
     assert fit.status == "ok" and fit.model is not None and fit.selection is not None
     assert fit.attempt is not None and fit.attempt.number == 1
@@ -302,7 +308,7 @@ def test_more_than_three_sparse_dots_fail_the_calibration() -> None:
         keep = usable.copy()
         for dot in attempt.dots[:n]:
             assert dot.click_t is not None
-            window = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+            window = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
             keep[window[4:]] = False
         return keep
 
@@ -335,7 +341,7 @@ def test_the_last_passed_attempt_is_the_one_fitted() -> None:
         scale = 1.0 if attempt.number == 2 else -1.0
         for dot in attempt.dots:
             assert dot.click_t is not None
-            inside = (t >= dot.click_t - 700) & (t <= dot.click_t + 100)
+            inside = (t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)
             u = np.array([dot.x / WIDTH, dot.y / HEIGHT]) - 0.5
             vectors[inside] = scale * (u @ mapping) + rng.normal(
                 scale=0.02, size=(inside.sum(), 10)
@@ -378,7 +384,11 @@ def test_the_recorded_session_runs_through_the_whole_chain(
     assert written["status"] == "ok", written["failed_reason"]
     assert written["attempt_used"]["attempt"] == 1 and written["attempt_used"]["passed"] is False
     assert written["attempt_used"]["reason"] == "only_attempt"
-    assert len(written["dots"]) == 13 and all(d["valid_frames"] >= 5 for d in written["dots"])
+    # T14: the 13 calibration dots and the validation dots of both blocks trained the model.
+    assert written["fit_validation"] is True
+    own = [d for d in written["dots"] if d["source"] == "calibration"]
+    assert len(own) == 13 and all(d["valid_frames"] >= 5 for d in own)
+    assert [d["source"] for d in written["dots"][13:]] == ["validation"] * 10
     assert written["viewport"] == {"width": 1280.0, "height": 720.0}
     assert written["cv"]["chosen"] in ("linear", "quadratic") and np.isfinite(
         written["cv"]["error_px"]
@@ -387,4 +397,27 @@ def test_the_recorded_session_runs_through_the_whole_chain(
     # The server found about as many usable frames per dot as the browser did (8 to 12), since both
     # saw the same webcam frames; the browser's rate was lower, so the server has at least as many.
     browser = [8, 11, 10, 12, 11, 11, 10, 11, 10, 12, 10, 11, 12]
-    assert sum(d["valid_frames"] for d in written["dots"]) >= 0.8 * sum(browser)
+    assert sum(d["valid_frames"] for d in own) >= 0.8 * sum(browser)
+
+
+def test_with_t14_the_validation_dots_are_training_dots_too() -> None:
+    """DECISIONS 2026-11-01: the validation dots join the fit and are listed after the
+    calibration dots; a validation dot without frames cannot fail the calibration (the sparse-dot
+    rule counts the attempt's own dots only)."""
+    rng = np.random.default_rng(6)
+    events = calibration_block(1000) + validation_block(20_000) + [gate(26_000, 1, True)]
+    (attempt,) = calibration_attempts(events)
+    mapping = rng.normal(size=(2, 10))
+    t, vectors, usable = synthetic_session(rng, events, attempt, mapping)
+    fit = fit_calibration(events, t, vectors, usable, CONFIG)
+    assert fit.status == "ok" and len(fit.validation_dots) == 5
+    data = fit.as_dict()
+    assert data["fit_validation"] is True
+    sources = [d["source"] for d in data["dots"]]
+    assert sources == ["calibration"] * len(attempt.dots) + ["validation"] * 5
+    plain = fit_calibration(events, t, vectors, usable, PLAIN)
+    assert plain.validation_dots == () and plain.as_dict()["fit_validation"] is False
+    assert len(plain.as_dict()["dots"]) == len(attempt.dots)
+    # every validation frame unusable: the calibration still passes, as without T14
+    in_validation = t >= 20_000
+    assert fit_calibration(events, t, vectors, usable & ~in_validation, CONFIG).status == "ok"

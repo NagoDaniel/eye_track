@@ -21,7 +21,7 @@ from app.schemas import EventRecord, StimulusFrameRecord
 from app.storage import atomic_writer, derived_dir, events_path, stimulus_frames_path
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.fixations import FixationParams, all_runs_fixations, runs
-from worker.pipeline.predict import predict_session
+from worker.pipeline.predict import SessionPrediction, predict_session
 from worker.pipeline.smoothing import smooth_gaze
 from worker.pipeline.spec import SPEC_A, PipelineSpec
 from worker.pipeline.stimulus_map import StimulusMap, VideoRectTimeline
@@ -117,7 +117,10 @@ def run_gaze(
     session_id: uuid.UUID,
     config: PipelineConfig,
     spec: PipelineSpec = SPEC_A,
+    prediction: SessionPrediction | None = None,
 ) -> GazeSummary:
+    """`prediction`: the frames' predictions when the caller made them (the T13 lab's other models,
+    DECISIONS 2026-11-01); by default the session's calibration model predicts."""
     derived = derived_dir(root, study_id, session_id)
     events = parse_events(events_path(root, study_id, session_id).read_bytes())
     frames_path = stimulus_frames_path(root, study_id, session_id)
@@ -127,7 +130,7 @@ def run_gaze(
         else []
     )
 
-    prediction = predict_session(root, study_id, session_id, config, spec)
+    prediction = prediction or predict_session(root, study_id, session_id, config, spec)
     gaze, t = prediction.gaze, prediction.t_ms
     smoothed = smooth_gaze(t, gaze.x_px, gaze.y_px, gaze.valid, config)
     validation = validate_session(root, study_id, session_id, config, prediction, spec)

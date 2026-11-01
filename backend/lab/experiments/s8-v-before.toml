@@ -1,0 +1,6 @@
+name = "s8-v-before"
+description = "Study 8: fit also on the validation dots before the first video"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "before_video"

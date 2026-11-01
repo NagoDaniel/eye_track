@@ -1,0 +1,8 @@
+name = "t-blink-m200-rel15"
+description = "Items 1: 200 ms blink margin and score 0.15 above the session median"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+blink_margin_ms = 200
+blink_relative_delta = 0.15

@@ -1,0 +1,7 @@
+name = "t-ridge"
+description = "The lab's model path with the product's ridge procedure: must reproduce t-base"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "ridge"

@@ -44,8 +44,11 @@ from app.storage import atomic_write_bytes, browser_features_path, derived_dir, 
 from worker.pipeline.calibration import (
     Attempt,
     calibration_attempts,
+    choose_attempt,
     fit_attempt,
     training_samples,
+    validation_blocks,
+    validation_dots,
     viewport_before,
 )
 from worker.pipeline.config import PipelineConfig
@@ -54,7 +57,6 @@ from worker.pipeline.quality import QUALITY_FILE, video_spans
 from worker.pipeline.ridge import predict
 from worker.pipeline.spec import SPEC_A, SPEC_B, PipelineSpec
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
-from worker.pipeline.validation import validation_blocks
 
 log = logging.getLogger("pipeline")
 
@@ -273,7 +275,7 @@ def plot_calibration(data: PlotData) -> Figure:
     for k in range(len(attempts), rows * columns):
         axes[k // columns][k % columns].axis("off")
     figure.suptitle(
-        f"Calibration attempts{data.title_suffix}: targets and the model's median predictions",
+        f"Calibration attempts{data.title_suffix}:\ntargets and the model's median predictions",
         fontsize=11,
     )
     return figure
@@ -295,7 +297,13 @@ def _calibration_panel(
         if attempt.gate is None
         else ("gate passed" if attempt.passed else "gate failed")
     )
-    fit = fit_attempt(attempt, data.t_ms, vectors, usable, data.config)
+    chosen = choose_attempt(attempts)
+    extra = (
+        validation_dots(data.events, attempt.start_t)
+        if data.config.calib_fit_validation and chosen is not None and chosen[0] == attempt
+        else []
+    )  # the session's model was fitted on these too (T14)
+    fit = fit_attempt(attempt, data.t_ms, vectors, usable, data.config, extra)
     if fit.model is None or fit.selection is None:
         ax.set_title(f"Attempt {attempt.number} ({gate}): no fit, {fit.failed_reason}", fontsize=8)
         return

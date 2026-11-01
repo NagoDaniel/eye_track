@@ -1,0 +1,9 @@
+name = "t-win500"
+description = "Item 4: training window 500 ms before to 100 ms after the click (product 700 / 100)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+
+[config]
+calib_window_before_click_ms = 500

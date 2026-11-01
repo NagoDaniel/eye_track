@@ -18,19 +18,51 @@ import numpy as np
 import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
-from app.events import parse_events
-from app.schemas import EventRecord, InclusionConfig, StudyConfig
-from app.storage import atomic_write_bytes, derived_dir, events_path, meta_path
+from app.events import parse_events, parse_records
+from app.schemas import EventRecord, InclusionConfig, StimulusFrameRecord, StudyConfig
+from app.storage import (
+    atomic_write_bytes,
+    derived_dir,
+    events_path,
+    meta_path,
+    stimulus_frames_path,
+)
 from worker.pipeline.calibration import CALIBRATION_FILE
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.features_a import FEATURES_FILE
 from worker.pipeline.gaze import GAZE_FILE, phase_intervals
 from worker.pipeline.ingest import WEBCAM_FRAMES_FILE
+from worker.pipeline.stimulus_map import StimulusMap
 from worker.pipeline.sync import SYNC_FILE, read_t_of_pts
 from worker.pipeline.validation import validate_session
 
 QUALITY_FILE = "quality.json"
 QUALITY_VERSION = 1
+
+# Session flags set by the pipeline (and removed again when a run no longer finds the problem).
+CALIBRATION_FAILED_FLAG = "calibration_failed"
+SYNC_FLAG_PREFIX = "sync_"
+STIMULUS_FRAMES_FLAG = "stimulus_frames_dropped"  # more than `dropped_frames_flag_fraction` dropped
+
+
+def worker_flags(
+    sync_flags: Sequence[str], calibration_failed: bool, stimulus_frames_flagged: bool
+) -> list[str]:
+    """The flags the worker's stages call for: the sync flags, a failed calibration, dropped video
+    frames. One definition for the database column and for `session_flags` of the report."""
+    flags = [str(f) for f in sync_flags]
+    if calibration_failed:
+        flags.append(CALIBRATION_FAILED_FLAG)
+    if stimulus_frames_flagged:
+        flags.append(STIMULUS_FRAMES_FLAG)
+    return flags
+
+
+def is_pipeline_flag(flag: str) -> bool:
+    return flag in (CALIBRATION_FAILED_FLAG, STIMULUS_FRAMES_FLAG) or flag.startswith(
+        SYNC_FLAG_PREFIX
+    )
+
 
 Floats = NDArray[np.floating[Any]]
 Bools = NDArray[np.bool_]
@@ -57,10 +89,12 @@ def decide_inclusion(
     valid_fraction: float | None,
     validation_error_norm: float | None,
     inclusion: InclusionConfig,
+    validation_decides: bool = True,
 ) -> Inclusion:
     """Is the session used in the analysis? Every reason it is not is listed. Debug sessions are
     left out by default (PLAN §12.1). The two thresholds are the study's (`inclusion`, PLAN §4.1);
-    a value equal to its threshold passes."""
+    a value equal to its threshold passes. With `validation_decides` false (the validation dots
+    trained the model, T14, DECISIONS 2026-11-01) the validation error is reported only."""
     reasons: list[str] = []
     if is_debug:
         reasons.append("debug_session")
@@ -71,7 +105,9 @@ def decide_inclusion(
             reasons.append("no_playback_data")
         elif valid_fraction is not None and valid_fraction < inclusion.min_valid_fraction:
             reasons.append("valid_fraction_low")
-        if validation_error_norm is None:
+        if not validation_decides:
+            pass
+        elif validation_error_norm is None:
             reasons.append("no_validation_data")
         elif validation_error_norm > inclusion.max_validation_error_norm:
             reasons.append("validation_error_high")
@@ -83,6 +119,7 @@ def decide_inclusion(
             "min_valid_fraction": inclusion.min_valid_fraction,
             "validation_error_norm": validation_error_norm,
             "max_validation_error_norm": inclusion.max_validation_error_norm,
+            "validation_decides": validation_decides,
         },
     )
 
@@ -198,6 +235,37 @@ def _frac(a: int, b: int) -> float | None:
 def _mean(values: Sequence[float | None]) -> float | None:
     present = [v for v in values if v is not None]
     return float(np.mean(present)) if present else None
+
+
+def stimulus_frames_summary(
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    events: list[EventRecord],
+    config: PipelineConfig,
+) -> dict[str, Any] | None:
+    """Frames of the stimulus video the browser skipped, per video, and whether that is enough to
+    flag the session (never to exclude it). None when the session has no stimulus frames."""
+    path = stimulus_frames_path(root, study_id, session_id)
+    if not path.exists():
+        return None
+    frames = parse_records(path.read_bytes(), StimulusFrameRecord, "stimulus_frames")
+    if not frames:
+        return None
+    per_video = {
+        video: {
+            "presented": drops.presented,
+            "dropped": drops.dropped,
+            "dropped_fraction": drops.fraction,
+        }
+        for video, drops in StimulusMap(frames, events, config).frame_drops().items()
+    }
+    limit = config.dropped_frames_flag_fraction
+    return {
+        "per_video": per_video,
+        "flag_fraction": limit,
+        "flagged": any(v["dropped_fraction"] > limit for v in per_video.values()),
+    }
 
 
 def playback_summary(gaze: Any) -> dict[str, Any]:
@@ -317,11 +385,21 @@ def build_quality(
         valid_fraction=valid_fraction,
         validation_error_norm=validation_error,
         inclusion=study_config.inclusion,
+        validation_decides=not bool(calibration.get("fit_validation")),
     )
+    stimulus_part = stimulus_frames_summary(root, study_id, session_id, events, config)
+    session_flags = list(meta.get("flags", []))
+    session_flags += [
+        f
+        for f in worker_flags(
+            sync["flags"], not ok, bool(stimulus_part and stimulus_part["flagged"])
+        )
+        if f not in session_flags
+    ]
     report: dict[str, Any] = {
         "version": QUALITY_VERSION,
         "config": config.as_dict(),
-        "session_flags": list(meta.get("flags", [])),
+        "session_flags": session_flags,
         "is_debug": bool(meta.get("is_debug")),
         "webcam": webcam_stats(pts, config.quality_frame_gap_ms),
         "face_lost": {
@@ -332,6 +410,7 @@ def build_quality(
         },
         "events": event_counts(events),
         "playback": playback_part,
+        "stimulus_frames": stimulus_part,
         "face_ratio": ratio_part,
         "browser_gate": gate_results(events),
         "calibration": {

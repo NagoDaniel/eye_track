@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from app.schemas import EventRecord, InclusionConfig
-from app.storage import meta_path
+from app.storage import meta_path, stimulus_frames_path
 from tests.synthetic_session import (
     BLINK,
     FACE_LOST,
@@ -22,13 +22,16 @@ from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import run_gaze
 from worker.pipeline.quality import (
     QUALITY_FILE,
+    STIMULUS_FRAMES_FLAG,
     Inclusion,
     build_quality,
     decide_inclusion,
     event_counts,
     face_lost,
+    is_pipeline_flag,
     webcam_stats,
 )
+from worker.pipeline.runner import pipeline_flags
 
 CONFIG = PipelineConfig()
 INCLUSION = InclusionConfig(max_validation_error_norm=0.12, min_valid_fraction=0.7)
@@ -61,6 +64,15 @@ def test_each_failure_gives_its_reason_and_all_are_listed() -> None:
     both = inclusion(validation_error_norm=0.2, valid_fraction=0.5, is_debug=True)
     assert both.reasons == ["debug_session", "valid_fraction_low", "validation_error_high"]
     assert not both.included
+
+
+def test_with_t14_the_validation_error_does_not_decide_inclusion() -> None:
+    """DECISIONS 2026-11-01: the validation dots trained the model, so their error is reported
+    but excludes nobody; the valid-frame rule still does."""
+    result = inclusion(validation_error_norm=0.5, validation_decides=False)
+    assert result.included and result.criteria["validation_decides"] is False
+    assert inclusion(validation_error_norm=None, validation_decides=False).included
+    assert inclusion(valid_fraction=0.5, validation_decides=False).reasons == ["valid_fraction_low"]
 
 
 def test_a_value_equal_to_its_threshold_passes() -> None:
@@ -248,6 +260,7 @@ def test_a_failed_calibration_gives_a_report_without_gaze(tmp_path: Path) -> Non
     assert report["calibration"]["failed_reason"] == "too_few_valid_frames"
     assert report["inclusion"]["included"] is False
     assert report["inclusion"]["reasons"] == ["calibration_failed"]
+    assert "calibration_failed" in report["session_flags"]
     assert report["webcam"]["frames"] > 100 and report["events"]["fullscreen_exits"] == 1
 
 
@@ -270,7 +283,8 @@ def test_the_recorded_session_has_a_complete_report(tmp_path: Path, face_model: 
 
     report = build_quality(s.root, s.study_id, s.session_id, CONFIG)
 
-    assert report["session_flags"] == ["calibration_gate_failed"]
+    # the participant app's flag, then the worker's (the same ones as the database column)
+    assert report["session_flags"] == ["calibration_gate_failed", "sync_short"]
     assert report["webcam"]["fps_mean"] == pytest.approx(30, abs=3)
     assert report["calibration"]["status"] == "ok"
     assert [g["block"] for g in report["browser_gate"]] == ["before_video", "after_last_video"]
@@ -278,6 +292,58 @@ def test_the_recorded_session_has_a_complete_report(tmp_path: Path, face_model: 
     assert report["playback"]["frames"] > 50
     assert report["events"]["stalls_at_start"] == 1
     assert report["validation"]["blocks"][0]["kind"] == "before_video"
-    # The fake camera does not look at the dots, so the session fails the study's own thresholds.
-    assert report["inclusion"]["included"] is False and report["inclusion"]["reasons"]
+    # T14: the validation error is held out and does not decide inclusion.
+    assert report["validation"]["held_out"] is True
+    assert report["inclusion"]["criteria"]["validation_decides"] is False
+    assert "validation_error_high" not in report["inclusion"]["reasons"]
     json.dumps(report)
+    # Without T14 the fake camera, which does not look at the dots, fails the study's thresholds.
+    plain = replace(CONFIG, calib_fit_validation=False)
+    run_calibration(s.root, s.study_id, s.session_id, plain)
+    run_gaze(s.root, s.study_id, s.session_id, plain)
+    old = build_quality(s.root, s.study_id, s.session_id, plain)
+    assert old["validation"]["held_out"] is False
+    assert old["inclusion"]["included"] is False and old["inclusion"]["reasons"]
+
+
+# --- dropped stimulus frames: flagged, never excluded (DECISIONS 2026-10-25) ------------------
+
+
+def test_a_smooth_session_has_no_dropped_frames_and_no_flag(
+    session: Synthetic, report: dict[str, Any]
+) -> None:
+    part = report["stimulus_frames"]
+    assert part["flag_fraction"] == 0.10 and part["flagged"] is False
+    video = part["per_video"]["1"]
+    assert video["presented"] == 200 and video["dropped"] == 0 and video["dropped_fraction"] == 0.0
+    assert pipeline_flags(derived_of(session)) == []
+
+
+def test_a_session_that_skips_many_frames_is_flagged_but_still_included(tmp_path: Path) -> None:
+    s = build(tmp_path)
+    run_gaze(s.root, s.study_id, s.session_id, CONFIG)
+    before = build_quality(s.root, s.study_id, s.session_id, CONFIG)["inclusion"]
+    path = stimulus_frames_path(s.root, s.study_id, s.session_id)
+    lines = path.read_text("utf-8").splitlines()
+    path.write_text("".join(f"{line}\n" for i, line in enumerate(lines) if i % 5 != 2), "utf-8")
+    report = build_quality(s.root, s.study_id, s.session_id, CONFIG)
+    video = report["stimulus_frames"]["per_video"]["1"]
+    assert video["dropped"] == 40 and video["presented"] == 160
+    assert video["dropped_fraction"] == pytest.approx(0.2)
+    assert report["stimulus_frames"]["flagged"] is True
+    assert pipeline_flags(derived_of(s)) == [STIMULUS_FRAMES_FLAG]
+    assert is_pipeline_flag(STIMULUS_FRAMES_FLAG)
+    assert report["inclusion"] == before  # a flag, not a reason to leave the session out
+    # the limit is the config's: at 25 % the same session is not flagged
+    relaxed = replace(CONFIG, dropped_frames_flag_fraction=0.25)
+    assert (
+        build_quality(s.root, s.study_id, s.session_id, relaxed)["stimulus_frames"]["flagged"]
+        is False
+    )
+
+
+def test_a_session_without_stimulus_frames_has_no_part_for_them(tmp_path: Path) -> None:
+    s = build(tmp_path)
+    run_gaze(s.root, s.study_id, s.session_id, CONFIG)
+    stimulus_frames_path(s.root, s.study_id, s.session_id).write_text("")
+    assert build_quality(s.root, s.study_id, s.session_id, CONFIG)["stimulus_frames"] is None

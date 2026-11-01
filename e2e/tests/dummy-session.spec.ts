@@ -39,7 +39,8 @@ const STREAMS = ["webcam", "features", "events", "stimulus_frames"] as const;
 // the session; the worker adds its own flags (sync_*, calibration_failed). No other flag is
 // expected in a normal run.
 const GATE_FLAG = "calibration_gate_failed";
-const PIPELINE_FLAG = /^(sync_|calibration_failed$)/;
+// A slow machine may also drop video frames; that is flagged, never an error (DECISIONS 2026-10-25).
+const PIPELINE_FLAG = /^(sync_|calibration_failed$|stimulus_frames_dropped$)/;
 const otherFlags = (flags: string[]): string[] =>
   flags.filter((f) => f !== GATE_FLAG && !PIPELINE_FLAG.test(f));
 

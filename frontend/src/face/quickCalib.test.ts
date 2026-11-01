@@ -202,8 +202,8 @@ describe("usableVectors", () => {
     ...over,
   });
 
-  it("takes the window from 700 ms before the click to 100 ms after it, both ends included", () => {
-    expect(TRAIN_WINDOW_BEFORE_CLICK_MS).toBe(700);
+  it("takes the window from 900 ms before the click to 100 ms after it, both ends included", () => {
+    expect(TRAIN_WINDOW_BEFORE_CLICK_MS).toBe(900);
     const click = 5000;
     const dot: DotSamples = {
       id: 1,
@@ -211,15 +211,15 @@ describe("usableVectors", () => {
       y: 0,
       clickT: click,
       frames: [
-        frame(click - 701),
-        frame(click - 700),
+        frame(click - 901),
+        frame(click - 900),
         frame(click),
         frame(click + CALIB_POST_CLICK_MS),
         frame(click + CALIB_POST_CLICK_MS + 1),
       ],
     };
     expect(usableVectors(dot).map((v) => v[0])).toEqual([
-      click - 700,
+      click - 900,
       click,
       click + CALIB_POST_CLICK_MS,
     ]);

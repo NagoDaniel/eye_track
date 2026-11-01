@@ -1,0 +1,9 @@
+name = "t-mad4"
+description = "Item 4: outlier rule at 4.0 MAD"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+
+[config]
+calib_outlier_mad = 4.0

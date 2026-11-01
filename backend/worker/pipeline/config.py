@@ -42,8 +42,10 @@ class PipelineConfig:
     sync_huber_epsilon: float = 1.35
 
     # --- Calibration fit (PLAN §5.5, §8.6) ---
-    # The training window of a dot, relative to its click (excludes the saccade at the dot's onset).
-    calib_window_before_click_ms: float = 700.0
+    # The training window of a dot, relative to its click. 900 ms before (the plan: 700, which
+    # excludes the saccade at the dot's onset; DECISIONS 2026-11-01: more samples won in the T13
+    # lab, and the outlier rule drops most frames of an early click's saccade).
+    calib_window_before_click_ms: float = 900.0
     calib_window_after_click_ms: float = 100.0
     # Regularisation grid of the leave-one-dot-out cross-validation: log grid 1e-3 to 1e3.
     calib_alphas: tuple[float, ...] = (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
@@ -54,6 +56,11 @@ class PipelineConfig:
     # `calib_min_frames_per_dot` valid frames.
     calib_min_frames_per_dot: int = 5
     calib_max_sparse_dots: int = 3
+    # The validation dots (every block from the chosen attempt on) are training samples too
+    # (DECISIONS 2026-11-01, T14; the plan's default is False: calibration dots only). With it
+    # the reported validation error is held out (each block scored by a fit without that block)
+    # and the validation error does not decide inclusion.
+    calib_fit_validation: bool = True
 
     # --- Pipeline B features (PLAN §8.5, DECISIONS 2026-10-20) ---
     # The face crop is a square around the centre of the landmark box, with the longer side of the
@@ -107,6 +114,9 @@ class PipelineConfig:
     # than the media time between them. Dropped frames do not (both advance together). Not in the
     # plan; display refresh jitter in the recorded session is under 10 ms.
     stim_gap_tolerance_ms: float = 50.0
+    # More than this share of a video's frames dropped flags the session as
+    # `stimulus_frames_dropped`; it never changes the inclusion decision (DECISIONS 2026-10-25).
+    dropped_frames_flag_fraction: float = 0.10
 
     def as_dict(self) -> dict[str, Any]:
         """Plain JSON types (tuples as lists), for the files that record the values used."""

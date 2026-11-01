@@ -1,0 +1,7 @@
+name = "baseline"
+description = "The product pipeline as it is (PipelineConfig defaults; with T14, the validation dots in the fit, since 2026-11-01). pre-t14 is the product before that."
+pipelines = ["a", "b"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+
+[config]

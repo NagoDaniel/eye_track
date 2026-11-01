@@ -1,22 +1,23 @@
 """Validation accuracy, precision and drift (PLAN §8.8, §13)."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 
 from app.schemas import EventRecord
+from worker.pipeline.calibration import ValidationDots, validation_blocks
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.predict import viewport_timeline
-from worker.pipeline.validation import (
-    DriftModel,
-    ValidationDots,
-    score_validation,
-    validation_blocks,
-)
+from worker.pipeline.validation import DriftModel, score_validation, validate_session
 
-CONFIG = PipelineConfig()
+# The scoring maths is tested with the plan's 700 ms window (the frame counts below follow from it);
+# the default window itself is tested in test_calibration.py.
+CONFIG = replace(PipelineConfig(), calib_window_before_click_ms=700.0)
+BEFORE = CONFIG.calib_window_before_click_ms
 W, H = 1280.0, 720.0
 DIAGONAL = float(np.hypot(W, H))
 TARGETS = [(640.0, 360.0), (320.0, 180.0), (960.0, 180.0), (320.0, 540.0), (960.0, 540.0)]
@@ -88,7 +89,7 @@ def frames(
     for block in blocks:
         for dot in block.dots:
             assert dot.click_t is not None
-            inside = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+            inside = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
             sign = np.where(np.arange(len(inside)) % 2 == 0, 1.0, -1.0)
             o = (offset(dot.click_t) if callable(offset) else offset) or (0.0, 0.0)
             x[inside] = dot.x + o[0] + sign * jitter
@@ -117,7 +118,7 @@ def test_exact_values_for_a_known_median_and_steps() -> None:
     x, y = np.full(len(t), 0.0), np.full(len(t), 0.0)
     dot = blocks[0].dots[0]
     assert dot.click_t is not None
-    idx = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+    idx = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
     assert len(idx) == 9
     x[idx] = dot.x + np.array([0, 3, 0, 3, 0, 3, 0, 3, 0])  # median = target + 0
     y[idx] = dot.y + 4.0  # a constant 4 px below: median offset (0, 4)
@@ -136,7 +137,7 @@ def test_only_the_window_and_valid_frames_count() -> None:
     t, x, y, valid = frames(blocks, offset=(0.0, 0.0))
     dot = blocks[0].dots[0]
     assert dot.click_t is not None
-    inside = (t >= dot.click_t - 700) & (t <= dot.click_t + 100)
+    inside = (t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)
     x[(t > dot.click_t + 100) & (t < dot.click_t + 400)] = 5000.0  # after the window
     valid[np.flatnonzero(inside)[:5]] = False
     x[np.flatnonzero(inside)[:5]] = 9999.0  # invalid frames inside the window
@@ -149,7 +150,7 @@ def test_precision_uses_frames_that_follow_each_other() -> None:
     t, x, y, valid = frames(blocks, offset=(0.0, 0.0))
     dot = blocks[0].dots[0]
     assert dot.click_t is not None
-    inside = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+    inside = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
     x[inside[::2]] += 20.0  # every other frame is 20 px off ...
     valid[inside[1::2]] = False  # ... and the frames between are invalid: no consecutive pair
     point = score_validation(blocks, t, x, y, valid, VIEWPORT, CONFIG).blocks[0].points[0]
@@ -161,7 +162,7 @@ def test_points_without_data_have_no_error_and_do_not_count_in_the_mean() -> Non
     t, x, y, valid = frames(blocks, offset=(6.0, 8.0))
     dot = blocks[0].dots[2]
     assert dot.click_t is not None
-    valid[(t >= dot.click_t - 700) & (t <= dot.click_t + 100)] = False
+    valid[(t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)] = False
     result = score_validation(blocks, t, x, y, valid, VIEWPORT, CONFIG)
     assert result.blocks[0].points[2].error_px is None
     d = result.blocks[0].as_dict()
@@ -224,7 +225,7 @@ def test_the_session_precision_is_the_median_over_the_blocks() -> None:
     for block, jitter in zip(blocks, (1.0, 2.0, 10.0), strict=True):
         for dot in block.dots:
             assert dot.click_t is not None
-            inside = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+            inside = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
             x[inside] = dot.x + np.where(np.arange(len(inside)) % 2 == 0, jitter, -jitter)
     result = score_validation(blocks, t, x, y, valid, VIEWPORT, CONFIG)
     assert result.precision_px == pytest.approx(4.0)
@@ -267,3 +268,41 @@ def test_the_recorded_session_is_scored(tmp_path: Path, face_model: Path) -> Non
     assert d["drift"] is not None and len(d["drift"]["t_ms"]) == len(with_data)
     assert result.precision_px is not None and result.precision_px >= 0
     json.dumps(d)
+
+
+def test_with_t14_each_block_is_scored_by_a_fit_without_it_on_the_real_fixture(
+    a_session: Any,
+) -> None:
+    """DECISIONS 2026-11-01: the validation dots trained the model, so each block's error comes
+    from a calibration fitted without that block; the drift stays the model's own."""
+    from app.events import parse_events
+    from app.storage import events_path
+    from worker.pipeline.predict import predict_session
+
+    root, study, sid = a_session.root, a_session.study_id, a_session.session_id
+    held = validate_session(root, study, sid, CONFIG)
+    assert held.held_out is True and held.as_dict()["held_out"] is True
+    prediction = predict_session(root, study, sid, CONFIG)
+    g = prediction.gaze
+    events = parse_events(events_path(root, study, sid).read_bytes())
+    own = score_validation(
+        validation_blocks(events), prediction.t_ms, g.x_px, g.y_px, g.valid,
+        viewport_timeline(events), CONFIG,
+    )  # fmt: skip
+    assert held.drift is not None and own.drift is not None
+    np.testing.assert_allclose(held.drift.dx, own.drift.dx)  # the model's own drift
+    held_errors = [p.error_px for b in held.blocks for p in b.points if p.error_px is not None]
+    own_errors = [p.error_px for b in own.blocks for p in b.points if p.error_px is not None]
+    assert len(held_errors) == len(own_errors) > 0
+    assert held_errors != own_errors  # other models scored the points
+
+
+def test_a_block_without_a_held_out_fit_has_no_data() -> None:
+    blocks = validation_blocks(SESSION_EVENTS)[:2]
+    t = np.arange(0.0, 40_000.0, 33.0)
+    xy = np.full(len(t), 640.0)
+    valid = np.ones(len(t), dtype=bool)
+    result = score_validation(blocks, t, xy, xy, valid, VIEWPORT, CONFIG,
+                              [(xy, xy, valid), None])  # fmt: skip
+    assert all(p.error_px is not None for p in result.blocks[0].points if p.click_t is not None)
+    assert all(p.error_px is None for p in result.blocks[1].points)

@@ -1,0 +1,6 @@
+name = "s8-v-bb"
+description = "Study 8: fit also on the validation dots before and between the videos, not after (honest T14: video 2 scored on a model that saw nothing after it started)"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+fit_validation = "before_and_between"

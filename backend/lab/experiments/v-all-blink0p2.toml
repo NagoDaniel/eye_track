@@ -1,0 +1,9 @@
+name = "v-all-blink0p2"
+description = "Studies 7 and 6: fit on all validation dots, eyeBlink score > 0.2"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+fit_validation = "all"
+
+[config]
+blink_score_threshold = 0.2

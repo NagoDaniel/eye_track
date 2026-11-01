@@ -1,0 +1,87 @@
+experiment: baseline
+description: The product pipeline as it is (PipelineConfig defaults). Every other experiment is compared with this one.
+overrides: {}
+tune_studies: [7]
+holdout_studies: [6]
+
+1. distance to the dot, viewport px (moving_dot_report); scale = viewport px per video px
+study code    pl  valid unc med unc pause unc move dc med dc pause dc move dc p90 lag ms <=thr% scale
+    7 GG0101  a    0.95     221       218      230    281      285     263    456     40     81  1.50
+    7 GG0101  b    0.96     231       235      206    268      270     266    572    120     66  1.50
+    7 DD0202  a    0.89     165       161      181    155      152     196    310     40     92  1.50
+    7 DD0202  b    0.92     216       212      242    230      221     249    393    140     74  1.50
+    7 EE0202  a    0.96     162       155      182    150      143     173    298    200     94  1.50
+    7 EE0202  b    0.96     212       205      218    171      159     198    356    160     88  1.50
+    7 AA0101  a    0.95     286       272      319    281      263     308    443    120     62  1.50
+    7 AA0101  b    0.95     385       382      404    370      370     378    685    140     40  1.50
+    7 BB0202  a    0.91     260       247      292    246      237     266    389    300     68  1.50
+    7 BB0202  b    0.94     335       340      332    325      336     308    468    300     47  1.50
+    7 FF0101  a    0.90     237       237      236    233      237     226    485     60     75  1.50
+    7 FF0101  b    0.88     179       177      189    165      163     179    357     40     89  1.50
+    6 DD0101  a    0.85     199       191      205    181      173     206    354    100     83  1.34
+    6 BB0101  a    0.95     257       247      273    260      249     279    423    100     61  1.34
+    6 CC0101  a    0.90     249       246      262    174      157     206    339      0     69  1.34
+    6 AA0101  a    0.94     255       228      340    136      129     173    303    280     65  1.34
+    6 AA0101  b    0.93     514       499      589    246      242     253    439    400      6  1.34
+
+2. gaze = a * dot + b per axis (video px), correlation r
+    7 GG0101 a  x: a=0.87 b=  +24px r=0.97   y: a=0.70 b=  +71px r=0.76
+    7 GG0101 b  x: a=0.70 b= +151px r=0.93   y: a=0.74 b=  +32px r=0.85
+    7 DD0202 a  x: a=0.83 b= +105px r=0.97   y: a=1.13 b=  -28px r=0.91
+    7 DD0202 b  x: a=0.68 b= +137px r=0.95   y: a=0.98 b=  -43px r=0.91
+    7 EE0202 a  x: a=0.87 b=  +95px r=0.98   y: a=0.81 b=  +23px r=0.89
+    7 EE0202 b  x: a=0.81 b= +133px r=0.95   y: a=0.96 b=  -32px r=0.92
+    7 AA0101 a  x: a=0.71 b= +177px r=0.93   y: a=0.60 b= +199px r=0.75
+    7 AA0101 b  x: a=0.37 b= +346px r=0.72   y: a=0.64 b=  +40px r=0.80
+    7 BB0202 a  x: a=0.94 b= +103px r=0.97   y: a=0.71 b=  +14px r=0.77
+    7 BB0202 b  x: a=0.87 b= +172px r=0.93   y: a=0.67 b=  +28px r=0.75
+    7 FF0101 a  x: a=0.87 b= +117px r=0.95   y: a=0.57 b= +203px r=0.68
+    7 FF0101 b  x: a=0.89 b=  +44px r=0.96   y: a=0.93 b=  -11px r=0.89
+    6 DD0101 a  x: a=0.65 b= +125px r=0.94   y: a=0.91 b=  +40px r=0.89
+    6 BB0101 a  x: a=0.55 b= +235px r=0.94   y: a=0.68 b= +101px r=0.88
+    6 CC0101 a  x: a=0.88 b= +159px r=0.98   y: a=0.84 b=  -31px r=0.78
+    6 AA0101 a  x: a=0.92 b=  +83px r=0.97   y: a=0.85 b= +235px r=0.88
+    6 AA0101 b  x: a=0.87 b= +383px r=0.92   y: a=0.48 b= +374px r=0.70
+
+3. signed error (gaze - dot) at each rest position, video px, mean +- spread over the sessions of a study
+study 6
+ 0 (  640, 360) | A dx   -12+- 67 dy    +1+- 65 | B dx  +358+-  0 dy   +35+-  0
+ 1 (  320, 180) | A dx   +30+- 84 dy    +6+-123 | B dx  +121+-  0 dy  +236+-  0
+ 2 (  960, 180) | A dx   -92+-100 dy   +86+-126 | B dx  +244+-  0 dy  +371+-  0
+ 3 (  960, 540) | A dx  -112+-115 dy   -15+- 97 | B dx  +334+-  0 dy   +44+-  0
+ 4 (  320, 540) | A dx   +89+- 75 dy    -5+- 93 | B dx  +438+-  0 dy   +60+-  0
+ 5 (  128, 648) | A dx  +147+- 55 dy   -72+- 87 | B dx  +391+-  0 dy   -35+-  0
+ 6 (  128,  72) | A dx   +72+- 50 dy   +34+- 94 | B dx  +175+-  0 dy  +350+-  0
+ 7 ( 1152,  72) | A dx   -98+-136 dy   +70+- 80 | B dx  +155+-  0 dy  +302+-  0
+ 8 ( 1152, 648) | A dx  -219+-200 dy   -10+-165 | B dx  +217+-  0 dy  +173+-  0
+ 9 (  640, 360) | A dx   +28+- 48 dy   -58+-122 | B dx  +323+-  0 dy   +92+-  0
+study 7
+ 0 (  640, 360) | A dx   +22+- 80 dy   -18+-146 | B dx   +34+- 95 dy   -17+- 90
+ 1 (  320, 180) | A dx   +48+- 60 dy   +45+- 60 | B dx   +12+- 53 dy    +7+- 87
+ 2 (  960, 180) | A dx   -26+- 79 dy    -3+-132 | B dx   -58+-164 dy   -45+- 85
+ 3 (  960, 540) | A dx   -47+- 50 dy   -98+- 59 | B dx   -54+- 91 dy   -48+- 86
+ 4 (  320, 540) | A dx   +81+- 56 dy   -86+- 93 | B dx  +123+- 94 dy  -104+- 51
+ 5 (  128, 648) | A dx   +98+- 44 dy   -44+-107 | B dx   +71+-111 dy  -145+- 53
+ 6 (  128,  72) | A dx   +22+- 61 dy   +44+-141 | B dx   +94+- 45 dy   -26+- 42
+ 7 ( 1152,  72) | A dx   -67+- 79 dy  +101+-145 | B dx  -244+-105 dy   -32+- 35
+ 8 ( 1152, 648) | A dx  -120+- 83 dy   -90+- 96 | B dx  -214+-143 dy  -146+- 87
+ 9 (  640, 360) | A dx   +50+- 58 dy   -92+- 43 | B dx   +40+- 91 dy  -174+- 33
+
+4. gain/offset fitted on stimulus time < 11 s, median error on the rest, video px
+    7 GG0101 a  second half:  150 px as measured,  147 px after the affine fit
+    7 GG0101 b  second half:  240 px as measured,  228 px after the affine fit
+    7 DD0202 a  second half:  137 px as measured,  106 px after the affine fit
+    7 DD0202 b  second half:  193 px as measured,  172 px after the affine fit
+    7 EE0202 a  second half:  108 px as measured,  103 px after the affine fit
+    7 EE0202 b  second half:  148 px as measured,  145 px after the affine fit
+    7 AA0101 a  second half:  234 px as measured,  232 px after the affine fit
+    7 AA0101 b  second half:  332 px as measured,  343 px after the affine fit
+    7 BB0202 a  second half:  136 px as measured,  184 px after the affine fit
+    7 BB0202 b  second half:  205 px as measured,  217 px after the affine fit
+    7 FF0101 a  second half:  198 px as measured,  188 px after the affine fit
+    7 FF0101 b  second half:  164 px as measured,  159 px after the affine fit
+    6 DD0101 a  second half:  148 px as measured,  109 px after the affine fit
+    6 BB0101 a  second half:  243 px as measured,  149 px after the affine fit
+    6 CC0101 a  second half:  195 px as measured,  167 px after the affine fit
+    6 AA0101 a  second half:  187 px as measured,  122 px after the affine fit
+    6 AA0101 b  second half:  377 px as measured,  247 px after the affine fit

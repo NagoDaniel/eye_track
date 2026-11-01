@@ -1,0 +1,6 @@
+name = "s8-baseline"
+description = "Study 8 (long dot videos, new data, never used for choosing): the product pipeline"
+pipelines = ["a"]
+tune_studies = [8]
+holdout_studies = []
+

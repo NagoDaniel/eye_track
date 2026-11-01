@@ -31,6 +31,7 @@ import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
 from app.events import parse_events, parse_records
+from app.pipeline_b import stale_info
 from app.pipeline_names import REPLAY_FILE
 from app.schemas import StimulusFrameRecord
 from app.storage import derived_dir, events_path, stimulus_frames_path, video_path, webcam_path
@@ -313,7 +314,8 @@ def build_timeline(
     fixations = fixation_rows(FIXATIONS_FILE)
 
     dots_b: PipelineDots | None = None
-    if (derived / SPEC_B.gaze_file).is_file():
+    # B's squares only when its files fit A's: a stale B would be drawn from other inputs.
+    if (derived / SPEC_B.gaze_file).is_file() and stale_info(derived) is None:
         gaze_b = pq.read_table(derived / SPEC_B.gaze_file)
         t_b = floats(gaze_b, "t")
         rows_b = np.array([_nearest(t_b, x) for x in times])

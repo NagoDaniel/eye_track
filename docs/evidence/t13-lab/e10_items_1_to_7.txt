@@ -1,0 +1,126 @@
+T13 items 1-7 (2026-11-01): blink handling, other models, training window, richer calibration. Pipeline A, viewport px.
+Base: t-base = T14 (calibration and all validation dots in the fit, the product's ridge) on studies 7 (tune), 6 and 8 (held out). Rule: tuning median down, held-out median not up, no row worse than +10 %.
+t-ridge (the lab's model path with the product's ridge) reproduces t-base exactly (largest difference 0 over 14 sessions).
+
+t-blink-m100: Item 1: t-base, frames within 100 ms of a blink count as blinks
+  A dc_pause  tune median 178 -> 175, held out 150 -> 146  => BETTER
+  A pause     tune median 175 -> 170, held out 153 -> 150  => BETTER
+
+t-blink-m200: Item 1: t-base, frames within 200 ms of a blink count as blinks
+  A dc_pause  tune median 178 -> 175, held out 150 -> 143  => BETTER
+  A pause     tune median 175 -> 164, held out 153 -> 146  => BETTER
+
+t-blink-rel15: Item 1: t-base, blink also when the eyeBlink score is 0.15 above the session median
+  A dc_pause  tune median 178 -> 166, held out 150 -> 148  => BETTER
+  A pause     tune median 175 -> 162, held out 153 -> 149  => BETTER
+
+t-blink-rel25: Item 1: t-base, blink also when the eyeBlink score is 0.25 above the session median
+  A dc_pause  tune median 178 -> 175, held out 150 -> 149  => BETTER
+  A pause     tune median 175 -> 172, held out 153 -> 153  => BETTER
+
+t-blink-m100-rel25: Item 1: t-base, 100 ms margin and score 0.25 above the session median
+  A dc_pause  tune median 178 -> 172, held out 150 -> 145  => BETTER
+  A pause     tune median 175 -> 168, held out 153 -> 149  => BETTER
+
+t-blink-m200-rel15: Items 1: 200 ms blink margin and score 0.15 above the session median
+  A dc_pause  tune median 178 -> 193, held out 150 -> 139, worse: GG0101/dot(7) +12%, missing: [(7, 'EE0202', 'a', 'moving_dot')]  => not better
+  A pause     tune median 175 -> 187, held out 153 -> 142, worse: GG0101/dot(7) +11%, missing: [(7, 'EE0202', 'a', 'moving_dot')]  => not better
+
+t-xy: Item 2: separate inputs, x from iris x, yaw, roll, face size; y from iris y, lids, pitch, face size
+  A dc_pause  tune median 178 -> 190, held out 150 -> 155, worse: BB0202/dot(7) +46%, BB0101/dot(6) +41%, DA0202/L1(8) +11%, DA0202/L2(8) +16%, DD0101/L2(8) +22%  => not better
+  A pause     tune median 175 -> 183, held out 153 -> 165, worse: BB0202/dot(7) +36%, BB0101/dot(6) +45%, DA0202/L2(8) +12%, DD0101/L2(8) +21%  => not better
+
+t-dotmean: Item 3: ridge on each dot's median features (one row per dot)
+  A dc_pause  tune median 178 -> 189, held out 150 -> 140  => not better
+  A pause     tune median 175 -> 183, held out 153 -> 144, worse: FF0101/dot(7) +12%, AA0101/dot(6) +10%  => not better
+
+t-win500: Item 4: training window 500 ms before to 100 ms after the click (product 700 / 100)
+  A dc_pause  tune median 178 -> 183, held out 150 -> 153, worse: FF0101/dot(7) +12%  => not better
+  A pause     tune median 175 -> 170, held out 153 -> 160, worse: FF0101/dot(7) +11%  => not better
+
+t-win900: Item 4: training window 900 ms before to 100 ms after the click
+  A dc_pause  tune median 178 -> 167, held out 150 -> 143  => BETTER
+  A pause     tune median 175 -> 165, held out 153 -> 148  => BETTER
+
+t-win500-0: Item 4: training window 500 ms before the click to the click
+  A dc_pause  tune median 178 -> 181, held out 150 -> 153, worse: FF0101/dot(7) +11%  => not better
+  A pause     tune median 175 -> 172, held out 153 -> 161, worse: FF0101/dot(7) +11%  => not better
+
+t-win700-300: Item 4: training window 700 ms before to 300 ms after the click
+  A dc_pause  tune median 178 -> 181, held out 150 -> 135  => not better
+  A pause     tune median 175 -> 168, held out 153 -> 141  => BETTER
+
+t-mad2: Item 4: outlier rule at 2.0 MAD (product 2.5)
+  A dc_pause  tune median 178 -> 179, held out 150 -> 151  => not better
+  A pause     tune median 175 -> 174, held out 153 -> 152  => BETTER
+
+t-mad4: Item 4: outlier rule at 4.0 MAD
+  A dc_pause  tune median 178 -> 179, held out 150 -> 149  => not better
+  A pause     tune median 175 -> 171, held out 153 -> 156  => not better
+
+t-tps: Item 6: product ridge, then a thin-plate-spline correction of its estimate
+  A dc_pause  tune median 178 -> 178, held out 150 -> 150  => not better
+  A pause     tune median 175 -> 175, held out 153 -> 153  => not better
+
+t-krr: Item 7: kernel ridge regression (RBF)
+  A dc_pause  tune median 178 -> 174, held out 150 -> 149  => BETTER
+  A pause     tune median 175 -> 163, held out 153 -> 148  => BETTER
+
+t-gp: Item 7: Gaussian process (RBF per feature plus noise)
+  A dc_pause  tune median 178 -> 307, held out 150 -> 254, worse: GG0101/dot(7) +60%, DD0202/dot(7) +125%, AA0101/dot(7) +68%, BB0202/dot(7) +87%, FF0101/dot(7) +16%, BB0101/dot(6) +49%, CC0101/dot(6) +67%, DC0101/L1(8) +80%, DC0101/L2(8) +75%, DB0202/L1(8) +56%, DB0202/L2(8) +99%, DA0202/L1(8) +64%, DA0202/L2(8) +81%, DD0101/L1(8) +54%, DD0101/L2(8) +125%  => not better
+  A pause     tune median 175 -> 307, held out 153 -> 254, worse: GG0101/dot(7) +73%, DD0202/dot(7) +124%, AA0101/dot(7) +66%, BB0202/dot(7) +86%, FF0101/dot(7) +20%, BB0101/dot(6) +49%, CC0101/dot(6) +66%, DC0101/L1(8) +84%, DC0101/L2(8) +70%, DB0202/L1(8) +66%, DB0202/L2(8) +100%, DA0202/L1(8) +66%, DA0202/L2(8) +84%, DD0101/L1(8) +52%, DD0101/L2(8) +96%  => not better
+
+t-win900-m200: Items 1 + 4: 900 ms training window and 200 ms blink margin
+  A dc_pause  tune median 178 -> 161, held out 150 -> 150, worse: BB0101/dot(6) +15%  => not better
+  A pause     tune median 175 -> 156, held out 153 -> 152, worse: BB0101/dot(6) +15%  => not better
+
+t-win900-rel15: Items 1 + 4: 900 ms training window and blink score 0.15 above the session median
+  A dc_pause  tune median 178 -> 164, held out 150 -> 148  => BETTER
+  A pause     tune median 175 -> 155, held out 153 -> 150  => BETTER
+
+t-win900-m200-rel15: Items 1 + 4: 900 ms window, 200 ms blink margin, blink score 0.15 above the session median
+  A dc_pause  tune median 178 -> 187, held out 150 -> 148, worse: DD0101/dot(6) +12%, missing: [(7, 'EE0202', 'a', 'moving_dot')]  => not better
+  A pause     tune median 175 -> 179, held out 153 -> 145, worse: DD0101/dot(6) +12%, missing: [(7, 'EE0202', 'a', 'moving_dot')]  => not better
+
+t-krr-win900-rel15: Items 7 + 4 + 1: kernel ridge, 900 ms window, blink score 0.15 above the session median
+  A dc_pause  tune median 178 -> 156, held out 150 -> 137  => BETTER
+  A pause     tune median 175 -> 150, held out 153 -> 138  => BETTER
+
+Item 5, study 8 only, scored on video 2 (base s8x-ridge = lab ridge on calibration and all validation dots):
+s8x-rests: Item 5: plus the 40 rests of video 1 as extra calibration points (score video 2 only)
+  A dc_pause  tune median 149 -> 150, worse: DA0202/L2(8) +13%  => not better
+  A pause     tune median 153 -> 148, worse: DA0202/L2(8) +11%  => not better
+
+s8x-pursuit: Item 5: plus the 18 s of smooth pursuit of video 1 (score video 2 only)
+  A dc_pause  tune median 149 -> 155, worse: DB0202/L2(8) +16%, DD0101/L2(8) +13%  => not better
+  A pause     tune median 153 -> 151, worse: DB0202/L2(8) +15%  => not better
+
+s8x-both: Item 5: plus the rests and the pursuit of video 1 (score video 2 only)
+  A dc_pause  tune median 149 -> 156, worse: DA0202/L2(8) +20%  => not better
+  A pause     tune median 153 -> 150, worse: DA0202/L2(8) +16%  => not better
+
+s8x-pursuit-only: Item 5: only the 18 s of pursuit of video 1, no clicked dots at all (score video 2 only)
+  A dc_pause  tune median 149 -> 338, worse: DC0101/L2(8) +258%, DB0202/L2(8) +92%, DA0202/L2(8) +76%, DD0101/L2(8) +145%  => not better
+  A pause     tune median 153 -> 390, worse: DC0101/L2(8) +229%, DB0202/L2(8) +92%, DA0202/L2(8) +46%, DD0101/L2(8) +184%  => not better
+
+Valid frames (median over rows / worst row): t-base 0.944 / 0.85; t-blink-m200 0.864 / 0.72; t-blink-rel15 0.907 / 0.77; t-win900-rel15 0.901 / 0.77; t-krr-win900-rel15 0.912 / 0.77; t-blink-m200-rel15 0.820 / 0.60 (EE0202's calibration fails).
+
+Session by session, t-krr-win900-rel15 against t-base:
+                     |      dc_pause      |       pause        |     dc_median      |       median       |        move       
+study code    vid pl  |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg |   base    new  chg
+    7 GG0101  dot a   |    204    165 -19% |    189    159 -16% |    207    172 -17% |    192    164 -15% |    208    186 -11%
+    7 DD0202  dot a   |    140    117 -16% |    140    120 -15% |    145    120 -18% |    147    120 -19% |    180    117 -35%
+    7 EE0202  dot a   |    129    123  -4% |    127    124  -3% |    133    128  -3% |    132    129  -2% |    162    149  -8%
+    7 AA0101  dot a   |    229    198 -13% |    231    198 -14% |    241    214 -11% |    245    208 -15% |    280    264  -6%
+    7 BB0202  dot a   |    160    147  -8% |    161    142 -12% |    174    162  -7% |    173    156 -10% |    199    186  -7%
+    7 FF0101  dot a   |    196    187  -5% |    191    172 -10% |    191    187  -2% |    188    174  -7% |    176    177  +1%
+    6 DD0101  dot a   |    183    159 -13% |    182    160 -12% |    191    169 -12% |    189    168 -11% |    208    192  -8%
+    6 BB0101  dot a   |    140    127  -9% |    140    130  -7% |    158    145  -8% |    157    148  -6% |    208    207  -0%
+    6 CC0101  dot a   |    160    151  -5% |    161    153  -5% |    169    160  -5% |    168    164  -2% |    190    191  +0%
+    6 AA0101  dot a   |    130    126  -3% |    132    126  -4% |    145    144  -1% |    149    145  -3% |    218    215  -2%
+    8 DC0101  L1  a   |    134    118 -12% |    132    118 -10% |    140    126 -10% |    141    125 -11% |    152    138  -9%
+    8 DC0101  L2  a   |    136    111 -18% |    140    118 -16% |    144    121 -15% |    147    130 -12% |    161    151  -6%
+    8 DB0202  L1  a   |    205    182 -12% |    194    179  -8% |    205    189  -8% |    193    184  -5% |    191    194  +2%
+    8 DB0202  L2  a   |    191    192  +1% |    190    190  -0% |    207    210  +2% |    207    208  +1% |    237    233  -1%
+    8 DA0202  L1  a   |    161    148  -8% |    160    146  -9% |    169    158  -6% |    167    155  -7% |    181    170  -6%
+    8 DA0202  L2  a   |    163    156  -4% |    160    155  -3% |    186    175  -6% |    184    173  -6% |    214    205  -4%

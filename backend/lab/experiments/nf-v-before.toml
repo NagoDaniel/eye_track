@@ -1,0 +1,7 @@
+name = "nf-v-before"
+description = "f-no-face + E7 (validation dots before the video)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6]
+features = ["iris_l_x", "iris_l_y", "iris_r_x", "iris_r_y", "open_l", "open_r", "yaw", "pitch", "roll"]
+fit_validation = "before_video"
