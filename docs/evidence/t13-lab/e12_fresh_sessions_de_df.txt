@@ -1,0 +1,19 @@
+Fresh sessions (2026-11-01): DE0202 (glasses) and DF0101 (no glasses) in study 8, recorded after every T13 choice was made, so none of them has seen these. Both were recorded as debug sessions (the product leaves them out of analyses; the lab scores them anyway). A second, unfinished DE0202 start was skipped.
+Error while the dot rests, viewport px, drift-corrected (dc) and as measured (as), per video (1 = long_dot_1, 2 = long_dot_2).
+
+experiment            DE/1 dc   as  DE/2 dc   as  DF/1 dc   as  DF/2 dc   as  median dc  change of the worst row vs t-base
+pre-t14                  181  172     182  157     147  147     185  166     181      +24%
+t-base                   152  155     147  142     150  143     181  176     151       +0%
+t-win900                 152  154     144  142     145  135     172  162     149       +0%
+t-blink-rel15            152  155     147  142     148  141     179  175     150       +0%
+t-blink-m200             152  154     147  141     150  143     179  175     151       -0%
+t-e8-z                   153  153     148  144     158  147     186  176     155       +5%
+t-krr                    155  156     147  143     148  146     182  181     151       +2%
+t-win900-rel15           152  154     145  142     142  133     170  160     148       -0%
+t-win900-rel15-z         152  153     146  144     152  139     181  174     152       +1%
+t-krr-win900-rel15       152  157     147  144     136  134     169  169     150       +0%
+t-krr-win900-rel15-z     157  157     148  146     152  150     207  204     154      +15%
+t-e8-squint              156  159     139  139     155  150     202  196     156      +12%
+t-e8-look                159  162     135  138     142  140     179  175     150       +4%
+
+pre-t14 = the product before T14; t-base = T14 (the product now).
