@@ -42,8 +42,10 @@ class PipelineConfig:
     sync_huber_epsilon: float = 1.35
 
     # --- Calibration fit (PLAN §5.5, §8.6) ---
-    # The training window of a dot, relative to its click (excludes the saccade at the dot's onset).
-    calib_window_before_click_ms: float = 700.0
+    # The training window of a dot, relative to its click. 900 ms before (the plan: 700, which
+    # excludes the saccade at the dot's onset; DECISIONS 2026-11-01: more samples won in the T13
+    # lab, and the outlier rule drops most frames of an early click's saccade).
+    calib_window_before_click_ms: float = 900.0
     calib_window_after_click_ms: float = 100.0
     # Regularisation grid of the leave-one-dot-out cross-validation: log grid 1e-3 to 1e3.
     calib_alphas: tuple[float, ...] = (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)

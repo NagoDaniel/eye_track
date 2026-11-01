@@ -26,6 +26,7 @@ from worker.pipeline.ridge import fit_ridge, predict
 CONFIG = PipelineConfig()
 # The plan's calibration: the calibration dots only (T14 off).
 PLAIN = replace(CONFIG, calib_fit_validation=False)
+BEFORE = CONFIG.calib_window_before_click_ms
 WIDTH, HEIGHT = 1280.0, 720.0
 POSITIONS = [  # 13 dots: centre first, a 3x3 grid and the four quadrant centres (PLAN §5.5)
     (640, 360), (76.8, 43.2), (640, 43.2), (1203.2, 43.2), (76.8, 360), (1203.2, 360),
@@ -129,12 +130,15 @@ def test_a_restarted_dot_counts_with_its_last_show_and_click() -> None:
 # --- training samples ---
 
 
-def test_the_training_window_is_700_ms_before_to_100_ms_after_the_click() -> None:
-    t = np.array([1299.0, 1300.0, 1500.0, 2000.0, 2100.0, 2101.0])
+def test_the_training_window_is_900_ms_before_to_100_ms_after_the_click_by_default() -> None:
+    """DECISIONS 2026-11-01 (the plan's 700 ms; 900 ms won in the T13 lab)."""
+    assert CONFIG.calib_window_before_click_ms == 900.0
+    assert CONFIG.calib_window_after_click_ms == 100.0
+    t = np.array([1099.0, 1100.0, 1500.0, 2000.0, 2100.0, 2101.0])
     vectors = np.arange(len(t), dtype=float)[:, None] * np.ones((1, 3))
     usable = np.array([True, True, True, True, True, True])
     train = training_samples([Dot(0, 10, 20, 2000.0)], t, vectors, usable, CONFIG)
-    assert train.features[:, 0].tolist() == [1, 2, 3, 4]  # 1300 to 2100 inclusive
+    assert train.features[:, 0].tolist() == [1, 2, 3, 4]  # 1100 to 2100 inclusive
     assert train.targets.tolist() == [[10, 20]] * 4
     assert train.valid_per_dot == [4]
 
@@ -146,7 +150,7 @@ def test_frames_without_a_face_and_blinks_are_not_used_and_dots_do_not_mix() -> 
     usable[[16, 17]] = False  # 1600, 1700: no face or a blink
     dots = [Dot(0, 1, 1, 2000.0), Dot(1, 2, 2, 5000.0), Dot(2, 3, 3, None)]
     train = training_samples(dots, t, vectors, usable, CONFIG)
-    assert train.valid_per_dot == [7, 9, 0]  # 1300..2100 (9 frames) minus two; 4300..5100
+    assert train.valid_per_dot == [9, 11, 0]  # 1100..2100 (11 frames) minus two; 4100..5100
     assert set(train.dot_index.tolist()) == {0, 1}
     assert train.targets[train.dot_index == 1][0].tolist() == [2, 2]
 
@@ -244,7 +248,7 @@ def synthetic_session(
     vectors = rng.normal(scale=3.0, size=(len(t), 10))
     for dot in attempt.dots:
         assert dot.click_t is not None
-        inside = (t >= dot.click_t - 700) & (t <= dot.click_t + 100)
+        inside = (t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)
         u = np.array([dot.x / WIDTH, dot.y / HEIGHT]) - 0.5
         vectors[inside] = u @ mapping + rng.normal(scale=noise, size=(inside.sum(), 10))
         if dot.id == outlier_dot:
@@ -304,7 +308,7 @@ def test_more_than_three_sparse_dots_fail_the_calibration() -> None:
         keep = usable.copy()
         for dot in attempt.dots[:n]:
             assert dot.click_t is not None
-            window = np.flatnonzero((t >= dot.click_t - 700) & (t <= dot.click_t + 100))
+            window = np.flatnonzero((t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100))
             keep[window[4:]] = False
         return keep
 
@@ -337,7 +341,7 @@ def test_the_last_passed_attempt_is_the_one_fitted() -> None:
         scale = 1.0 if attempt.number == 2 else -1.0
         for dot in attempt.dots:
             assert dot.click_t is not None
-            inside = (t >= dot.click_t - 700) & (t <= dot.click_t + 100)
+            inside = (t >= dot.click_t - BEFORE) & (t <= dot.click_t + 100)
             u = np.array([dot.x / WIDTH, dot.y / HEIGHT]) - 0.5
             vectors[inside] = scale * (u @ mapping) + rng.normal(
                 scale=0.02, size=(inside.sum(), 10)

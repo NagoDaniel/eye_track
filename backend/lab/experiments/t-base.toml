@@ -5,3 +5,8 @@ tune_studies = [7]
 holdout_studies = [6, 8]
 fit_validation = "all"
 
+
+# Pinned: the product default changed to 900 ms on 2026-11-01; this reference keeps 700.
+
+[config]
+calib_window_before_click_ms = 700

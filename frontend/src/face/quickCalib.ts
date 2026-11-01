@@ -14,9 +14,10 @@ export const BLINK_SCORE_THRESHOLD = 0.5;
 /** ... or an eye openness (lid distance / eye width) below this. Starting value, tune on data: in the
  * fixture clip blinks measure 0.07 to 0.14 and open eyes 0.27 to 0.39. */
 export const BLINK_OPENNESS_THRESHOLD = 0.15;
-/** The training window of a dot starts this long before the click (PLAN §5.5); it ends
- * `CALIB_POST_CLICK_MS` after it. */
-export const TRAIN_WINDOW_BEFORE_CLICK_MS = 700;
+/** The training window of a dot starts this long before the click; it ends `CALIB_POST_CLICK_MS`
+ * after it. 900 ms like the server (`calib_window_before_click_ms`; the plan's 700 ms, DECISIONS
+ * 2026-11-01). */
+export const TRAIN_WINDOW_BEFORE_CLICK_MS = 900;
 /** Head or distance change over the calibration: spread of the per-dot median face ratio, as a
  * fraction of its median (0.12 is about 6 cm at arm's length). Starting value, not in the plan. */
 export const MAX_FACE_RATIO_SPREAD = 0.12;
