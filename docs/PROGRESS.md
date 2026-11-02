@@ -228,4 +228,6 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 
 **Webcam chunk cleanup (branch `m7-chunk-cleanup`, DECISIONS 2026-11-02)**: ingest deletes `raw/chunks/webcam/` once `webcam.webm` is made and read, and writes `raw/webcam_chunks_removed.json` (hash of the recording); ingest run again checks the file against the marker; archives carry it; `cli.py remove-webcam-chunks [--apply]` for sessions ingested earlier (dry run by default). About a third less disk per session (about 34 instead of 52 MB per recorded minute). Not undoable: a remux bug found later cannot be fixed from the upload.
 
+**Delete buttons (branch `m7-delete-buttons`, DECISIONS 2026-11-02)**: session page (tick box) and study page (type the code) delete rows and files; refused while a job is open. Test studies on the live server can be erased.
+
 Working state: Docker Desktop is needed for `make test` (PostgreSQL) but not for the lab; the lab replay work is on `m7-lab-replay`.

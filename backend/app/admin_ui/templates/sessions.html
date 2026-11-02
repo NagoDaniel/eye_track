@@ -3,6 +3,7 @@
 {% block width %}72rem{% endblock %}
 {% block body %}
 <h1>Sessions</h1>
+{% if deleted %}<p class="notice" role="status">The session was deleted.</p>{% endif %}
 <form method="get" action="/admin/sessions">
   <label>Study
     <select name="study_id">

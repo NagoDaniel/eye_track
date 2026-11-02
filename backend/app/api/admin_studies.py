@@ -20,6 +20,7 @@ from app import analysis_view, jobs_view, studies
 from app import videos as video_service
 from app.api.pages import Page, check_form_csrf, page_admin, render
 from app.auth import csrf_protected, current_admin, get_db
+from app.deletion import delete_study_with_data
 from app.models import AdminUser
 from app.pipeline_b import queue_study
 from app.schemas import StudyConfig
@@ -129,8 +130,18 @@ def api_update(study_id: int, body: StudyIn, db: DbSession = Depends(get_db)) ->
 
 
 @router.delete("/api/studies/{study_id}", status_code=204, dependencies=[Depends(csrf_protected)])
-def api_delete(study_id: int, db: DbSession = Depends(get_db)) -> Response:
-    studies.delete_study(db, study_id)
+def api_delete(
+    request: Request,
+    study_id: int,
+    confirm_code: str | None = None,
+    db: DbSession = Depends(get_db),
+) -> Response:
+    """Without `confirm_code` only a study without sessions is deleted. With the study's code it
+    goes with all its sessions, jobs and analysis outputs, files included (cannot be undone)."""
+    if confirm_code is None:
+        studies.delete_study(db, study_id)
+    else:
+        delete_study_with_data(db, request.app.state.settings.data_root, study_id, confirm_code)
     db.commit()
     return Response(status_code=204)
 
@@ -321,14 +332,18 @@ def delete_form(
     request: Request,
     study_id: int,
     csrf_token: Annotated[str, Form()] = "",
+    confirm_code: Annotated[str, Form()] = "",
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
     check_form_csrf(page, csrf_token)
     try:
-        studies.delete_study(db, study_id)
+        delete_study_with_data(
+            db, request.app.state.settings.data_root, study_id, confirm_code.strip()
+        )
         db.commit()
-    except ConflictError as exc:
+    except (ConflictError, InvalidError) as exc:
+        db.rollback()
         return _detail_page(
             request, page, db, study_id, error=str(exc), status_code=exc.status_code
         )

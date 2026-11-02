@@ -222,7 +222,8 @@ def test_sessions_are_read_only(admin: Admin, migrated_engine: Engine) -> None:
     for url in ("/admin/api/sessions", f"/admin/api/sessions/{sid}"):
         assert c.post(url, json={}, headers=h).status_code == 405
         assert c.put(url, json={}, headers=h).status_code == 405
-        assert c.delete(url, headers=h).status_code == 405
+    assert c.delete("/admin/api/sessions", headers=h).status_code == 405
+    # (one session can be deleted: tests/test_deletion.py)
 
 
 def test_anonymous_gets_401_and_pages_redirect(migrated_engine: Engine, data_root: Path) -> None:

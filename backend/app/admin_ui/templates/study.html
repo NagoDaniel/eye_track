@@ -105,9 +105,12 @@
 </form>
 
 <h2>Delete</h2>
-<p>A study with sessions cannot be deleted.</p>
+<p>Deletes the study with <strong>all its sessions</strong>: the webcam recordings, derived files, jobs and analysis results, from the database and from the disk. This cannot be undone. The stimulus videos are not deleted.{% if study.session_count %} This study has {{ study.session_count }} session(s).{% endif %}</p>
 <form method="post" action="/admin/studies/{{ study.id }}/delete">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <button type="submit" class="danger">Delete study</button>
+  <label>Type the study code <code>{{ study.code }}</code> to confirm
+    <input type="text" name="confirm_code" autocomplete="off" required>
+  </label>
+  <button type="submit" class="danger">Delete study and its data</button>
 </form>
 {% endblock %}
