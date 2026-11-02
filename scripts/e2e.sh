@@ -126,8 +126,13 @@ for raw in dirs:
     assert [f["t"] for f in features] == sorted(f["t"] for f in features)
     assert [f["t"] for f in frames] == sorted(f["t"] for f in frames)
     # The chunks of one recording are one WebM byte stream: concatenated they are a valid video.
+    # The worker may already have processed the session and deleted the webcam chunks (it writes
+    # the marker first, then deletes): then the assembled recording is the one to look at.
     probe = json.loads(sh(
-        f"cat {raw}/chunks/webcam/*.bin > /tmp/webcam.webm && "
+        f"marker={raw}/webcam_chunks_removed.json; "
+        f"if [ -e $marker ]; then cp {raw}/webcam.webm /tmp/webcam.webm; "
+        f"else cat {raw}/chunks/webcam/*.bin > /tmp/webcam.webm 2>/dev/null; "
+        f"[ -e $marker ] && cp {raw}/webcam.webm /tmp/webcam.webm; true; fi && "
         "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height "
         "-of json /tmp/webcam.webm"))["streams"][0]
     assert probe["codec_name"] in ("vp8", "vp9") and probe["width"] >= 640, probe
@@ -174,6 +179,8 @@ print("the session without a webcam failed to process, as expected")
 
 # E2E_EXPORT_SESSION=<dir>: copy the raw directory of one complete session and the server's chunk
 # manifest out of the stack, for scripts/make_session_fixture.py (the pipeline tests' real session).
+# NOTE: the worker deletes the webcam chunks after ingest (DECISIONS 2026-11-02), so the export has
+# none; a new fixture session needs `delete_webcam_chunks_after_ingest = False` for that run.
 export = os.environ.get("E2E_EXPORT_SESSION")
 if export:
     assert complete, "no session played the video and logged both gate results"

@@ -81,7 +81,10 @@ def test_the_archive_holds_the_session_and_its_chunk_table(
         names = z.namelist()
         assert names[:2] == ["meta.json", "chunks.json"]
         assert "raw/meta.json" not in names  # it is the top-level meta.json
-        assert "raw/webcam.webm" in names and "raw/chunks/webcam/000000.bin" in names
+        # the pipeline deleted the webcam chunks after ingest (DECISIONS 2026-11-02)
+        assert "raw/webcam.webm" in names and "raw/webcam_chunks_removed.json" in names
+        assert not [n for n in names if n.startswith("raw/chunks/webcam/")]
+        assert "raw/chunks/events/000000.bin" in names
         assert {"derived/quality.json", "derived/gaze_a.parquet", "derived/sync.json"} <= set(names)
         assert not [n for n in names if "/." in n or n.endswith(".tmp")]
         assert json.loads(z.read("meta.json")) == json.loads((here.raw / "meta.json").read_text())
@@ -205,6 +208,28 @@ def test_an_export_without_raw_video_imports_with_the_video_marked_deleted(
         assert row.raw_video_deleted_at is not None
         streams = {c.stream.value for c in db.scalars(select(Chunk))}
         assert "webcam" not in streams and "events" in streams
+
+
+def test_a_session_whose_webcam_chunks_were_removed_keeps_its_recording_and_its_rows(
+    here: FixtureSession, migrated_engine: Engine, tmp_path: Path
+) -> None:
+    """The pipeline deletes the webcam chunks after ingest (DECISIONS 2026-11-02): the export holds
+    the recording and the marker, and the import keeps the upload's rows and the video."""
+    directory = session_directory(here)
+    assert not (directory / "raw" / "chunks" / "webcam").exists()
+    assert (directory / "raw" / "webcam_chunks_removed.json").is_file()
+    summary = export(migrated_engine, here, tmp_path / "s.zip")
+    assert summary.contains_raw_video
+    with zipfile.ZipFile(tmp_path / "s.zip") as z:
+        names = set(z.namelist())
+    assert {"raw/webcam.webm", "raw/webcam_chunks_removed.json"} <= names
+    forget(migrated_engine, here)
+    with Db(migrated_engine) as db:
+        sid = import_session(db, tmp_path / "other", tmp_path / "s.zip")
+        db.commit()
+        assert db.get_one(SessionRow, sid).raw_video_deleted_at is None
+        webcam_rows = [c for c in db.scalars(select(Chunk)) if c.stream.value == "webcam"]
+    assert len(webcam_rows) == sum(r.stream == "webcam" for r in here.manifest)
 
 
 def write_zip(path: Path, files: dict[str, bytes]) -> Path:

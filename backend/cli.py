@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 import typer
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.analysis_runs import OPEN_JOBS, analysis_jobs, compare_jobs, new_run_id
@@ -14,7 +15,7 @@ from app.auth import create_admin
 from app.db import make_engine, make_session_factory
 from app.events import parse_events
 from app.logging import configure_logging
-from app.models import Job, JobKind
+from app.models import Chunk, Job, JobKind
 from app.models import Session as SessionRow
 from app.pipeline_b import B_STAGE_NAMES, queue_study
 from app.pipeline_b import refusal as b_refusal
@@ -22,13 +23,19 @@ from app.pipeline_names import REPLAY_FILE, STAGE_NAMES
 from app.reprocess import rerun_refusal
 from app.session_archive import ArchiveError, export_session, import_session
 from app.settings import Settings
-from app.storage import analysis_run_dir, compare_run_dir, derived_dir, events_path
+from app.storage import analysis_run_dir, chunk_path, compare_run_dir, derived_dir, events_path
 from app.study_archive import export_study, import_study
 from worker.analysis.compare import run_compare
 from worker.analysis.config import AnalysisConfig
 from worker.handlers import make_analyze_video, make_process_pipeline_b, make_process_session
 from worker.pipeline.config import PipelineConfig
 from worker.pipeline.gaze import GAZE_FILE
+from worker.pipeline.ingest import (
+    ChunkRecord,
+    IngestError,
+    read_removal_marker,
+    remove_chunks_of_ingested_session,
+)
 from worker.pipeline.moving_dot import DotPath, MovingDotError, format_report, moving_dot_report
 from worker.pipeline.plots import plot_moving_dot, png_bytes
 from worker.pipeline.replay import ReplayError, render_replay
@@ -90,6 +97,48 @@ def _session_id(text: str) -> uuid.UUID:
     except ValueError as exc:
         typer.echo(f"error: '{text}' is not a session id (a UUID)", err=True)
         raise typer.Exit(1) from exc
+
+
+@app.command("remove-webcam-chunks")
+def remove_webcam_chunks_command(
+    study: int | None = typer.Option(None, help="Only this study (id)."),
+    apply: bool = typer.Option(False, "--apply", help="Delete; without it only list (dry run)."),
+) -> None:
+    """Delete the webcam chunks of sessions ingested before that became automatic (they are a
+    second copy of raw/webcam.webm; DECISIONS 2026-11-02). Each session is checked first. Cannot
+    be undone."""
+    root = settings().data_root
+    freed = 0
+    failed = 0
+    with open_session() as db:
+        query = select(SessionRow).order_by(SessionRow.created_at)
+        if study is not None:
+            query = query.where(SessionRow.study_id == study)
+        for row in db.scalars(query):
+            if (
+                read_removal_marker(root, row.study_id, row.id) is not None
+                and not chunk_path(root, row.study_id, row.id, "webcam", 0).exists()
+            ):
+                continue
+            manifest = [
+                ChunkRecord(c.stream.value, c.seq, c.size, c.sha256)
+                for c in db.scalars(select(Chunk).where(Chunk.session_id == row.id))
+            ]
+            size = sum(c.size for c in manifest if c.stream == "webcam")
+            if not apply:
+                typer.echo(f"{row.id}  {size / 1e6:8.1f} MB")
+                freed += size
+                continue
+            try:
+                freed += remove_chunks_of_ingested_session(root, row.study_id, row.id, manifest)
+                typer.echo(f"{row.id}  removed")
+            except IngestError as exc:
+                failed += 1
+                typer.echo(f"{row.id}  SKIPPED: {exc}", err=True)
+    verb = "freed" if apply else "would free"
+    typer.echo(f"{verb} {freed / 1e6:.1f} MB" + (f"; {failed} skipped" if failed else ""))
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command("process")

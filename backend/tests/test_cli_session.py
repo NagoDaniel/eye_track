@@ -84,17 +84,45 @@ def test_process_from_a_stage_and_one_stage_only(here: FixtureSession) -> None:
 
 def test_process_keeps_the_intermediate_file_only_when_asked(here: FixtureSession) -> None:
     kept = derived(here) / "intermediates" / "webcam_concat.webm"
-    assert (
-        runner.invoke(cli.app, ["process", str(here.session_id), "--only", "ingest"]).exit_code == 0
-    )
-    assert not kept.exists()
+    chunks = here.raw / "chunks" / "webcam"
     args = ["process", str(here.session_id), "--only", "ingest", "--keep-intermediates"]
     assert runner.invoke(cli.app, args).exit_code == 0
     assert kept.is_file() and kept.stat().st_size > 1000
+    assert chunks.is_dir()  # debugging with the flag keeps the chunks too
     assert (
         runner.invoke(cli.app, ["process", str(here.session_id), "--only", "ingest"]).exit_code == 0
     )
     assert not kept.exists()  # a run without the flag does not leave a stale one
+    assert not chunks.exists()  # and ingest then deletes the webcam chunks (DECISIONS 2026-11-02)
+
+
+def test_remove_webcam_chunks_lists_first_and_deletes_only_with_apply(here: FixtureSession) -> None:
+    chunks = here.raw / "chunks" / "webcam"
+    keep = ["process", str(here.session_id), "--only", "ingest", "--keep-intermediates"]
+    assert runner.invoke(cli.app, keep).exit_code == 0  # ingested, the chunks still there
+
+    dry = runner.invoke(cli.app, ["remove-webcam-chunks"])
+    assert dry.exit_code == 0, dry.output
+    assert str(here.session_id) in dry.output and "would free" in dry.output
+    assert chunks.is_dir()
+
+    done = runner.invoke(cli.app, ["remove-webcam-chunks", "--apply"])
+    assert done.exit_code == 0, done.output
+    assert "removed" in done.output and "freed" in done.output
+    assert not chunks.exists() and (here.raw / "webcam_chunks_removed.json").is_file()
+
+    again = runner.invoke(cli.app, ["remove-webcam-chunks", "--apply"])
+    assert again.exit_code == 0 and str(here.session_id) not in again.output
+
+
+def test_remove_webcam_chunks_skips_a_session_that_fails_its_check(here: FixtureSession) -> None:
+    chunks = here.raw / "chunks" / "webcam"
+    keep = ["process", str(here.session_id), "--only", "ingest", "--keep-intermediates"]
+    assert runner.invoke(cli.app, keep).exit_code == 0
+    (chunks / "000001.bin").write_bytes(b"changed")
+    result = runner.invoke(cli.app, ["remove-webcam-chunks", "--apply"])
+    assert result.exit_code == 1 and "SKIPPED" in result.output and "not intact" in result.output
+    assert chunks.is_dir() and not (here.raw / "webcam_chunks_removed.json").exists()
 
 
 def test_process_refuses_bad_arguments(here: FixtureSession) -> None:

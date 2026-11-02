@@ -14,6 +14,13 @@ Format:
 
 ---
 
+## 2026-11-02 — The webcam chunks are deleted once the recording is made
+- Plan section: §8.1, §1 (raw data is immutable), §11
+- Decision: after ingest has remuxed the chunks into `raw/webcam.webm` and read every frame of it, it writes `raw/webcam_chunks_removed.json` (sha256 of the recording, chunk count, bytes, frames) and deletes `raw/chunks/webcam/`. `webcam.webm` then **is** the raw recording (immutable, vouched for by the marker; a remux is not byte-for-byte repeatable, so it cannot be rebuilt identically anyway). Ingest run again checks the file against the marker. The events, features and stimulus_frames chunks stay; the `chunks` table keeps the webcam rows. Config `delete_webcam_chunks_after_ingest` (default true; off with `--keep-intermediates`). `cli.py remove-webcam-chunks [--apply]` does the same for earlier sessions, after checking each. Session archives carry the marker with the recording. The VM disk (40 GB) is the reason: the chunks were about 35 % of the data.
+- Cost: a bug found later in the remux cannot be fixed by assembling again from the upload. Mitigation: nothing is deleted before the recording decodes and its frame table is written, and the upload's sha256 values stay in the database.
+- Reason: requested by the user (disk space on the VM); the plan keeps the chunks.
+- Approved by: Nágó Dániel
+
 ## 2026-11-02 — Root page asks for the study code; short draft consent text
 - Plan section: §5.2 step 1, §13 (consent)
 - Decision: (1) The root URL `/` shows a box for the study **code** (the `<study code>` of `/s/<study code>`, not the free-text study name, which is not unique) with a short explanation; a valid code (checked with `GET /api/studies/{code}`) redirects to `/s/<code>`, an unknown one shows a message. The session flow at `/s/<code>` is unchanged. (2) `backend/app/consent/v1.txt` is replaced by a short draft (what is recorded, purpose, pseudonymous, retention and contact as `[bracketed]` fields to fill in, voluntary and withdrawal); the tick-box consent screen is unchanged. It must be replaced by the ethics-approved text before real data; version `v1` is edited in place because only test sessions exist so far, a new file and `consent_version` is needed after real consent was collected.
