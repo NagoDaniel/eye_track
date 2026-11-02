@@ -14,12 +14,13 @@ from app import sessions_view
 from app.api.pages import Page, check_form_csrf, page_admin, render
 from app.auth import csrf_protected, current_admin, get_db
 from app.chunks import MIB
+from app.deletion import delete_session
 from app.models import AdminUser
 from app.models import Session as SessionRow
 from app.pipeline_b import B_STAGE_NAMES, queue_pipeline_b
 from app.pipeline_names import PLOT_B_FILES, PLOT_FILES, REPLAY_FILE
 from app.reprocess import queue_render, queue_rerun
-from app.service_errors import NotFoundError
+from app.service_errors import ConflictError, InvalidError, NotFoundError
 from app.settings import Settings
 from app.storage import derived_dir, webcam_path
 from app.studies import list_studies
@@ -63,6 +64,7 @@ def api_get(
 def list_page(
     request: Request,
     study_id: Annotated[str, Query()] = "",  # the filter form sends "" for "all studies"
+    deleted: Annotated[bool, Query()] = False,
     page: Page = Depends(page_admin),
     db: DbSession = Depends(get_db),
 ) -> Response:
@@ -74,7 +76,32 @@ def list_page(
         sessions=sessions_view.list_sessions(db, chosen),
         studies=list_studies(db),
         chosen_study=chosen,
+        deleted=deleted,
     )
+
+
+def _detail_response(
+    request: Request,
+    page: Page,
+    db: DbSession,
+    session_id: uuid.UUID,
+    queued: bool = False,
+    delete_error: str | None = None,
+    status_code: int = 200,
+) -> Response:
+    settings: Settings = request.app.state.settings
+    detail = sessions_view.session_detail(
+        db,
+        settings.data_root,
+        session_id,
+        settings.max_events_chunk_inflated_mb * MIB,
+        _weights(settings),
+    )
+    response = render(
+        request, page, "session.html", session=detail, queued=queued, delete_error=delete_error
+    )
+    response.status_code = status_code
+    return response
 
 
 @router.get("/sessions/{session_id}")
@@ -85,15 +112,45 @@ def detail_page(
     db: DbSession = Depends(get_db),
     queued: Annotated[bool, Query()] = False,
 ) -> Response:
-    settings: Settings = request.app.state.settings
-    detail = sessions_view.session_detail(
-        db,
-        settings.data_root,
-        session_id,
-        settings.max_events_chunk_inflated_mb * MIB,
-        _weights(settings),
-    )
-    return render(request, page, "session.html", session=detail, queued=queued)
+    return _detail_response(request, page, db, session_id, queued)
+
+
+@router.delete(
+    "/api/sessions/{session_id}", status_code=204, dependencies=[Depends(csrf_protected)]
+)
+def api_delete(
+    request: Request,
+    session_id: uuid.UUID,
+    _admin: AdminUser = Depends(current_admin),
+    db: DbSession = Depends(get_db),
+) -> Response:
+    """Delete the session: database rows and all its files (cannot be undone)."""
+    delete_session(db, request.app.state.settings.data_root, session_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/sessions/{session_id}/delete")
+def delete_form(
+    request: Request,
+    session_id: uuid.UUID,
+    page: Page = Depends(page_admin),
+    db: DbSession = Depends(get_db),
+    csrf_token: Annotated[str, Form()] = "",
+    confirm: Annotated[str, Form()] = "",
+) -> Response:
+    check_form_csrf(page, csrf_token)
+    try:
+        if confirm != "yes":
+            raise InvalidError("tick the box to confirm that the session is deleted for good")
+        delete_session(db, request.app.state.settings.data_root, session_id)
+        db.commit()
+    except (ConflictError, InvalidError) as exc:
+        db.rollback()
+        return _detail_response(
+            request, page, db, session_id, delete_error=str(exc), status_code=exc.status_code
+        )
+    return RedirectResponse("/admin/sessions?deleted=true", status_code=303)
 
 
 class RerunRequest(BaseModel):

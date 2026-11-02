@@ -14,6 +14,31 @@ Format:
 
 ---
 
+## 2026-11-02 — Admin can delete a session, or a study with all its data
+- Plan section: §6 (admin), §13 (withdrawal)
+- Decision: a "Delete" section on the session page (tick box) and on the study page (type the study code); `DELETE /admin/api/sessions/{id}` and `DELETE /admin/api/studies/{id}?confirm_code=<code>`. A session goes with its chunk rows, its jobs and its directory; a study with all its sessions, its analysis and comparison jobs, `studies/<id>/` and `analysis/<id>/`. Stimulus videos belong to no study and stay. Refused (409) while a job of the session or study is queued or running. The rows go first and the files after, so a failure rolls the rows back and deleting again finishes it. Analysis results that used a deleted session are not changed (they hold aggregates); deleting the study removes them. Logged as `session deleted` / `study deleted with its data` (study and participant codes only). Before this, a study with sessions could not be deleted and a withdrawal had to be done by hand.
+- Reason: requested by the user, so that tests on the live server can be erased and withdrawals handled.
+- Approved by: Nágó Dániel
+
+## 2026-11-02 — The webcam chunks are deleted once the recording is made
+- Plan section: §8.1, §1 (raw data is immutable), §11
+- Decision: after ingest has remuxed the chunks into `raw/webcam.webm` and read every frame of it, it writes `raw/webcam_chunks_removed.json` (sha256 of the recording, chunk count, bytes, frames) and deletes `raw/chunks/webcam/`. `webcam.webm` then **is** the raw recording (immutable, vouched for by the marker; a remux is not byte-for-byte repeatable, so it cannot be rebuilt identically anyway). Ingest run again checks the file against the marker. The events, features and stimulus_frames chunks stay; the `chunks` table keeps the webcam rows. Config `delete_webcam_chunks_after_ingest` (default true; off with `--keep-intermediates`). `cli.py remove-webcam-chunks [--apply]` does the same for earlier sessions, after checking each. Session archives carry the marker with the recording. The VM disk (40 GB) is the reason: the chunks were about 35 % of the data.
+- Cost: a bug found later in the remux cannot be fixed by assembling again from the upload. Mitigation: nothing is deleted before the recording decodes and its frame table is written, and the upload's sha256 values stay in the database.
+- Reason: requested by the user (disk space on the VM); the plan keeps the chunks.
+- Approved by: Nágó Dániel
+
+## 2026-11-02 — Root page asks for the study code; short draft consent text
+- Plan section: §5.2 step 1, §13 (consent)
+- Decision: (1) The root URL `/` shows a box for the study **code** (the `<study code>` of `/s/<study code>`, not the free-text study name, which is not unique) with a short explanation; a valid code (checked with `GET /api/studies/{code}`) redirects to `/s/<code>`, an unknown one shows a message. The session flow at `/s/<code>` is unchanged. (2) `backend/app/consent/v1.txt` is replaced by a short draft (what is recorded, purpose, pseudonymous, retention and contact as `[bracketed]` fields to fill in, voluntary and withdrawal); the tick-box consent screen is unchanged. It must be replaced by the ethics-approved text before real data; version `v1` is edited in place because only test sessions exist so far, a new file and `consent_version` is needed after real consent was collected.
+- Reason: the plan has no landing page and its consent text was a placeholder; requested by the user, who will edit the text.
+- Approved by: Nágó Dániel
+
+## 2026-11-01 — Lab replay films and a local page (dev tool, no product change)
+- Plan section: §12.2 (the debug replay's drawing helpers are reused, not changed)
+- Decision: `backend/lab` gets `replay` (a film of a dot video with the gaze of several experiments as coloured dots, each experiment re-run on that one session), `ui` (a page on 127.0.0.1 with buttons for it) and three more models (`mlp`, `svr`, `gbr`). Films go to `lab_data/replays/` (gitignored: they contain webcam video).
+- Reason: comparing models and settings by eye on the recorded dot videos; the user asked for it instead of a live browser tool (the app's debug mode already records, replays and processes a session).
+- Approved by: Nágó Dániel
+
 ## 2026-11-01 — Training window 900 ms before the click (server and browser gate)
 - Plan section: §5.5 ("the training window for the dot is from 700 ms before the click to 100 ms after it. This excludes the saccade at onset"), §8.6
 - Decision: `PipelineConfig.calib_window_before_click_ms` 700 -> **900**, and the browser gate's `TRAIN_WINDOW_BEFORE_CLICK_MS` likewise (the gate keeps using the server's method). The window after the click stays 100 ms. Validation dots are scored in the same window. The lab references `t-base` and `pre-t14` are pinned to 700 so earlier results stay reproducible.

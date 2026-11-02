@@ -1,0 +1,7 @@
+name = "t-gbr"
+description = "Replay models: gradient-boosted trees"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "gbr"

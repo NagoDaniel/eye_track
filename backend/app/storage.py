@@ -89,6 +89,11 @@ def webcam_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
     return raw_dir(root, study_id, session_id) / "webcam.webm"
 
 
+def webcam_chunks_removed_path(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
+    """The marker written when the webcam chunks were deleted (DECISIONS 2026-11-02)."""
+    return raw_dir(root, study_id, session_id) / "webcam_chunks_removed.json"
+
+
 def derived_dir(root: Path, study_id: int, session_id: uuid.UUID) -> Path:
     return session_dir(root, study_id, session_id) / "derived"
 

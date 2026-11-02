@@ -168,6 +168,15 @@
 <p class="muted">The webcam recording has not been assembled (the session has not been processed).</p>
 {% endif %}
 
+<h2>Delete</h2>
+{% if delete_error %}<p class="error" role="alert">{{ delete_error }}</p>{% endif %}
+<p>Deletes this session for good: the recording, derived files and jobs, from the database and the disk. Analysis results that used it are not changed.</p>
+<form method="post" action="/admin/sessions/{{ session.id }}/delete">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label><input type="checkbox" name="confirm" value="yes" required> I understand that this cannot be undone</label>
+  <button type="submit" class="danger">Delete session</button>
+</form>
+
 <h2>Chunks per stream</h2>
 <table>
   <thead><tr><th>Stream</th><th class="num">Chunks</th><th class="num">Highest seq</th><th class="num">Total bytes</th><th>Missing seqs</th></tr></thead>

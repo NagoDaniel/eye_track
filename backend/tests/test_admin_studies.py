@@ -231,7 +231,10 @@ def test_form_routes_create_edit_delete(admin: Admin, migrated_engine: Engine) -
         assert study is not None and study.name == "Edited" and study.config["debug_allowed"]
 
     assert c.post(f"{detail_url}/delete", data={"csrf_token": "bad"}).status_code == 403
+    # the code must be typed (DECISIONS 2026-11-02)
     r = c.post(f"{detail_url}/delete", data={"csrf_token": token})
+    assert r.status_code == 422 and "does not match" in r.text
+    r = c.post(f"{detail_url}/delete", data={"csrf_token": token, "confirm_code": "form1"})
     assert r.status_code == 303 and r.headers["location"] == "/admin/studies"
     assert c.get(detail_url).status_code == 404
 
@@ -260,7 +263,11 @@ def test_form_duplicate_code_and_delete_with_sessions(
     assert c.post("/admin/studies", data=form).status_code == 409
     add_session(migrated_engine, sid)
     r = c.post(f"/admin/studies/{sid}/delete", data={"csrf_token": token})
-    assert r.status_code == 409 and "session" in r.text
+    assert r.status_code == 422 and "nothing was deleted" in r.text  # no code typed
+    r = c.post(f"/admin/studies/{sid}/delete", data={"csrf_token": token, "confirm_code": "dup1"})
+    assert r.status_code == 303  # with the code, the sessions go too
+    with DbSession(migrated_engine) as db:
+        assert db.get(Study, sid) is None
 
 
 # --- picking the videos and the debug toggle on the pages ---------------------------------------

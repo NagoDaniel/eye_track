@@ -104,6 +104,11 @@ class PipelineConfig:
     dot_max_median_error_norm: float = 0.15
     dot_min_valid_fraction: float = 0.8
 
+    # --- Ingest (PLAN §8.1) ---
+    # Delete the webcam chunks once raw/webcam.webm has been made and read (DECISIONS
+    # 2026-11-02). Not in the plan, which keeps the chunks; they are a second copy of the recording.
+    delete_webcam_chunks_after_ingest: bool = True
+
     # --- Debug replay video (PLAN §12.2) ---
     replay_fps: float = 30.0
     # The video is scaled to this width (up or down); the timeline bar is added below it.

@@ -1,0 +1,7 @@
+name = "t-mlp"
+description = "Replay models: a small neural net (2 x 32, L-BFGS)"
+pipelines = ["a"]
+tune_studies = [7]
+holdout_studies = [6, 8]
+fit_validation = "all"
+model = "mlp"

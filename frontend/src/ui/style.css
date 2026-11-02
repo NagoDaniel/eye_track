@@ -27,6 +27,7 @@ html, body {
 }
 .card h1 { margin: 0 0 12px; font-size: 1.4rem; }
 .card .consent-text { white-space: pre-wrap; max-height: 40vh; overflow: auto; border: 1px solid #ccc; padding: 12px; background: #fff; }
+.card input.study-code { text-transform: none; }
 .card label { display: block; margin: 12px 0; }
 .card input[type="text"] { font: inherit; padding: 6px 8px; text-transform: uppercase; }
 .card ul { margin: 8px 0; padding-left: 24px; }

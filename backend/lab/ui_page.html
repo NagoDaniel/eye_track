@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Lab replay</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mute:#6e6e73;--line:#d2d2d7;--accent:#0a64d8;--panel:#f5f5f7}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#f2f2f4;--mute:#9a9aa0;--line:#38383c;
+--accent:#4c9bff;--panel:#222225}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:14px/1.45 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}h1{font-size:18px;margin:0 0 12px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+label{display:flex;flex-direction:column;gap:4px;color:var(--mute);font-size:12px}
+select,input,button{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+background:var(--bg);color:var(--fg)}
+button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+.box{border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel)}
+#exps{max-height:260px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+gap:2px 12px}#exps label{flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-size:13px}
+#exps small{color:var(--mute)}
+.chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:12px;
+padding:2px 8px;margin:2px;background:var(--bg)}
+#bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0}
+#bar i{display:block;height:100%;width:0;background:var(--accent)}
+video{width:100%;background:#000;border-radius:8px;margin-top:8px}
+#msg{color:var(--mute)}.err{color:#d12}
+</style></head><body><main>
+<h1>Lab replay</h1>
+<div class="row">
+<label>Session<select id="session"></select></label>
+<label>Dot video<select id="video"></select></label>
+</div>
+<div class="box"><div id="exps"></div></div>
+<p><b>Custom variant</b></p>
+<div class="row">
+<label>Model<select id="c-model"></select></label>
+<label>Validation dots in the fit<select id="c-fv"></select></label>
+<label>Training window before click (ms)<input id="c-window" type="number" placeholder="default"></label>
+<label>Relative blink delta<input id="c-blink" type="number" step="0.05" placeholder="off"></label>
+<button id="c-add">Add</button>
+</div>
+<div id="customs"></div>
+<div class="row" style="margin-top:12px"><button class="primary" id="run">Render film</button>
+<span id="msg"></span></div>
+<div id="bar"><i></i></div>
+<video id="player" controls hidden></video>
+<p><b>Earlier films</b></p><div id="films"></div>
+</main><script>
+const $=id=>document.getElementById(id);let S=null;const customs=[];
+const api=async(u,o)=>{const r=await fetch(u,o);if(!r.ok){let t=await r.text();try{t=JSON.parse(t).detail}catch(e){}
+throw new Error(t)}return r.json()};
+function opt(v,t){const o=document.createElement('option');o.value=v;o.textContent=t??v;return o}
+function renderVideos(){const s=S.sessions[$('session').selectedIndex];$('video').replaceChildren(...s.videos.map(v=>opt(v)))}
+function renderCustoms(){$('customs').replaceChildren(...customs.map((c,i)=>{const d=document.createElement('span');
+d.className='chip';d.textContent=[c.model,'validation '+c.fit_validation,c.window_ms!=null?c.window_ms+' ms':'',
+c.blink_relative_delta!=null?'blink '+c.blink_relative_delta:''].filter(Boolean).join(', ');
+const x=document.createElement('button');x.textContent='x';x.onclick=()=>{customs.splice(i,1);renderCustoms()};
+d.append(x);return d}))}
+function filmLink(n){const a=document.createElement('a');a.href='#';a.textContent=n;a.style.display='block';
+a.onclick=e=>{e.preventDefault();play(n)};return a}
+function play(n){const p=$('player');p.src='/films/'+encodeURIComponent(n);p.hidden=false;p.load();p.play()}
+async function load(){S=await api('/api/state');
+$('session').replaceChildren(...S.sessions.map(s=>opt(s.study+' '+s.code,s.study+' '+s.code+(s.label?'  ('+s.label+')':''))));
+renderVideos();$('session').onchange=renderVideos;
+$('exps').replaceChildren(...S.experiments.map(e=>{const l=document.createElement('label');l.title=e.description;
+const c=document.createElement('input');c.type='checkbox';c.value=e.name;l.append(c,e.name+' ');
+const m=document.createElement('small');m.textContent=e.model;l.append(m);return l}));
+$('c-model').replaceChildren(...S.models.map(m=>opt(m)));$('c-fv').replaceChildren(...S.fit_validation.map(m=>opt(m)));
+$('c-fv').value='all';$('films').replaceChildren(...S.films.map(filmLink))}
+$('c-add').onclick=()=>{const n=x=>x===''?null:Number(x);customs.push({model:$('c-model').value,
+fit_validation:$('c-fv').value,window_ms:n($('c-window').value),blink_relative_delta:n($('c-blink').value)});renderCustoms()};
+async function poll(){const j=await api('/api/job');$('bar').firstChild.style.width=(j.share*100)+'%';
+$('msg').className=j.state=='error'?'err':'';$('msg').textContent=j.message+(j.notes.length?'  (left out: '+j.notes.join('; ')+')':'');
+if(j.state=='running'){setTimeout(poll,700);return}$('run').disabled=false;
+if(j.state=='done'){await load();play(j.film)}}
+$('run').onclick=async()=>{const s=S.sessions[$('session').selectedIndex];
+const experiments=[...document.querySelectorAll('#exps input:checked')].map(c=>c.value);
+try{await api('/api/replay',{method:'POST',headers:{'content-type':'application/json'},
+body:JSON.stringify({study:s.study,code:s.code,video:$('video').value,experiments,custom:customs})});
+$('run').disabled=true;poll()}catch(e){$('msg').className='err';$('msg').textContent=e.message}};
+load().catch(e=>{$('msg').className='err';$('msg').textContent=e.message});
+</script></body></html>

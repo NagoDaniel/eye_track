@@ -49,7 +49,7 @@ print('moving-dot path:', path.duration_s, 's')
 
 echo "== the git hash given at build time is in the image (analysis runs record it)"
 run python -c "
-from worker.analysis.config import git_hash
+from app.version import git_hash
 assert git_hash() == 'test-sha-123', git_hash()
 print('git hash:', git_hash())
 "

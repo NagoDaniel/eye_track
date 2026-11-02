@@ -101,6 +101,53 @@ def plot_cmd(experiment: str = typer.Argument(..., help="Experiment whose gaze t
         typer.echo(path)
 
 
+@app.command("replay")
+def replay_cmd(
+    study: int = typer.Argument(..., help="Study id."),
+    code: str = typer.Argument(..., help="Participant code of the session."),
+    experiments: list[str] = typer.Argument(..., help="Experiments to show (one dot each)."),
+    video: str = typer.Option("moving_dot", help="Dot video: moving_dot, long_dot_1, long_dot_2."),
+) -> None:
+    """A film of the dot video with the gaze of each experiment, re-run on this one session."""
+    from lab.replay import render_replay
+    from worker.pipeline.replay import ReplayError
+
+    last = ""
+
+    def progress(message: str, _share: float) -> None:
+        nonlocal last
+        if message != last:
+            typer.echo(message)
+            last = message
+
+    try:
+        exps = [load_experiment(_experiment_file(e)) for e in experiments]
+        path, failures = render_replay(lab_data_root(), study, code, video, exps, progress)
+    except (ExperimentError, ReplayError) as e:
+        raise typer.BadParameter(str(e)) from e
+    for f in failures:
+        typer.echo(f"left out: {f.pipeline}: {f.reason}")
+    typer.echo(path)
+
+
+@app.command("ui")
+def ui_cmd(
+    port: int = typer.Option(8765, help="Port on 127.0.0.1."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the page."),
+) -> None:
+    """A local page with buttons for `replay` (the films contain webcam video: localhost only)."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from lab.ui import HOST, create_app
+
+    if open_browser:
+        threading.Timer(1.0, webbrowser.open, args=(f"http://{HOST}:{port}/",)).start()
+    uvicorn.run(create_app(lab_data_root()), host=HOST, port=port, log_level="warning")
+
+
 @app.command("extract-blendshapes")
 def extract_blendshapes_cmd(
     studies: list[int] = typer.Argument(..., help="Study ids already in the lab."),
