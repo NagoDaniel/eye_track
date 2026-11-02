@@ -80,6 +80,7 @@ def _ingest(ctx: Context) -> dict[str, Any]:
     summary = ingest(
         ctx.root, ctx.study_id, ctx.session_id, ctx.manifest, ctx.max_inflated_bytes,
         ctx.keep_intermediates,
+        ctx.config.delete_webcam_chunks_after_ingest and not ctx.keep_intermediates,
     )  # fmt: skip
     return summary.as_dict()
 

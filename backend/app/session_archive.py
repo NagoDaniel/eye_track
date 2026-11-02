@@ -50,10 +50,13 @@ class ArchiveSummary:
 
 
 def _is_raw_video(relative: PurePosixPath) -> bool:
-    return relative == PurePosixPath("raw/webcam.webm") or relative.parts[:3] == (
-        "raw",
-        "chunks",
-        "webcam",
+    return (
+        relative
+        in (
+            PurePosixPath("raw/webcam.webm"),
+            PurePosixPath("raw/webcam_chunks_removed.json"),  # vouches for the recording
+        )
+        or relative.parts[:3] == ("raw", "chunks", "webcam")
     )
 
 
@@ -229,8 +232,9 @@ def _add_rows(
     b_line = summary_of(directory / "derived")  # Pipeline B's line in the record, from its files
     if report is not None and b_line is not None:
         report = {**report, "pipeline_b": b_line}
-    has_webcam = (directory / "raw" / "webcam.webm").is_file() or any(
-        r["stream"] == "webcam" for r in kept
+    removed = (directory / "raw" / "webcam_chunks_removed.json").is_file()
+    has_webcam = (directory / "raw" / "webcam.webm").is_file() or (
+        not removed and any(r["stream"] == "webcam" for r in kept)
     )
     db.add(
         SessionRow(
@@ -261,13 +265,17 @@ def _when(value: object) -> datetime | None:
 
 
 def _verify_chunks(directory: Path, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The rows whose file is there and matches; a missing webcam chunk is allowed (no raw video),
-    anything else missing or changed is an error."""
+    """The rows whose file is there and matches; a missing webcam chunk is allowed (no raw video, or
+    the chunks were removed after ingest: then the row stays as the record of the upload), anything
+    else missing or changed is an error."""
     kept: list[dict[str, Any]] = []
+    removed = (directory / "raw" / "webcam_chunks_removed.json").is_file()
     for r in rows:
         path = directory / "raw" / "chunks" / r["stream"] / f"{int(r['seq']):06d}.bin"
         if not path.is_file():
             if r["stream"] == "webcam":
+                if removed:
+                    kept.append(r)
                 continue
             raise ArchiveError(
                 f"{r['stream']} chunk {r['seq']} is in chunks.json but not in the archive"

@@ -9,11 +9,12 @@ videos/{video_id}/video.mp4          stimulus video as uploaded; served by the p
 videos/{video_id}/aois.json          optional, written when AOIs are saved in the admin
 studies/{study_id}/sessions/{session_id}/
   raw/
-    chunks/{stream}/{seq:06d}.bin    chunks exactly as the browser sent them
+    chunks/{stream}/{seq:06d}.bin    chunks exactly as the browser sent them (webcam chunks: deleted after ingest, see below)
     events.jsonl                     assembled from the events chunks when the session completes
     browser_features.jsonl           assembled from the features chunks (only if there are some)
     stimulus_frames.jsonl            assembled from the stimulus_frames chunks (only if there are some)
     webcam.webm                      the webcam chunks concatenated and remuxed (written by ingest)
+    webcam_chunks_removed.json       written when ingest deleted the webcam chunks (below)
     meta.json                        session row + config snapshot
   derived/
     webcam_frames.parquet            one row per webcam frame, from ingest (below)
@@ -42,6 +43,16 @@ analysis/{study_id}/{video_id}/{run_id}/  run.json and the analysis outputs (bel
 Every file is written to a temporary name in the same directory and renamed, so a reader never sees a partial file. Raw files are never modified after they are written, except `meta.json` (see below).
 
 `webcam.webm`, `events.jsonl`, `browser_features.jsonl` and `stimulus_frames.jsonl` are pure functions of the chunks. The ingest stage (`backend/worker/pipeline/ingest.py`) checks the chunks against the `chunks` table (every seq from 0 to the highest is there, size and sha256 match), then writes the files that are missing and refuses (error, nothing overwritten) when one that exists differs from what the chunks give. `webcam.webm` is always rewritten (atomically): `ffmpeg -c copy -fflags +genpts` into a real file, so the result has a duration and a seek index (cues), which the MediaRecorder stream lacks. The other files under `derived/` are written by the later stages; their schemas are in "Derived files of the pipelines" below.
+
+### `raw/webcam_chunks_removed.json` (ingest)
+
+The webcam chunks are a second copy of the recording (about half of a session's raw size). Once ingest has made `raw/webcam.webm` and read all its frames, it writes this marker (atomically) and then deletes `raw/chunks/webcam/` (config `delete_webcam_chunks_after_ingest`, default true; not with `--keep-intermediates`). From then on `webcam.webm` **is** the raw recording; a remux is not byte-for-byte repeatable, so the marker holds its hash. The other streams' chunks stay, and the `chunks` table keeps the webcam rows as the record of what was uploaded.
+
+```json
+{"sha256": "<of raw/webcam.webm>", "recording_bytes": 0, "chunks": 0, "bytes": 0, "frames": 0, "removed_at": "2026-11-02T10:00:00+00:00"}
+```
+
+`chunks` and `bytes` are the webcam chunks that were deleted. Ingest run again checks `webcam.webm` against `sha256` (it fails loudly when the file is missing or differs) instead of assembling it from chunks. `stages.json` / the ingest summary say `webcam_chunks_removed: true`. Sessions ingested earlier: `cli.py remove-webcam-chunks` (dry run; `--apply` deletes, after checking the chunks against the table and the recording against the frame table). A session archive carries the marker with the recording; an export without raw video leaves both out.
 
 ### `derived/webcam_frames.parquet` (ingest)
 

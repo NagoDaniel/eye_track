@@ -13,8 +13,16 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from app.storage import derived_dir, webcam_chunks_removed_path
 from tests.session_fixture import FixtureSession, copy_fixture_session
-from worker.pipeline.ingest import CUES_ID, ChunkRecord, IngestError, ingest
+from worker.pipeline.ingest import (
+    CUES_ID,
+    ChunkRecord,
+    IngestError,
+    ingest,
+    read_removal_marker,
+    remove_chunks_of_ingested_session,
+)
 
 MAX_INFLATED = 32 * 1024 * 1024
 
@@ -169,3 +177,121 @@ def test_an_assembled_file_that_differs_is_not_overwritten(session: FixtureSessi
     (session.raw / "events.jsonl").write_bytes(b'{"t": 0, "type": "window_blur", "data": {}}\n')
     with pytest.raises(IngestError, match=r"events.jsonl exists and differs"):
         run(session)
+
+
+# --- Deleting the webcam chunks once the recording is made (DECISIONS 2026-11-02) ---
+
+
+def run_deleting(s: FixtureSession, manifest: list[ChunkRecord] | None = None):  # type: ignore[no-untyped-def]
+    return ingest(s.root, s.study_id, s.session_id, manifest or s.manifest, MAX_INFLATED,
+                  delete_webcam_chunks=True)  # fmt: skip
+
+
+def webcam_chunk_files(s: FixtureSession) -> list[Path]:
+    directory = s.raw / "chunks" / "webcam"
+    return sorted(directory.iterdir()) if directory.is_dir() else []
+
+
+def marker_file(s: FixtureSession) -> Path:
+    return webcam_chunks_removed_path(s.root, s.study_id, s.session_id)
+
+
+def test_the_chunks_are_kept_unless_ingest_is_told_to_delete_them(session: FixtureSession) -> None:
+    summary = run(session)
+    assert not summary.webcam_chunks_removed and webcam_chunk_files(session)
+    assert read_removal_marker(session.root, session.study_id, session.session_id) is None
+
+
+def test_ingest_deletes_the_webcam_chunks_and_vouches_for_the_recording(
+    session: FixtureSession,
+) -> None:
+    kept = run(session)
+    freed = sum(r.size for r in session.manifest if r.stream == "webcam")
+    assert freed > 0
+
+    summary = run_deleting(session)
+    assert summary.webcam_chunks_removed and webcam_chunk_files(session) == []
+    # (a remux is not byte-for-byte repeatable, which is why the marker holds the recording's hash)
+    recording = (session.raw / "webcam.webm").read_bytes()
+    marker = json.loads(marker_file(session).read_text())
+    assert marker["sha256"] == hashlib.sha256(recording).hexdigest()
+    assert marker["bytes"] == freed and marker["frames"] == summary.webcam_frames
+    # the other streams keep their chunks, and nothing else about the result changed
+    assert chunk_file(session, "events", 0).is_file()
+    assert chunk_file(session, "features", 0).is_file()
+    assert dataclasses.replace(summary, webcam_chunks_removed=False) == kept
+
+
+def test_ingest_again_after_the_deletion_uses_the_recording_as_it_is(
+    session: FixtureSession,
+) -> None:
+    first = run_deleting(session)
+    frames_file = (
+        derived_dir(session.root, session.study_id, session.session_id) / "webcam_frames.parquet"
+    )
+    frames = frames_file.read_bytes()
+    # the table still lists the webcam chunks; an imported session has no such rows at all
+    for manifest in (session.manifest, [r for r in session.manifest if r.stream != "webcam"]):
+        again = run(session, manifest)
+        assert again == first and webcam_chunk_files(session) == []
+        assert frames_file.read_bytes() == frames
+
+
+def test_a_recording_that_differs_from_the_marker_fails_loudly(session: FixtureSession) -> None:
+    run_deleting(session)
+    with (session.raw / "webcam.webm").open("ab") as f:
+        f.write(b"\x00")
+    with pytest.raises(IngestError, match=r"differs from the recording whose chunks were removed"):
+        run(session)
+    (session.raw / "webcam.webm").unlink()
+    with pytest.raises(IngestError, match=r"missing or differs"):
+        run(session)
+
+
+def test_a_crash_between_the_marker_and_the_deletion_is_finished_by_the_next_ingest(
+    session: FixtureSession,
+) -> None:
+    run_deleting(session)
+    leftover = session.raw / "chunks" / "webcam" / "000000.bin"
+    leftover.parent.mkdir(parents=True)
+    leftover.write_bytes(b"left behind")
+    run(session)
+    assert webcam_chunk_files(session) == []
+
+
+def test_an_unreadable_marker_fails_loudly(session: FixtureSession) -> None:
+    run_deleting(session)
+    marker_file(session).write_text("{")
+    with pytest.raises(IngestError, match=r"webcam_chunks_removed.json cannot be read"):
+        run(session)
+
+
+def test_a_session_ingested_before_gets_its_chunks_removed_after_a_check(
+    session: FixtureSession,
+) -> None:
+    def remove() -> int:
+        return remove_chunks_of_ingested_session(
+            session.root, session.study_id, session.session_id, session.manifest
+        )
+
+    run(session)
+    assert remove() == sum(r.size for r in session.manifest if r.stream == "webcam")
+    assert webcam_chunk_files(session) == []
+    assert remove() == 0  # again: nothing left, nothing wrong
+    assert run(session).webcam_chunks_removed
+
+
+def test_nothing_is_deleted_when_a_check_fails(session: FixtureSession) -> None:
+    def remove() -> int:
+        return remove_chunks_of_ingested_session(
+            session.root, session.study_id, session.session_id, session.manifest
+        )
+
+    with pytest.raises(IngestError, match=r"has not been ingested"):
+        remove()
+    run(session)
+    chunk_file(session, "webcam", 1).write_bytes(b"changed")
+    with pytest.raises(IngestError, match=r"not intact"):
+        remove()
+    assert len(webcam_chunk_files(session)) == sum(r.stream == "webcam" for r in session.manifest)
+    assert not marker_file(session).exists()

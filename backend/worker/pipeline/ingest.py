@@ -5,9 +5,16 @@ Reads `raw/chunks/`, writes `raw/webcam.webm`, `raw/events.jsonl`, `raw/browser_
 milestone 3 item 4) and `derived/webcam_frames.parquet`. Idempotent: running it again gives the same
 files. The sha256 of each chunk comes from the caller (the `chunks` table), not from the files, so a
 chunk that changed on disk is found.
+
+Once the remuxed recording is known to decode, the webcam chunks (the bulk of the raw upload) are
+deleted and `raw/webcam_chunks_removed.json` records the sha256 of `raw/webcam.webm`, which from
+then on is the raw recording: running ingest again checks that file against the marker instead of
+assembling it again (DECISIONS 2026-11-02). The other streams' chunks stay.
 """
 
+import datetime
 import hashlib
+import json
 import shutil
 import subprocess
 import uuid
@@ -30,6 +37,7 @@ from app.storage import (
     derived_dir,
     events_path,
     stimulus_frames_path,
+    webcam_chunks_removed_path,
     webcam_path,
 )
 
@@ -66,6 +74,7 @@ class IngestSummary:
     webcam_codec: str
     webcam_width: int
     webcam_height: int
+    webcam_chunks_removed: bool = False  # the chunks are gone (now or earlier); see the marker
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -75,11 +84,18 @@ JSONL_STREAMS: tuple[Stream, ...] = ("events", "features", "stimulus_frames")
 
 
 def _check_manifest(
-    root: Path, study_id: int, session_id: uuid.UUID, manifest: Sequence[ChunkRecord]
+    root: Path,
+    study_id: int,
+    session_id: uuid.UUID,
+    manifest: Sequence[ChunkRecord],
+    webcam_removed: bool = False,
 ) -> dict[Stream, list[ChunkRecord]]:
-    """Group the chunks by stream in seq order and verify presence, size and sha256."""
+    """Group the chunks by stream in seq order and verify presence, size and sha256. With
+    `webcam_removed` the webcam chunks are not looked at (the marker vouches for the recording)."""
     streams: dict[Stream, list[ChunkRecord]] = {}
     for record in sorted(manifest, key=lambda r: (r.stream, r.seq)):
+        if webcam_removed and record.stream == "webcam":
+            continue
         streams.setdefault(record.stream, []).append(record)
     problems: list[str] = []
     for stream, records in streams.items():
@@ -100,7 +116,8 @@ def _check_manifest(
                 )
             elif hashlib.sha256(data).hexdigest() != record.sha256:
                 problems.append(f"{stream} chunk {record.seq}: sha256 does not match")
-    for stream in ("webcam", "events"):
+    required: tuple[Stream, ...] = ("events",) if webcam_removed else ("webcam", "events")
+    for stream in required:
         if stream not in streams:
             problems.append(f"{stream}: there are no chunks")
     if problems:
@@ -183,6 +200,104 @@ def _remux(
     return out
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def read_removal_marker(root: Path, study_id: int, session_id: uuid.UUID) -> dict[str, Any] | None:
+    """`raw/webcam_chunks_removed.json`, or None while the webcam chunks are still there."""
+    path = webcam_chunks_removed_path(root, study_id, session_id)
+    if not path.is_file():
+        return None
+    try:
+        marker = json.loads(path.read_text("utf-8"))
+        if not isinstance(marker, dict) or not isinstance(marker["sha256"], str):
+            raise ValueError("no sha256")
+    except (OSError, ValueError, KeyError) as exc:
+        raise IngestError(
+            f"{path.name} cannot be read ({exc}); the recording is not vouched for"
+        ) from exc
+    return marker
+
+
+def _delete_webcam_chunk_files(root: Path, study_id: int, session_id: uuid.UUID) -> None:
+    directory = chunk_path(root, study_id, session_id, "webcam", 0).parent
+    if directory.is_dir():
+        for file in directory.iterdir():
+            file.unlink()
+        directory.rmdir()
+
+
+def remove_webcam_chunks(
+    root: Path, study_id: int, session_id: uuid.UUID, records: Sequence[ChunkRecord], frames: int
+) -> int:
+    """Delete the webcam chunks of a session whose `raw/webcam.webm` is known to decode.
+
+    The marker is written first (atomically), so a crash in between leaves a marker and some
+    chunks, and the next ingest finishes the deletion. Returns the bytes of chunks removed."""
+    recording = webcam_path(root, study_id, session_id)
+    marker: dict[str, Any] = {
+        "sha256": _file_sha256(recording),
+        "recording_bytes": recording.stat().st_size,
+        "chunks": len(records),
+        "bytes": sum(r.size for r in records),
+        "frames": frames,
+        "removed_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+    }
+    atomic_write_bytes(
+        webcam_chunks_removed_path(root, study_id, session_id),
+        (json.dumps(marker, indent=1) + "\n").encode(),
+    )
+    _delete_webcam_chunk_files(root, study_id, session_id)
+    return int(marker["bytes"])
+
+
+def remove_chunks_of_ingested_session(
+    root: Path, study_id: int, session_id: uuid.UUID, manifest: Sequence[ChunkRecord]
+) -> int:
+    """Delete the webcam chunks of a session that was ingested before this was automatic.
+
+    Checked first: every webcam chunk matches the table, `raw/webcam.webm` decodes and has as many
+    frames as `derived/webcam_frames.parquet`. Returns the bytes freed (0 when already removed);
+    `IngestError` when a check fails (nothing is deleted then)."""
+    if read_removal_marker(root, study_id, session_id) is not None:
+        _delete_webcam_chunk_files(root, study_id, session_id)
+        return 0
+    records = sorted((r for r in manifest if r.stream == "webcam"), key=lambda r: r.seq)
+    if not records:
+        raise IngestError("the table has no webcam chunks for this session")
+    recording = webcam_path(root, study_id, session_id)
+    frames_file = derived_dir(root, study_id, session_id) / WEBCAM_FRAMES_FILE
+    if not recording.is_file() or not frames_file.is_file():
+        raise IngestError("the session has not been ingested (no webcam.webm or frame table)")
+    _check_manifest_webcam(root, study_id, session_id, records)
+    frames, *_ = _webcam_frames(recording)
+    if len(frames) != len(pd.read_parquet(frames_file)):
+        raise IngestError("webcam.webm has another number of frames than the frame table")
+    return remove_webcam_chunks(root, study_id, session_id, records, len(frames))
+
+
+def _check_manifest_webcam(
+    root: Path, study_id: int, session_id: uuid.UUID, records: Sequence[ChunkRecord]
+) -> None:
+    problems: list[str] = []
+    for record in records:
+        path = chunk_path(root, study_id, session_id, "webcam", record.seq)
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            problems.append(f"chunk {record.seq}: cannot read the file ({exc})")
+            continue
+        if len(data) != record.size or hashlib.sha256(data).hexdigest() != record.sha256:
+            problems.append(f"chunk {record.seq}: size or sha256 does not match the table")
+    if problems:
+        raise IngestError("the webcam chunks are not intact: " + "; ".join(problems))
+
+
 def _webcam_frames(path: Path) -> tuple[pd.DataFrame, str, int, int]:
     """Presentation time of every video packet (one per shown frame) from the remuxed file."""
     try:
@@ -212,12 +327,18 @@ def ingest(
     manifest: Sequence[ChunkRecord],
     max_inflated_bytes: int,
     keep_intermediates: bool = False,
+    delete_webcam_chunks: bool = False,
 ) -> IngestSummary:
     """Run the stage. `IngestError` means the raw data is incomplete, corrupt or unreadable.
 
+    With `delete_webcam_chunks` the webcam chunks are deleted once the remuxed recording has been
+    read (see the module text). When they were deleted earlier, `raw/webcam.webm` is checked
+    against the marker and used as it is.
+
     With `keep_intermediates` the concatenated webcam chunks (before the remux) are kept in
     `derived/intermediates/`; otherwise that directory is removed."""
-    streams = _check_manifest(root, study_id, session_id, manifest)
+    marker = read_removal_marker(root, study_id, session_id)
+    streams = _check_manifest(root, study_id, session_id, manifest, marker is not None)
     paths = {
         "events": events_path(root, study_id, session_id),
         "features": browser_features_path(root, study_id, session_id),
@@ -240,20 +361,39 @@ def ingest(
     intermediates = derived_dir(root, study_id, session_id) / INTERMEDIATES_DIR
     if not keep_intermediates:
         shutil.rmtree(intermediates, ignore_errors=True)
-    webcam = _remux(
-        root, study_id, session_id, streams["webcam"],
-        intermediates / "webcam_concat.webm" if keep_intermediates else None,
-    )  # fmt: skip
+    if marker is None:
+        webcam = _remux(
+            root, study_id, session_id, streams["webcam"],
+            intermediates / "webcam_concat.webm" if keep_intermediates else None,
+        )  # fmt: skip
+    else:
+        webcam = webcam_path(root, study_id, session_id)
+        if not webcam.is_file() or _file_sha256(webcam) != marker["sha256"]:
+            raise IngestError(
+                "raw/webcam.webm is missing or differs from the recording whose chunks were "
+                "removed (the sha256 in webcam_chunks_removed.json)"
+            )
+        _delete_webcam_chunk_files(root, study_id, session_id)  # a crash may have left some
     frames, codec, width, height = _webcam_frames(webcam)
     out = derived_dir(root, study_id, session_id) / WEBCAM_FRAMES_FILE
     with atomic_writer(out) as f:
         frames.to_parquet(f, compression="snappy", index=False)
 
+    removed = marker is not None
+    if marker is None and delete_webcam_chunks:
+        webcam_records = sorted((r for r in manifest if r.stream == "webcam"), key=lambda r: r.seq)
+        remove_webcam_chunks(root, study_id, session_id, webcam_records, len(frames))
+        removed = True
+
     pts = frames["pts"]
     duration = float(pts.iloc[-1])
+    chunks: dict[str, int] = {s: len(r) for s, r in streams.items()}
+    sizes: dict[str, int] = {s: sum(x.size for x in r) for s, r in streams.items()}
+    if marker is not None:  # the webcam chunks as they were when they were removed
+        chunks["webcam"], sizes["webcam"] = int(marker["chunks"]), int(marker["bytes"])
     return IngestSummary(
-        chunks={s: len(r) for s, r in streams.items()},
-        bytes={s: sum(x.size for x in r) for s, r in streams.items()},
+        chunks=chunks,
+        bytes=sizes,
         lines=lines,
         webcam_frames=len(frames),
         webcam_duration_s=duration,
@@ -262,4 +402,5 @@ def ingest(
         webcam_codec=codec,
         webcam_width=width,
         webcam_height=height,
+        webcam_chunks_removed=removed,
     )
