@@ -12,7 +12,7 @@ import { createErrorReporter } from "./errorReporter";
 import type { EventLog } from "./eventLog";
 import { CalibrationGate, DotTracker } from "./face/calibrationGate";
 import { startStimulusFrameLogging } from "./media/stimulusFrames";
-import { parseRoute } from "./route";
+import { isLandingPath, parseRoute } from "./route";
 import { calibrationScreen } from "./screens/calibration";
 import { calibrationFlow } from "./screens/calibrationFlow";
 import { consentScreen } from "./screens/consent";
@@ -22,6 +22,7 @@ import { browserGate, entryScreen } from "./screens/entry";
 import { errorScreen } from "./screens/error";
 import { fullscreenScreen } from "./screens/fullscreen";
 import { instructionsScreen } from "./screens/instructions";
+import { landingScreen } from "./screens/landing";
 import { playbackScreen } from "./screens/playback";
 import { preloadScreen } from "./screens/preload";
 import { resumeScreen } from "./screens/resume";
@@ -64,6 +65,9 @@ export async function runApp(root: HTMLElement, api: Api): Promise<never> {
 }
 
 async function run(root: HTMLElement, api: Api, shared: Shared): Promise<never> {
+  if (isLandingPath(location.pathname)) {
+    return landingScreen(root, (code) => api.getStudy(code), (path) => location.assign(path));
+  }
   const route = parseRoute(location.pathname, location.search);
   const study = await api.getStudy(route.studyCode);
   await browserGate(root, study);

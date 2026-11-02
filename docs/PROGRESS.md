@@ -224,4 +224,6 @@ Everything below needs a real webcam, real lighting, or your decision. The code 
 
 **Lab replay (branch `m7-lab-replay`)**: `make lab ARGS="replay <study> <code> <experiments...> --video <dot video>"` and `make lab ARGS="ui"` (page with buttons, 127.0.0.1:8765) render a film with one dot per experiment; new models `mlp`, `svr`, `gbr` (experiments `t-mlp`, `t-svr`, `t-gbr`, not yet scored on all studies). `m6-hardening` is merged (PR #7). T12, T3, T2 are minor and left open by decision of the user.
 
+**Root page and consent (branch `m7-consent-landing`)**: `/` asks for the study code and redirects to `/s/<code>` (DECISIONS 2026-11-02); `consent/v1.txt` is a short draft with `[retention period]` and `[contact e-mail]` to fill in before real data.
+
 Working state: Docker Desktop is needed for `make test` (PostgreSQL) but not for the lab; the lab replay work is on `m7-lab-replay`.

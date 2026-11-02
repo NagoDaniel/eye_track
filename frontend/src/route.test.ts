@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRoute } from "./route";
+import { isLandingPath, parseRoute } from "./route";
 
 describe("parseRoute", () => {
   it("reads the study code and the participant code", () => {
@@ -14,5 +14,14 @@ describe("parseRoute", () => {
     expect(() => parseRoute("/", "")).toThrow(/study code/);
     expect(() => parseRoute("/s/", "")).toThrow(/study code/);
     expect(() => parseRoute("/s/a/b", "")).toThrow(/study code/);
+  });
+});
+
+describe("isLandingPath", () => {
+  it("is the root only", () => {
+    expect(isLandingPath("/")).toBe(true);
+    expect(isLandingPath("")).toBe(true);
+    expect(isLandingPath("/s/phys1")).toBe(false);
+    expect(isLandingPath("/other")).toBe(false);
   });
 });

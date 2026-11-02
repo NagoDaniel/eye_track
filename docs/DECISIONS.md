@@ -14,6 +14,12 @@ Format:
 
 ---
 
+## 2026-11-02 — Root page asks for the study code; short draft consent text
+- Plan section: §5.2 step 1, §13 (consent)
+- Decision: (1) The root URL `/` shows a box for the study **code** (the `<study code>` of `/s/<study code>`, not the free-text study name, which is not unique) with a short explanation; a valid code (checked with `GET /api/studies/{code}`) redirects to `/s/<code>`, an unknown one shows a message. The session flow at `/s/<code>` is unchanged. (2) `backend/app/consent/v1.txt` is replaced by a short draft (what is recorded, purpose, pseudonymous, retention and contact as `[bracketed]` fields to fill in, voluntary and withdrawal); the tick-box consent screen is unchanged. It must be replaced by the ethics-approved text before real data; version `v1` is edited in place because only test sessions exist so far, a new file and `consent_version` is needed after real consent was collected.
+- Reason: the plan has no landing page and its consent text was a placeholder; requested by the user, who will edit the text.
+- Approved by: Nágó Dániel
+
 ## 2026-11-01 — Lab replay films and a local page (dev tool, no product change)
 - Plan section: §12.2 (the debug replay's drawing helpers are reused, not changed)
 - Decision: `backend/lab` gets `replay` (a film of a dot video with the gaze of several experiments as coloured dots, each experiment re-run on that one session), `ui` (a page on 127.0.0.1 with buttons for it) and three more models (`mlp`, `svr`, `gbr`). Films go to `lab_data/replays/` (gitignored: they contain webcam video).

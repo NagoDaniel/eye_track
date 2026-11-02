@@ -21,8 +21,20 @@ def gz(*events: dict[str, object]) -> bytes:
     return gzip.compress("".join(json.dumps(e) + "\n" for e in events).encode())
 
 
-def test_placeholder_consent_text_is_available() -> None:
-    assert "webcam video is recorded" in consent_text("v1")
+def test_consent_text_states_what_the_plan_requires() -> None:
+    """PLAN §13: webcam video recorded and stored on a university server, the purpose, the
+    retention period and how to withdraw; short enough to read on one screen."""
+    text = consent_text("v1")
+    for needed in (
+        "webcam video is recorded",
+        "university server",
+        "estimate where on the screen",
+        "retention period",
+        "ask for your data to be deleted",
+        "ticking the box",
+    ):
+        assert needed in text, needed
+    assert len(text.split()) < 150
     assert "v1" in consent_versions()
 
 

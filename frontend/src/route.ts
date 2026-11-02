@@ -19,3 +19,8 @@ export function parseRoute(pathname: string, search: string): Route {
   const participantCode = new URLSearchParams(search).get(PARTICIPANT_CODE_QUERY_PARAM);
   return { studyCode, participantCode: participantCode === "" ? null : participantCode };
 }
+
+/** The root URL (`/`), where a student types the study code. */
+export function isLandingPath(pathname: string): boolean {
+  return pathname.replace(/\/+$/, "") === "";
+}
