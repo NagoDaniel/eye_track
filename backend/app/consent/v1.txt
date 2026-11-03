@@ -1,4 +1,4 @@
-In this study you watch educational videos while your webcam records your face. The webcam video is recorded and stored on a university server. It is used only to estimate where on the screen you look.
+In this study you watch educational videos while your webcam records your face. The video is used only to estimate where on the screen you look.
 
 You are identified only by your participant code, never by your name. The retention period is short: the recording stays on this server until the analyses are done, then it is deleted.
 

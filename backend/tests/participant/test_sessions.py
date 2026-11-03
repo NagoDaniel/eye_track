@@ -35,7 +35,7 @@ def test_study_info(client: TestClient, study_id: int) -> None:
     assert body["name"] == "Physics lecture study"
     assert body["code"] == STUDY_CODE and body["mode"] == "remote"
     assert body["consent_version"] == "v1"
-    assert "webcam video is recorded" in body["consent_text"]
+    assert "webcam records your face" in body["consent_text"]
     assert "getUserMedia" in body["browser_requirements"]
 
 

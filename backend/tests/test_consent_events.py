@@ -22,12 +22,12 @@ def gz(*events: dict[str, object]) -> bytes:
 
 
 def test_consent_text_states_what_the_plan_requires() -> None:
-    """PLAN §13: webcam video recorded and stored on a university server, the purpose, the
-    retention period and how to withdraw; short enough to read on one screen."""
+    """PLAN §13: webcam video recorded, the purpose, the retention period and how to withdraw
+    (the "university server" line was dropped, DECISIONS 2026-11-03);
+    short enough to read on one screen."""
     text = consent_text("v1")
     for needed in (
-        "webcam video is recorded",
-        "university server",
+        "webcam records your face",
         "estimate where on the screen",
         "retention period",
         "ask for your data to be deleted",
