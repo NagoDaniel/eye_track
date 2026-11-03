@@ -42,7 +42,7 @@
     "gate_reasons": ["ok", "few_face_frames", "low_brightness", "head_or_distance_change", "high_error", "no_validation", "forced_debug"],
     "skip_targets": ["calibration", "validation", "video"]
   },
-  "participant_code_pattern": "^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$",
+  "participant_code_pattern": "^[a-z]{2}[0-9]{2}[isagmt][0-9]{2}$",
   "study_config_default": {
     "playlist": [],
     "calibration": { "points": 13, "dot_duration_ms": 1500, "margin": 0.06 },
@@ -84,7 +84,7 @@
         "WebAssembly"
       ]
     },
-    "session_create_request": { "study_code": "phys1", "participant_code": "AB0315", "debug": false },
+    "session_create_request": { "study_code": "phys1", "participant_code": "an03i05", "debug": false },
     "session_create_response": {
       "session_id": "3f2b8c1e-5d4a-4e9b-9c1a-2f6d7e8a9b0c",
       "upload_token": "k3Jx9wQ2mZpR7vNtB5yLcA8dFhG1sUeWoXiVq4TnYb0",

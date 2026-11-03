@@ -1,7 +1,7 @@
 In this study you watch educational videos while your webcam records your face. The webcam video is recorded and stored on a university server. It is used only to estimate where on the screen you look.
 
-You are identified only by your participant code, never by your name. The recording is kept for [retention period] and then deleted.
+You are identified only by your participant code, never by your name. The retention period is short: the recording stays on this server until the analyses are done, then it is deleted.
 
-Taking part is voluntary. You can stop at any time by closing the page, and you can ask for your data to be deleted: [contact e-mail].
+Taking part is voluntary. You can stop at any time by closing the page, and you can ask for your data to be deleted: nago.daniel@student.ms.sapientia.ro.
 
 By ticking the box below you agree to the recording.

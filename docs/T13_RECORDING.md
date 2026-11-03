@@ -18,9 +18,9 @@ One session takes about 8 to 10 minutes: camera check, calibration (13 dots), va
 
 | Who | Sessions | Codes |
 |---|---|---|
-| You | 4: two without glasses, two with | `DA0101`, `DB0202`, `DC0101`, `DD0202` |
-| The other person | 2 (both as they normally are: with glasses if they wear them) | `PA0101` or `PA0202`, `PB...` |
-| Optional | 1 more on another webcam or in other light, either person | next letter, e.g. `DE0101` |
+| You | 4: two without glasses, two with | `da01i01`, `db02i02`, `dc01i01`, `dd02i02` |
+| The other person | 2 (both as they normally are: with glasses if they wear them) | `pa01i01` or `pa02i02`, `PB...` |
+| Optional | 1 more on another webcam or in other light, either person | next letter, e.g. `de01i01` |
 
 Leave at least 10 minutes between two sessions of the same person (tired eyes are a different condition), and do them on at least two different days if you can.
 
@@ -74,9 +74,9 @@ Read this part to the other person too.
 
 ```
 study,code,person,glasses,webcam,notes
-8,DA0101,P1,no,built-in,"evening, ceiling light; calibration repeated once"
-8,DB0202,P1,yes,built-in,"morning, window in front"
-8,PA0101,P2,no,built-in,"looked away about 40 s into video 2"
+8,da01i01,P1,no,built-in,"evening, ceiling light; calibration repeated once"
+8,db02i02,P1,yes,built-in,"morning, window in front"
+8,pa01i01,P2,no,built-in,"looked away about 40 s into video 2"
 ```
 
 - `person`: `P1` (you), `P2` (the other person): no names.

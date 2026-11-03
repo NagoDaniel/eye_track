@@ -132,7 +132,7 @@ def test_two_videos_keep_their_own_counts_in_order() -> None:
 def seed(admin: Admin, engine: Engine, data_root: Path) -> dict[str, Any]:
     study = add_study(engine, "pstudy")
     other_study = add_study(engine, "other")
-    complete = add_session(engine, study, "AB0315", 0, status=SessionStatus.UPLOADED)
+    complete = add_session(engine, study, "ab03i15", 0, status=SessionStatus.UPLOADED)
     add_chunk(
         engine,
         data_root,
@@ -151,22 +151,22 @@ def seed(admin: Admin, engine: Engine, data_root: Path) -> dict[str, Any]:
     )
     # Same participant again: interrupted, with a hole at seq 1 and few events.
     interrupted = add_session(
-        engine, study, "AB0315", 10, status=SessionStatus.UPLOADED, flags=["interrupted"]
+        engine, study, "ab03i15", 10, status=SessionStatus.UPLOADED, flags=["interrupted"]
     )
     add_chunk(engine, data_root, study, interrupted, "events", 0, gz(ev(0, "session_start")))
     add_chunk(engine, data_root, study, interrupted, "events", 2, gz(ev(9000, "window_blur")))
     # Someone else in the same study, and the same code in another study: never mixed in.
-    add_session(engine, study, "ZZ1231", 20)
-    add_session(engine, other_study, "AB0315", 30)
+    add_session(engine, study, "zz12i31", 20)
+    add_session(engine, other_study, "ab03i15", 30)
     return {"study": study, "complete": complete, "interrupted": interrupted}
 
 
 def test_results_of_one_participant(admin: Admin, migrated_engine: Engine, data_root: Path) -> None:
     ids = seed(admin, migrated_engine, data_root)
-    r = admin.client.get(f"/admin/api/participants/{ids['study']}/AB0315")
+    r = admin.client.get(f"/admin/api/participants/{ids['study']}/ab03i15")
     assert r.status_code == 200
     body = r.json()
-    assert body["participant_code"] == "AB0315" and body["study"]["code"] == "pstudy"
+    assert body["participant_code"] == "ab03i15" and body["study"]["code"] == "pstudy"
     by_id = {s["id"]: s for s in body["sessions"]}
     assert set(by_id) == {str(ids["complete"]), str(ids["interrupted"])}
 
@@ -187,31 +187,31 @@ def test_code_is_matched_case_insensitively_and_unknown_code_is_empty(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     ids = seed(admin, migrated_engine, data_root)
-    lower = admin.client.get(f"/admin/api/participants/{ids['study']}/ab0315").json()
-    assert len(lower["sessions"]) == 2
-    nobody = admin.client.get(f"/admin/api/participants/{ids['study']}/XX0101")
+    upper = admin.client.get(f"/admin/api/participants/{ids['study']}/AB03I15").json()
+    assert len(upper["sessions"]) == 2
+    nobody = admin.client.get(f"/admin/api/participants/{ids['study']}/xx01i01")
     assert nobody.status_code == 200 and nobody.json()["sessions"] == []
 
 
 def test_unknown_study_is_404(admin: Admin) -> None:
-    assert admin.client.get("/admin/api/participants/999/AB0315").status_code == 404
-    assert admin.client.get("/admin/participants/999/AB0315").status_code == 404
+    assert admin.client.get("/admin/api/participants/999/ab03i15").status_code == 404
+    assert admin.client.get("/admin/participants/999/ab03i15").status_code == 404
 
 
 def test_page_shows_summary_links_and_no_javascript(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     ids = seed(admin, migrated_engine, data_root)
-    page = admin.client.get(f"/admin/participants/{ids['study']}/AB0315")
+    page = admin.client.get(f"/admin/participants/{ids['study']}/ab03i15")
     assert page.status_code == 200 and "<script" not in page.text
     assert f"/admin/sessions/{ids['complete']}" in page.text
     assert "interrupted" in page.text
     # The sessions list links to the participant page.
     listing = admin.client.get(f"/admin/sessions?study_id={ids['study']}").text
-    assert f"/admin/participants/{ids['study']}/AB0315" in listing
+    assert f"/admin/participants/{ids['study']}/ab03i15" in listing
 
 
 def test_anonymous_access_is_refused(migrated_engine: Engine, data_root: Path) -> None:
     with anonymous_client(migrated_engine, data_root) as client:
-        assert client.get("/admin/api/participants/1/AB0315").status_code == 401
-        assert client.get("/admin/participants/1/AB0315").status_code == 303
+        assert client.get("/admin/api/participants/1/ab03i15").status_code == 401
+        assert client.get("/admin/participants/1/ab03i15").status_code == 303

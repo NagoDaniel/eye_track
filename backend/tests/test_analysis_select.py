@@ -39,7 +39,7 @@ def quality(
 
 def info(
     n: int,
-    code: str = "AB0315",
+    code: str = "ab03i15",
     minutes: int = 0,
     status: SessionStatus = SessionStatus.PROCESSED,
     q: dict[str, Any] | None = None,

@@ -96,9 +96,9 @@ def test_list_filters_by_study_and_counts_chunks(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     s1, s2 = add_study(migrated_engine, "st1"), add_study(migrated_engine, "st2")
-    old = add_session(migrated_engine, s1, "AB0315", minutes=0, status=SessionStatus.UPLOADED)
-    new = add_session(migrated_engine, s1, "CD0101", minutes=5, flags=["interrupted"])
-    other = add_session(migrated_engine, s2, "EF1231", minutes=10)
+    old = add_session(migrated_engine, s1, "ab03i15", minutes=0, status=SessionStatus.UPLOADED)
+    new = add_session(migrated_engine, s1, "cd01i01", minutes=5, flags=["interrupted"])
+    other = add_session(migrated_engine, s2, "ef12i31", minutes=10)
     for seq in range(3):
         add_chunk(migrated_engine, data_root, s1, old, "webcam", seq)
     add_chunk(migrated_engine, data_root, s1, old, "events", 0, gz(ev(1)))
@@ -124,7 +124,10 @@ def test_list_filters_by_study_and_counts_chunks(
         "events": 0,
         "stimulus_frames": 0,
     }
-    assert (by_id[str(old)]["participant_code"], by_id[str(old)]["study_code"]) == ("AB0315", "st1")
+    assert (by_id[str(old)]["participant_code"], by_id[str(old)]["study_code"]) == (
+        "ab03i15",
+        "st1",
+    )
     assert by_id[str(old)]["created_at"].startswith("2026-10-01T12:00")
 
     rows = admin.client.get("/admin/api/sessions", params={"study_id": s2}).json()
@@ -136,7 +139,7 @@ def test_detail_shows_events_in_order_and_a_missing_seq_as_a_gap(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     study = add_study(migrated_engine, "gap1")
-    sid = add_session(migrated_engine, study, "AB0315")
+    sid = add_session(migrated_engine, study, "ab03i15")
     # Inserted out of order on purpose; seq 2 never arrived.
     add_chunk(migrated_engine, data_root, study, sid, "events", 3, gz(ev(40.0, "video_ended")))
     add_chunk(migrated_engine, data_root, study, sid, "events", 0, gz(ev(1.0, "session_start")))
@@ -168,14 +171,14 @@ def test_detail_shows_events_in_order_and_a_missing_seq_as_a_gap(
         (40.0, "video_ended"),
     ]
     assert d["events_total"] == 4 and d["events_error"] is None
-    assert d["study_code"] == "gap1" and d["participant_code"] == "AB0315"
+    assert d["study_code"] == "gap1" and d["participant_code"] == "ab03i15"
 
 
 def test_at_most_1000_events_are_returned_with_the_total(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     study = add_study(migrated_engine, "many1")
-    sid = add_session(migrated_engine, study, "AB0315")
+    sid = add_session(migrated_engine, study, "ab03i15")
     n_total = MAX_EVENTS_SHOWN + 500
     events = [ev(float(i)) for i in range(n_total)]
     for seq in range(3):
@@ -198,7 +201,7 @@ def test_unreadable_events_are_reported_but_the_rest_is_shown(
     admin: Admin, migrated_engine: Engine, data_root: Path
 ) -> None:
     study = add_study(migrated_engine, "bad1")
-    sid = add_session(migrated_engine, study, "AB0315")
+    sid = add_session(migrated_engine, study, "ab03i15")
     add_chunk(migrated_engine, data_root, study, sid, "events", 0, b"not gzip")
     r = admin.client.get(f"/admin/api/sessions/{sid}")
     assert r.status_code == 200
@@ -217,7 +220,7 @@ def test_unknown_session_is_404(admin: Admin) -> None:
 
 
 def test_sessions_are_read_only(admin: Admin, migrated_engine: Engine) -> None:
-    sid = add_session(migrated_engine, add_study(migrated_engine, "ro1"), "AB0315")
+    sid = add_session(migrated_engine, add_study(migrated_engine, "ro1"), "ab03i15")
     c, h = admin.client, admin.headers
     for url in ("/admin/api/sessions", f"/admin/api/sessions/{sid}"):
         assert c.post(url, json={}, headers=h).status_code == 405
@@ -238,17 +241,17 @@ def test_anonymous_gets_401_and_pages_redirect(migrated_engine: Engine, data_roo
 
 def test_pages(admin: Admin, migrated_engine: Engine, data_root: Path) -> None:
     s1, s2 = add_study(migrated_engine, "pg1"), add_study(migrated_engine, "pg2")
-    sid = add_session(migrated_engine, s1, "AB0315", flags=["calibration_gate_failed"])
-    add_session(migrated_engine, s2, "ZZ1212")
+    sid = add_session(migrated_engine, s1, "ab03i15", flags=["calibration_gate_failed"])
+    add_session(migrated_engine, s2, "zz12i12")
     add_chunk(migrated_engine, data_root, s1, sid, "events", 0, gz(ev(1.5, "session_start")))
     add_chunk(migrated_engine, data_root, s1, sid, "events", 2, gz(ev(9.5, "video_ended", id="1")))
 
     page = admin.client.get("/admin/sessions")
     assert page.status_code == 200 and "<script" not in page.text
-    assert "AB0315" in page.text and "ZZ1212" in page.text
+    assert "ab03i15" in page.text and "zz12i12" in page.text
     filtered = admin.client.get("/admin/sessions", params={"study_id": s1})
-    assert "AB0315" in filtered.text and "ZZ1212" not in filtered.text
-    assert "AB0315" in admin.client.get("/admin/sessions", params={"study_id": ""}).text
+    assert "ab03i15" in filtered.text and "zz12i12" not in filtered.text
+    assert "ab03i15" in admin.client.get("/admin/sessions", params={"study_id": ""}).text
 
     detail = admin.client.get(f"/admin/sessions/{sid}")
     assert detail.status_code == 200

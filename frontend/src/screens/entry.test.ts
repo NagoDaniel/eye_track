@@ -34,21 +34,21 @@ function submit(): void {
 }
 
 describe("participant code", () => {
-  it("accepts two letters and a valid month/day, rejects the rest", () => {
-    for (const ok of ["AB0315", "ZZ1231", "XY0101"]) expect(isValidParticipantCode(ok)).toBe(true);
-    for (const bad of ["", "ab0315", "A10315", "AB1315", "AB0332", "AB031", "AB03155", "AB0300", "ÁB0315"]) {
+  it("accepts two letters, month, major letter and day, rejects the rest", () => {
+    for (const ok of ["an03i05", "zz12s31", "xy01t01"]) expect(isValidParticipantCode(ok)).toBe(true);
+    for (const bad of ["", "AN03I05", "a103i05", "an03x05", "an0305", "an03i5", "an03i055", "áb03i05"]) {
       expect(isValidParticipantCode(bad)).toBe(false);
     }
-    expect(normalizeParticipantCode("  ab0315 ")).toBe("AB0315");
+    expect(normalizeParticipantCode("  AN03I05 ")).toBe("an03i05");
   });
 });
 
 describe("entryScreen", () => {
-  it("upper-cases what is typed and prefills from ?p=", () => {
-    void entryScreen(root, study, "ab0315", vi.fn());
+  it("lower-cases what is typed and prefills from ?p=", () => {
+    void entryScreen(root, study, "AN03I05", vi.fn());
     const input = root.querySelector("input") as HTMLInputElement;
-    expect(input.value).toBe("AB0315");
-    expect(type("cd0229").value).toBe("CD0229");
+    expect(input.value).toBe("an03i05");
+    expect(type("CD02G29").value).toBe("cd02g29");
   });
 
   it("rejects a bad code without calling the server", () => {
@@ -57,22 +57,22 @@ describe("entryScreen", () => {
     type("ab13");
     submit();
     expect(create).not.toHaveBeenCalled();
-    expect(root.textContent).toContain("two letters followed by four digits");
+    expect(root.textContent).toContain("the letter of your major");
   });
 
-  it("creates the session with the upper-cased code and resolves with it", async () => {
+  it("creates the session with the lower-cased code and resolves with it", async () => {
     const create = vi.fn().mockResolvedValue(response);
     const done = entryScreen(root, study, null, create);
-    type("ab0315");
+    type("AN03I05");
     submit();
     await expect(done).resolves.toBe(response);
-    expect(create).toHaveBeenCalledWith("AB0315");
+    expect(create).toHaveBeenCalledWith("an03i05");
   });
 
   it("shows a server rejection inline and lets the participant try again", async () => {
     const create = vi.fn().mockRejectedValueOnce(new ApiError(429, "slow down")).mockResolvedValue(response);
     const done = entryScreen(root, study, null, create);
-    type("ab0315");
+    type("AN03I05");
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("Too many attempts"));
     expect((root.querySelector("button") as HTMLButtonElement).disabled).toBe(false);

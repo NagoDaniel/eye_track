@@ -195,7 +195,7 @@ def test_the_study_button_queues_every_processed_session_that_can_take_it(
     with Db(migrated_engine) as db:  # a second session of the study, still uploading
         db.add(
             SessionRow(
-                id=other, study_id=s.study_id, participant_code="ZZ0101", upload_token_hash="h",
+                id=other, study_id=s.study_id, participant_code="zz01i01", upload_token_hash="h",
                 status=SessionStatus.UPLOADED, flags=[],
             )
         )  # fmt: skip

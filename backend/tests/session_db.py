@@ -19,7 +19,7 @@ def seed_session(
         db.flush()
         db.add(
             SessionRow(
-                id=s.session_id, study_id=s.study_id, participant_code="AB0315",
+                id=s.session_id, study_id=s.study_id, participant_code="ab03i15",
                 upload_token_hash="h", status=status, flags=flags or [],
             )
         )  # fmt: skip

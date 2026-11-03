@@ -13,7 +13,7 @@ export const BROWSER_REQUIREMENTS = [
 ] as const;
 
 /** Same pattern as PARTICIPANT_CODE_PATTERN in backend/app/schemas.py (checked in protocol.test.ts). */
-export const PARTICIPANT_CODE_PATTERN = /^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$/;
+export const PARTICIPANT_CODE_PATTERN = /^[a-z]{2}[0-9]{2}[isagmt][0-9]{2}$/;
 
 export interface StudyConfig {
   playlist: string[]; // video ids as strings
@@ -69,7 +69,7 @@ export interface VideoRef {
   fps: number;
 }
 
-/** POST /api/sessions. The participant code is two letters + birth month + day, e.g. AB0315. */
+/** POST /api/sessions. The participant code is two letters + birth month + major letter + birth day, e.g. an03i05. */
 export interface SessionCreateRequest {
   study_code: string;
   participant_code: string;

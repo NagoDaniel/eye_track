@@ -161,7 +161,7 @@ def _session_in(db: DbSession, status: SessionStatus) -> SessionRow:
     db.add(study)
     db.flush()
     session = SessionRow(
-        study_id=study.id, participant_code="AB0315", upload_token_hash="h", status=status
+        study_id=study.id, participant_code="ab03i15", upload_token_hash="h", status=status
     )
     db.add(session)
     db.flush()

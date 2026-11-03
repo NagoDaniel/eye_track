@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { type Admin, createStudy, jobFinished, login, settledSessionsOf, uploadVideo } from "./admin";
 import { runSession, runUntilDot } from "./participant";
 
-const PARTICIPANT = "AB0315";
+const PARTICIPANT = "ab03i15";
 let admin: Admin;
 let videoId: string;
 let videoSha: string;

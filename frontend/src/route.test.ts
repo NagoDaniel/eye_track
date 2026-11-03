@@ -4,7 +4,7 @@ import { isLandingPath, parseRoute } from "./route";
 
 describe("parseRoute", () => {
   it("reads the study code and the participant code", () => {
-    expect(parseRoute("/s/phys1", "?p=AB0315")).toEqual({ studyCode: "phys1", participantCode: "AB0315" });
+    expect(parseRoute("/s/phys1", "?p=ab03i15")).toEqual({ studyCode: "phys1", participantCode: "ab03i15" });
   });
   it("has no participant code without ?p=", () => {
     expect(parseRoute("/s/phys1/", "")).toEqual({ studyCode: "phys1", participantCode: null });

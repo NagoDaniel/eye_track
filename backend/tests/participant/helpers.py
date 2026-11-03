@@ -6,7 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 STUDY_CODE = "phys1"
-PARTICIPANT = "AB0315"
+PARTICIPANT = "ab03i15"
 
 MakeClient = Callable[..., TestClient]
 

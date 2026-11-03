@@ -20,7 +20,7 @@ const key = (k: string, mods: Partial<KeyEventLike> = {}): KeyEventLike => ({
 describe("debugRequested", () => {
   it("is true only for debug=1", () => {
     expect(debugRequested("?debug=1")).toBe(true);
-    expect(debugRequested("?p=AB0315&debug=1")).toBe(true);
+    expect(debugRequested("?p=ab03i15&debug=1")).toBe(true);
     expect(debugRequested("")).toBe(false);
     expect(debugRequested("?debug=0")).toBe(false);
     expect(debugRequested("?debug=true")).toBe(false);
