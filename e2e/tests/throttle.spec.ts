@@ -44,7 +44,7 @@ for (const factor of FACTORS) {
     const client = await context.newCDPSession(page);
     await client.send("Emulation.setCPUThrottlingRate", { rate: factor });
     const started = Date.now();
-    await page.goto(`/s/${code}?p=AB0315`);
+    await page.goto(`/s/${code}?p=ab03i15`);
     await runSession(page, "Thank you", 400_000);
     const seconds = (Date.now() - started) / 1000;
     const [session, ...others] = await settledSessionsOf(admin, studyId);

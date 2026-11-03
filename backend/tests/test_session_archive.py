@@ -241,7 +241,7 @@ def write_zip(path: Path, files: dict[str, bytes]) -> Path:
 
 def test_unsafe_or_foreign_archives_are_refused(migrated_engine: Engine, tmp_path: Path) -> None:
     meta = json.dumps(
-        {"id": str(uuid.UUID(int=1)), "study_id": 1, "participant_code": "AB0315", "config": {}}
+        {"id": str(uuid.UUID(int=1)), "study_id": 1, "participant_code": "ab03i15", "config": {}}
     )
     good = {"meta.json": meta.encode(), "chunks.json": b"[]"}
     cases = {

@@ -73,8 +73,9 @@ GateReason = Literal[
 ]
 SkipTarget = Literal["calibration", "validation", "video"]
 
-# First two letters of the name + birth month + birth day (DECISIONS, milestone 1b item 11).
-PARTICIPANT_CODE_PATTERN = r"^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$"
+# First two letters of the first name + birth month + major letter + birth day (DECISIONS
+# 2026-11-03).
+PARTICIPANT_CODE_PATTERN = r"^[a-z]{2}[0-9]{2}[isagmt][0-9]{2}$"
 _PARTICIPANT_CODE_RE = re.compile(PARTICIPANT_CODE_PATTERN)
 
 
@@ -220,7 +221,7 @@ class VideoRef(Strict):
 
 
 class SessionCreateRequest(Strict):
-    """`POST /api/sessions`. The participant code is upper-cased before it is checked."""
+    """`POST /api/sessions`. The participant code is lower-cased before it is checked."""
 
     study_code: str
     participant_code: str
@@ -231,10 +232,11 @@ class SessionCreateRequest(Strict):
     @field_validator("participant_code", mode="before")
     @classmethod
     def normalize_participant_code(cls, value: object) -> object:
-        code = value.strip().upper() if isinstance(value, str) else value
+        code = value.strip().lower() if isinstance(value, str) else value
         if not isinstance(code, str) or not _PARTICIPANT_CODE_RE.fullmatch(code):
             raise ValueError(
-                "participant code must be two letters, then birth month and day, e.g. AB0315"
+                "participant code must be two letters, birth month, a major letter "
+                "(i, s, a, g, m or t) and birth day, e.g. an03i05"
             )
         return code
 

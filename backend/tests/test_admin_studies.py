@@ -49,7 +49,7 @@ def add_video(engine: Engine) -> int:
 
 def add_session(engine: Engine, study_id: int) -> None:
     with DbSession(engine) as db:
-        db.add(Session(id=uuid.uuid4(), study_id=study_id, participant_code="AB0315",
+        db.add(Session(id=uuid.uuid4(), study_id=study_id, participant_code="ab03i15",
                        upload_token_hash="x"))  # fmt: skip
         db.commit()
 

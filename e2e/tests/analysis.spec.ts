@@ -7,7 +7,7 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 import { type Admin, createStudy, login, settledSessionsOf, uploadVideo } from "./admin";
 import { runSession } from "./participant";
 
-const PARTICIPANT = "AB0315";
+const PARTICIPANT = "ab03i15";
 // The fake camera cannot follow the dots, so the session's calibration is poor: these thresholds let
 // it into the analysis (the plan's defaults are for real participants).
 const LOOSE_INCLUSION = { max_validation_error_norm: 100, min_valid_fraction: 0 };

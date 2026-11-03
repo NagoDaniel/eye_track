@@ -60,7 +60,7 @@ def _gaze(gain: float = 1.0, offset_px: tuple[float, float] = (0.0, 0.0)) -> pa.
 
 
 def _score(table: pa.Table) -> Score:
-    return score_gaze(table, _events(), TRUTH, PipelineConfig(), 7, "XX0101", "a")
+    return score_gaze(table, _events(), TRUTH, PipelineConfig(), 7, "xx01i01", "a")
 
 
 # --- Scoring against the dot ---
@@ -609,12 +609,12 @@ def test_labels_are_read_from_the_csv(tmp_path: Path) -> None:
 
     assert read_labels(tmp_path) == {}
     (tmp_path / "labels.csv").write_text(
-        "study,code,person,glasses,webcam,notes\n8,da0101,P1,no,built-in,evening\n"
-        "8,DB0202,P1,yes,,\n"
+        "study,code,person,glasses,webcam,notes\n8,DA0101,P1,no,built-in,evening\n"
+        "8,db02i02,P1,yes,,\n"
     )
     assert read_labels(tmp_path) == {
         (8, "DA0101"): "person=P1 glasses=no webcam=built-in notes=evening",
-        (8, "DB0202"): "person=P1 glasses=yes",
+        (8, "db02i02"): "person=P1 glasses=yes",
     }
     (tmp_path / "labels.csv").write_text("study,code,who\n")
     with pytest.raises(ValueError, match="header"):

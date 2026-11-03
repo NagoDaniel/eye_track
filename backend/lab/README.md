@@ -95,7 +95,7 @@ Each experiment is re-run on that one session (`lab_data/replay_work/`), so a fi
 plus the video's length to render; films go to `lab_data/replays/` (they contain the webcam).
 
 ```
-make lab ARGS="replay 8 DE0202 baseline t-krr t-mlp --video long_dot_1"
+make lab ARGS="replay 8 de02i02 baseline t-krr t-mlp --video long_dot_1"
 make lab ARGS="ui"       # the same with buttons, http://127.0.0.1:8765 (this machine only)
 ```
 

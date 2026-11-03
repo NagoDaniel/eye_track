@@ -81,10 +81,10 @@ def test_session_row_defaults(client: TestClient, study_id: int, migrated_engine
 
 def test_participant_code_is_normalized_and_validated(client: TestClient, study_id: int) -> None:
     r = client.post(
-        "/api/sessions", json={"study_code": STUDY_CODE, "participant_code": " ab0315 "}
+        "/api/sessions", json={"study_code": STUDY_CODE, "participant_code": " AN03I05 "}
     )
     assert r.status_code == 201
-    for bad in ["A0315", "AB1315", "AB0332", "ABC315", "", "ÁB0315"]:
+    for bad in ["a03i05", "an03x05", "an0305", "abc03i05", "", "áb03i05"]:
         r = client.post("/api/sessions", json={"study_code": STUDY_CODE, "participant_code": bad})
         assert r.status_code == 422, bad
 

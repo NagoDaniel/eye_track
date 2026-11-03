@@ -55,8 +55,8 @@ def study(migrated_engine: Engine, data_root: Path) -> dict[str, int | str]:
         db.add(Video(id=1, title="Moving dot", file_path="x", duration=5.0, width=16, height=9,
                      fps=25.0, sha256="0" * 64))  # fmt: skip
         db.commit()
-    a = add_session(migrated_engine, data_root, "AA0101", N, N)
-    b = add_session(migrated_engine, data_root, "BB0101", N, N)
+    a = add_session(migrated_engine, data_root, "aa01i01", N, N)
+    b = add_session(migrated_engine, data_root, "bb01i01", N, N)
     ids = {
         "running": add_job(migrated_engine, JobKind.PROCESS_PIPELINE_B, JobStatus.RUNNING,
                            {"session_id": str(a)}),
@@ -95,7 +95,7 @@ def test_the_study_page_lists_the_jobs_with_cancel_buttons_for_the_open_ones(
     jobs = html.split('<h2 id="jobs">')[1].split("<h2>Analyses of this study</h2>")[0]
     for label in ("Pipeline B", "Analysis", "Processing (Pipeline A)", "Pipeline comparison"):
         assert label in jobs
-    assert "AA0101" in jobs and "BB0101" in jobs and "from calibration_b" in jobs
+    assert "aa01i01" in jobs and "bb01i01" in jobs and "from calibration_b" in jobs
     assert "video: Moving dot" in jobs and "the whole study" in jobs
     open_ids = [study["running"], study["queued"], study["analysis"]]
     for job_id in open_ids:

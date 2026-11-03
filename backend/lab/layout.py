@@ -100,5 +100,5 @@ def read_labels(lab_data: Path) -> dict[tuple[int, str], str]:
             text = " ".join(
                 f"{k}={row[k].strip()}" for k in LABEL_COLUMNS[2:] if row[k] and row[k].strip()
             )
-            out[(int(row["study"]), row["code"].strip().upper())] = text
+            out[(int(row["study"]), row["code"].strip())] = text
         return out

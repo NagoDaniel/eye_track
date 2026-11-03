@@ -59,7 +59,7 @@ def processed(migrated_engine: Engine, data_root: Path) -> Synthetic:
     with DbSession(migrated_engine) as db:
         db.add(Study(id=s.study_id, name="S", code="abc", mode=StudyMode.REMOTE, config={}))
         db.flush()
-        db.add(SessionRow(id=s.session_id, study_id=s.study_id, participant_code="AB0315",
+        db.add(SessionRow(id=s.session_id, study_id=s.study_id, participant_code="ab03i15",
                           upload_token_hash="h", status=SessionStatus.PROCESSED, quality=report,
                           flags=["sync_short"]))  # fmt: skip
         db.commit()
@@ -154,7 +154,7 @@ def test_a_session_that_was_not_processed_says_so(
         db.add(Study(id=1, name="S", code="abc", mode=StudyMode.REMOTE, config={}))
         db.flush()
         sid = uuid.UUID(int=3)
-        db.add(SessionRow(id=sid, study_id=1, participant_code="AB0315", upload_token_hash="h",
+        db.add(SessionRow(id=sid, study_id=1, participant_code="ab03i15", upload_token_hash="h",
                           status=SessionStatus.UPLOADED))  # fmt: skip
         db.commit()
     html = admin.client.get(f"/admin/sessions/{sid}").text
@@ -188,7 +188,7 @@ def test_the_lists_show_whether_a_session_is_included(admin: Admin, processed: S
     rows = admin.client.get("/admin/api/sessions").json()
     assert rows[0]["included"] is True and rows[0]["inclusion_reasons"] == []
     assert ">yes<" in admin.client.get("/admin/sessions").text
-    participant = admin.client.get("/admin/participants/1/AB0315").text
+    participant = admin.client.get("/admin/participants/1/ab03i15").text
     assert "included" in participant and "quality report and plots" in participant
 
 

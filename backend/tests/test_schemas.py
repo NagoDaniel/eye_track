@@ -144,16 +144,33 @@ def test_event_type_must_be_known() -> None:
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [("AB0315", "AB0315"), ("ab0315", "AB0315"), ("  zs1231 ", "ZS1231"), ("XY0229", "XY0229")],
+    [
+        ("an03i05", "an03i05"),
+        ("AN03I05", "an03i05"),
+        ("  zs12m31 ", "zs12m31"),
+        ("xy02t29", "xy02t29"),
+    ],
 )
-def test_participant_code_accepted_and_upper_cased(raw: str, expected: str) -> None:
+def test_participant_code_accepted_and_lower_cased(raw: str, expected: str) -> None:
     req = SessionCreateRequest(study_code="s", participant_code=raw)
     assert req.participant_code == expected
 
 
 @pytest.mark.parametrize(
     "raw",
-    ["", "A0315", "ABC0315", "AB1315", "AB0015", "AB0332", "AB0300", "ÁB0315", "AB031", "1B0315"],
+    [
+        "",
+        "a03i05",
+        "abc03i05",
+        "an03x05",
+        "an0305",
+        "an03i5",
+        "an03i055",
+        "an3i05",
+        "áb03i05",
+        "1n03i05",
+        "an03-i05",
+    ],
 )
 def test_participant_code_rejected(raw: str) -> None:
     with pytest.raises(ValidationError, match="participant code"):
@@ -166,10 +183,10 @@ def test_complete_request_rejects_unknown_stream() -> None:
 
 
 def test_session_create_request_debug_defaults_to_false() -> None:
-    req = SessionCreateRequest.model_validate({"study_code": "s", "participant_code": "AB0315"})
+    req = SessionCreateRequest.model_validate({"study_code": "s", "participant_code": "an03i05"})
     assert req.debug is False
     debug = SessionCreateRequest.model_validate(
-        {"study_code": "s", "participant_code": "AB0315", "debug": True}
+        {"study_code": "s", "participant_code": "an03i05", "debug": True}
     )
     assert debug.debug is True
 

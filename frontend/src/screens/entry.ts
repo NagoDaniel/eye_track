@@ -6,7 +6,7 @@ import { PARTICIPANT_CODE_PATTERN, type SessionCreateResponse, type StudyInfo } 
 import { blockForever, card, el, p, render } from "../ui/dom";
 
 export function normalizeParticipantCode(raw: string): string {
-  return raw.trim().toUpperCase();
+  return raw.trim().toLowerCase();
 }
 
 export function isValidParticipantCode(code: string): boolean {
@@ -14,7 +14,8 @@ export function isValidParticipantCode(code: string): boolean {
 }
 
 export const INVALID_CODE_MESSAGE =
-  "The code is two letters followed by four digits (month and day), for example AB0315.";
+  "The code has 7 characters: the first two letters of your first name, your birth month (two digits), "
+  + "the letter of your major (i, s, a, g, m or t) and your birth day (two digits), for example an03i05.";
 
 /** Inline message for a failed `POST /api/sessions`. */
 export function sessionErrorMessage(error: ApiError): string {
@@ -51,11 +52,11 @@ export function entryScreen(
   createSession: (participantCode: string) => Promise<SessionCreateResponse>,
 ): Promise<SessionCreateResponse> {
   return new Promise((resolve, reject) => {
-    const input = el("input", { attrs: { type: "text", autocomplete: "off", maxlength: "6", id: "participant-code" } });
+    const input = el("input", { attrs: { type: "text", autocomplete: "off", maxlength: "7", id: "participant-code" } });
     input.value = normalizeParticipantCode(prefill ?? "");
     input.addEventListener("input", () => {
-      const upper = input.value.toUpperCase();
-      if (upper !== input.value) input.value = upper;
+      const lower = input.value.toLowerCase();
+      if (lower !== input.value) input.value = lower;
     });
     const message = p("", "error");
     const start = el("button", { text: "Continue", attrs: { type: "submit" } });

@@ -169,7 +169,7 @@ Written when the session is created and rewritten (atomically) when it completes
 {
   "id": "3f2b8c1e-5d4a-4e9b-9c1a-2f6d7e8a9b0c",
   "study_id": 4,
-  "participant_code": "AB0315",
+  "participant_code": "an03i05",
   "created_at": "2026-10-13T07:41:02.123456+00:00",
   "status": "uploaded",
   "consent_version": "v1",
@@ -585,4 +585,4 @@ Metrics (from `quality.json` and `quality_b.json`, the same keys in both): `accu
 
 ## Participant code
 
-Two ASCII letters, then birth month and day, for example `AB0315`: `^[A-Z]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$`. Input is upper-cased. This is derived from personal data and can collide; see DECISIONS.
+Seven characters: the first two letters of the first name, birth month, one letter for the major (`i` Informatika, `s` Számítástechnika, `a` Automatizálás, `g` Gépészmérnöki, `m` Mechatronika, `t` Távközlés) and birth day, for example `an03i05`: `^[a-z]{2}[0-9]{2}[isagmt][0-9]{2}$`. Input is lower-cased. Codes of sessions recorded before 2026-11-03 are upper-case (`AB0315`) and stay as they are. This is derived from personal data and can collide; see DECISIONS.

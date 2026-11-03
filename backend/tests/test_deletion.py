@@ -68,7 +68,7 @@ def add_session(
         (directory / sub).mkdir(parents=True)
         (directory / sub / "file.bin").write_bytes(b"data")
     with DbSession(engine) as db:
-        db.add(SessionRow(id=sid(n), study_id=study_id, participant_code="AB0315",
+        db.add(SessionRow(id=sid(n), study_id=study_id, participant_code="ab03i15",
                           upload_token_hash="h", status=SessionStatus.PROCESSED))  # fmt: skip
         db.flush()
         db.add_all(

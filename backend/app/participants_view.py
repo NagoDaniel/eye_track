@@ -87,11 +87,12 @@ def participant_results(
     missing event chunks are listed, never hidden.
     """
     study = get_study(db, study_id)
-    code = participant_code.strip().upper()
+    code = participant_code.strip()
     sessions = []
     for row in list_sessions(db, study_id):
-        if row["participant_code"] != code:
+        if row["participant_code"].lower() != code.lower():
             continue
+        code = row["participant_code"]  # as stored: old codes are upper-case, new ones lower-case
         seqs = list(
             db.scalars(
                 select(Chunk.seq)
