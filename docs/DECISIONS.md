@@ -17,6 +17,7 @@ Format:
 ## 2026-11-03 — New participant code format; consent placeholders filled
 - Plan section: §5.2 (entry; the format itself was never in the plan), supersedes item 11 of the milestone 1b entry below
 - Decision: a participant code has 7 characters: the first two letters of the first name, birth month, one letter for the major (`i` Informatika, `s` Számítástechnika, `a` Automatizálás, `g` Gépészmérnöki, `m` Mechatronika, `t` Távközlés) and birth day, for example `an03i05`. Every check uses `^[a-z]{2}[0-9]{2}[isagmt][0-9]{2}$` (`shared/protocol.json`, `app/schemas.py`, `frontend/src/config.ts`); input is lower-cased instead of upper-cased. The pattern checks the shape only, not that month and day exist. The group is not in the code (it comes from the session). Existing sessions keep their old upper-case codes (the database column is a plain string and nothing re-validates it); the participant page looks codes up exactly as written. Consent text `v1`: the contact is the researcher's e-mail, the retention period is "until the analyses are done".
+- Deviation from PLAN §13: the consent text no longer says the video is "stored on a university server" (removed at the user's request); it still states that the webcam is recorded, the purpose, the retention period and the contact for deletion.
 - Reason: requested by the user (codes that carry the major, no full name, same shape for every form).
 - Approved by: Nágó Dániel
 
